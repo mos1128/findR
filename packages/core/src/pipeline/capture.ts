@@ -89,18 +89,11 @@ export function createDraft(
     status: hasAudio && !hasText ? 'pending_transcript' : 'pending',
     needsConfirm: false,
     needsOrganize: false,
-    structureType: null,
     categoryId: null,
     entity: null,
     pathIds: null,
     pathNames: null,
-    itemStatus: null,
-    todoStatus: null,
-    procedureStatus: null,
     steps: null,
-    relatedPerson: null,
-    dueAt: null,
-    cycle: null,
     transcript: hasText ? input.text!.trim() : null,
     desc: null,
     images,
@@ -194,24 +187,21 @@ export async function runUnderstanding(
 
   const out = parsed.value;
   const categoryId = out.category ? resolveCategoryId(deps.db, out.category) : null;
-  // item 的位置：匹配得到就复用，匹配不到就**新建**。位置树应当由解析结果增量长出来，
+  // 位置：**由内容决定**，不再拷问「这张卡是什么类型」。模型在内容确实提到存放位置时才给 path，
+  // 给了就匹配得到复用、匹配不到**新建** —— 位置树应当由解析结果增量长出来，
   // 而不是要求用户先去设置页手工建好房间再回来选（那等于把「模型会产出什么词」推给用户猜）
-  const path =
-    out.structure_type === 'item' && out.path
-      ? ensurePath(deps.db, out.path, deps.idGen ?? makeId)
-      : null;
+  const path = out.path ? ensurePath(deps.db, out.path, deps.idGen ?? makeId) : null;
   const needsConfirm =
     (out.confidence != null && out.confidence < (deps.confirmThreshold ?? 0.6)) ||
     categoryId === null ||
-    // item 却没路径 ⇒ 得让用户补；路径里含新建层级 ⇒ 新位置对不对要用户过一眼
-    (out.structure_type === 'item' && (!path || path.created.length > 0));
+    // 路径里含新建层级 ⇒ 新位置对不对要让用户过一眼
+    (path != null && path.created.length > 0);
 
   return {
     kind: 'parsed',
     needsConfirm,
     usedImages: imagesToSend.length > 0,
     fields: {
-      structureType: out.structure_type,
       categoryId,
       entity: out.entity,
       pathIds: path?.ids ?? null,

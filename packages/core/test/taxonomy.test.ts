@@ -54,7 +54,6 @@ test('分类重名会被 UNIQUE 约束挡住（P1 路由是按名字匹配的）
       name: '物品存取',
       emoji: null,
       description: null,
-      structureType: 'item',
       sort: 9,
       isPreset: false,
     }),
@@ -68,7 +67,6 @@ test('分类可新增、改名与重排', () => {
     name: '装修记录',
     emoji: '🔨',
     description: '装修期间临时堆放',
-    structureType: 'item',
     sort: 3,
     isPreset: false,
   });
@@ -79,13 +77,12 @@ test('分类可新增、改名与重排', () => {
     name: '装修',
     emoji: '🔨',
     description: null,
-    structureType: 'procedure',
     sort: 3,
     isPreset: false,
   });
   const updated = listCategories(db).find((c) => c.id === 'cat_custom')!;
   expect(updated.name).toBe('装修');
-  expect(updated.structureType).toBe('procedure');
+  expect(updated.description).toBeNull();
 
   reorderCategories(db, ['cat_custom', 'cat_item', 'cat_todo', 'cat_procedure']);
   expect(listCategories(db).map((c) => c.id)).toEqual([

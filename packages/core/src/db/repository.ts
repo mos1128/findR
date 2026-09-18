@@ -5,7 +5,6 @@ import type {
   MemoryCard,
   SourceKind,
   StepItem,
-  StructureType,
 } from '../types';
 import type { SqliteDriver } from './driver';
 import { parseJsonArray, toJson } from './json';
@@ -13,7 +12,7 @@ import { escapeLike } from '../search/builder';
 import type { BuiltSearch } from '../search/builder';
 
 const CARD_COLS =
-  'id, status, needs_confirm, needs_organize, structure_type, category_id, entity, path_ids, path_names, item_status, todo_status, procedure_status, steps, related_person, due_at, cycle, transcript, desc_text, images, audio_path, vision_analyzed, tags, confidence, ask, path_suggestion, path_matched, source, retry_count, next_retry_at, last_error, created_at, updated_at';
+  'id, status, needs_confirm, needs_organize, category_id, entity, path_ids, path_names, steps, transcript, desc_text, images, audio_path, vision_analyzed, tags, confidence, ask, path_suggestion, path_matched, source, retry_count, next_retry_at, last_error, created_at, updated_at';
 
 /** 退避序列：1min → 5min → 30min → 2h → 次日；到上限后只留手动重试 / 批量补转写 */
 export const RETRY_BACKOFF_MS: readonly number[] = [
@@ -39,18 +38,11 @@ export function rowToCard(row: Record<string, unknown>): MemoryCard {
     status: row.status as CardStatus,
     needsConfirm: row.needs_confirm === 1,
     needsOrganize: row.needs_organize === 1,
-    structureType: (row.structure_type as StructureType | null) ?? null,
     categoryId: (row.category_id as string | null) ?? null,
     entity: (row.entity as string | null) ?? null,
     pathIds: parseJsonArray<string>(row.path_ids),
     pathNames: (row.path_names as string | null) ?? null,
-    itemStatus: (row.item_status as MemoryCard['itemStatus']) ?? null,
-    todoStatus: (row.todo_status as MemoryCard['todoStatus']) ?? null,
-    procedureStatus: (row.procedure_status as MemoryCard['procedureStatus']) ?? null,
     steps: parseJsonArray<StepItem>(row.steps),
-    relatedPerson: (row.related_person as string | null) ?? null,
-    dueAt: (row.due_at as string | null) ?? null,
-    cycle: (row.cycle as string | null) ?? null,
     transcript: (row.transcript as string | null) ?? null,
     desc: (row.desc_text as string | null) ?? null,
     images: parseJsonArray<string>(row.images),
@@ -79,18 +71,11 @@ function cardValues(card: MemoryCard): unknown[] {
     card.status,
     card.needsConfirm ? 1 : 0,
     card.needsOrganize ? 1 : 0,
-    card.structureType,
     card.categoryId,
     card.entity,
     toJson(card.pathIds),
     card.pathNames,
-    card.itemStatus,
-    card.todoStatus,
-    card.procedureStatus,
     toJson(card.steps),
-    card.relatedPerson,
-    card.dueAt,
-    card.cycle,
     card.transcript,
     card.desc,
     toJson(card.images),
@@ -140,7 +125,6 @@ export function getCard(db: SqliteDriver, id: string): MemoryCard | undefined {
 }
 
 export interface ParsedCardFields {
-  structureType: StructureType;
   categoryId: string | null;
   entity: string;
   pathIds: string[] | null;
@@ -165,12 +149,11 @@ export function applyParseResult(
 ): void {
   db.transaction(() => {
     db.prepare(
-      `UPDATE cards SET status = 'active', needs_confirm = ?, structure_type = ?, category_id = ?,
+      `UPDATE cards SET status = 'active', needs_confirm = ?, category_id = ?,
        entity = ?, path_ids = ?, path_names = ?, steps = ?, desc_text = ?, tags = ?, confidence = ?,
        ask = ?, path_suggestion = ?, path_matched = ?, updated_at = ? WHERE id = ?`,
     ).run(
       needsConfirm ? 1 : 0,
-      f.structureType,
       f.categoryId,
       f.entity,
       toJson(f.pathIds),
@@ -224,7 +207,6 @@ export function listCategories(db: SqliteDriver): Category[] {
     name: String(r.name),
     emoji: (r.emoji as string | null) ?? null,
     description: (r.description as string | null) ?? null,
-    structureType: r.structure_type as StructureType,
     sort: Number(r.sort),
     isPreset: r.is_preset === 1,
   }));
@@ -528,18 +510,11 @@ export function countCards(db: SqliteDriver, opts: ListCardsOptions = {}): numbe
 
 /** 可编辑字段白名单 → 列名；JSON 列需要序列化后写入 */
 const CARD_PATCH_COLUMNS = {
-  structureType: { col: 'structure_type' },
   categoryId: { col: 'category_id' },
   entity: { col: 'entity' },
   pathIds: { col: 'path_ids', json: true },
   pathNames: { col: 'path_names' },
-  itemStatus: { col: 'item_status' },
-  todoStatus: { col: 'todo_status' },
-  procedureStatus: { col: 'procedure_status' },
   steps: { col: 'steps', json: true },
-  relatedPerson: { col: 'related_person' },
-  dueAt: { col: 'due_at' },
-  cycle: { col: 'cycle' },
   transcript: { col: 'transcript' },
   desc: { col: 'desc_text' },
   images: { col: 'images', json: true },

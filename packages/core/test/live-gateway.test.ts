@@ -39,10 +39,10 @@ test.skipIf(!live)('真实网关冒烟：P1 录入 + P2 检索', async () => {
     JSON.stringify(
       {
         status: card.status,
-        structureType: card.structureType,
         category: card.categoryId,
         entity: card.entity,
         path: card.pathNames,
+        pathMatched: card.pathMatched,
         tags: card.tags,
         confidence: card.confidence,
         needsConfirm: card.needsConfirm,

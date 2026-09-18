@@ -7,12 +7,11 @@ import {
   reorderCategories,
   upsertCategory,
   type Category,
-  type StructureType,
 } from '@findr/core';
 
-import { Spacing, structureLabel } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { Button, Chip, EmptyState, Field, ListRow, Panel, Screen, SectionTitle } from '@/ui/kit';
+import { Button, EmptyState, Field, ListRow, Panel, Screen, SectionTitle } from '@/ui/kit';
 import { useRuntime } from '@/platform/runtime';
 
 const EMPTY = {
@@ -20,7 +19,6 @@ const EMPTY = {
   name: '',
   emoji: '',
   description: '',
-  structureType: 'item' as StructureType,
 };
 
 export default function CategoriesScreen() {
@@ -48,7 +46,6 @@ export default function CategoriesScreen() {
         name,
         emoji: form.emoji.trim() || null,
         description: form.description.trim() || null,
-        structureType: form.structureType,
         sort: editing
           ? (categories.find((c) => c.id === form.id)?.sort ?? categories.length)
           : categories.length,
@@ -98,14 +95,13 @@ export default function CategoriesScreen() {
             <View key={c.id}>
               <ListRow
                 title={`${c.emoji ?? ''}${c.name}`}
-                subtitle={`${structureLabel[c.structureType]}${c.description ? ' · ' + c.description : ''}${c.isPreset ? ' · 预设' : ''}`}
+                subtitle={`${c.description ?? '没有识别描述'}${c.isPreset ? ' · 预设' : ''}`}
                 onPress={() =>
                   setForm({
                     id: c.id,
                     name: c.name,
                     emoji: c.emoji ?? '',
                     description: c.description ?? '',
-                    structureType: c.structureType,
                   })
                 }
                 right={
@@ -128,7 +124,8 @@ export default function CategoriesScreen() {
       </Panel>
 
       <Panel>
-        <SectionTitle hint={editing ? '正在编辑已有分类' : '新建分类'}>
+        <SectionTitle
+          hint={editing ? '正在编辑已有分类' : '新建分类'}>
           {editing ? '编辑分类' : '新增分类'}
         </SectionTitle>
         <Field
@@ -150,19 +147,9 @@ export default function CategoriesScreen() {
           placeholder="例如：装修期间临时堆放的物料"
           multiline
         />
-        <SectionTitle>所属结构类型</SectionTitle>
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          {(['item', 'todo', 'procedure'] as StructureType[]).map((t) => (
-            <Chip
-              key={t}
-              label={structureLabel[t]}
-              active={form.structureType === t}
-              onPress={() => setForm({ ...form, structureType: t })}
-            />
-          ))}
-        </View>
         <Text style={{ color: theme.textMuted, fontSize: 11, lineHeight: 16 }}>
-          结构类型决定字段必填性：物品要位置，流程要步骤，待办两者都不强制。
+          分类只决定「这条记忆归到哪一类」。卡片长什么样（有没有位置、有没有步骤）由内容自己决定，
+          不需要在这里配结构类型。
         </Text>
         <Button title={editing ? '保存修改' : '添加分类'} onPress={onSave} />
         {editing ? (

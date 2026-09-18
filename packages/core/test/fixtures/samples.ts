@@ -1,5 +1,3 @@
-import type { StructureType } from '../../src/types';
-
 /**
  * 测试计划要求的 20 条样本。
  *
@@ -8,6 +6,10 @@ import type { StructureType } from '../../src/types';
  *   1. 给 20 条样本一个可执行的载体（此前只有类别、没有逐条清单）；
  *   2. 让 `live-gateway.test.ts` 能对真模型跑出各种比率。
  * 用户攒到真实素材后应当替换或校准这里的 input，期望值维持不变。
+ *
+ * 2026-09-18：期望值里的 `structureType` 换成了 `hasLocation`。原因见《开发交接.md》——
+ * 结构类型已从产品里整体去掉，而原先「item 必有位置」这条约束改成了**由内容判断**，
+ * 所以这里改成盯「这条素材里到底有没有位置信息」，这才是现在真正要考验模型的点。
  */
 
 export type BadCase =
@@ -22,7 +24,6 @@ export type BadCase =
   | 'short_term'; // 两字词，必须走 LIKE 降级
 
 export interface SampleExpectation {
-  structureType?: StructureType;
   category?: string;
   /** 检索时应当命中本条（用 entity 判等） */
   shouldHit?: boolean;
@@ -30,6 +31,14 @@ export interface SampleExpectation {
   askEmpty?: boolean;
   /** 期望 path 命中已有位置树 */
   pathMatched?: boolean;
+  /**
+   * 这条素材里是否存在「东西放在哪」的明确信息。
+   *
+   * `true` ⇒ 模型应当给出 path（匹配得到就复用，匹配不到就新建层级）；
+   * `false` ⇒ 模型**不该**为了凑字段硬猜一个房间，宁可用 path_suggestion 交给用户确认。
+   * 这正是去掉结构类型之后新增的那条规则，靠这几条样本盯着。
+   */
+  hasLocation?: boolean;
 }
 
 export interface Sample {
@@ -56,7 +65,7 @@ export const SAMPLES: readonly Sample[] = [
     imageNote: '衣柜全貌 → 柜内 → 真空袋特写',
     vision: true,
     query: '我那件厚外套放哪了',
-    expectation: { structureType: 'item', category: '物品存取', shouldHit: true, pathMatched: true },
+    expectation: { hasLocation: true, category: '物品存取', shouldHit: true, pathMatched: true },
   },
   {
     id: 's02',
@@ -66,7 +75,8 @@ export const SAMPLES: readonly Sample[] = [
     imageNote: '只拍了纸箱内部特写，没有房间远景',
     vision: true,
     query: '手电筒在哪',
-    expectation: { structureType: 'item', category: '物品存取', shouldHit: true, pathMatched: false },
+    // 文字只说「这儿」，图上只有特写 ⇒ 判定不出房间，不该硬猜
+    expectation: { hasLocation: false, category: '物品存取', shouldHit: true, pathMatched: false },
   },
   {
     id: 's03',
@@ -75,7 +85,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 2,
     vision: true,
     query: '急救包在哪',
-    expectation: { structureType: 'item', shouldHit: true },
+    expectation: { hasLocation: false, shouldHit: true },
   },
   {
     id: 's04',
@@ -84,7 +94,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 0,
     vision: true,
     query: '换驾照要带什么材料',
-    expectation: { structureType: 'procedure', category: '流程备忘', shouldHit: true, pathMatched: false },
+    expectation: { hasLocation: false, category: '流程备忘', shouldHit: true, pathMatched: false },
   },
   {
     id: 's05',
@@ -94,7 +104,7 @@ export const SAMPLES: readonly Sample[] = [
     imageNote: '多张截图：滤芯型号、拆装步骤',
     vision: true,
     query: '滤芯怎么换',
-    expectation: { structureType: 'procedure', category: '流程备忘', shouldHit: true },
+    expectation: { hasLocation: false, category: '流程备忘', shouldHit: true },
   },
   {
     id: 's06',
@@ -103,7 +113,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 1,
     vision: true,
     query: '有什么要买的',
-    expectation: { structureType: 'todo', category: '待买补货', shouldHit: true, pathMatched: false },
+    expectation: { hasLocation: false, category: '待买补货', shouldHit: true, pathMatched: false },
   },
   {
     id: 's07',
@@ -112,7 +122,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 0,
     vision: true,
     query: '出门要带什么',
-    expectation: { structureType: 'todo', shouldHit: true },
+    expectation: { hasLocation: false, shouldHit: true },
   },
   {
     id: 's08',
@@ -122,7 +132,8 @@ export const SAMPLES: readonly Sample[] = [
     imageNote: '只有照片：书架 → 抽屉 → 证件袋特写',
     vision: true,
     query: '护照放哪了',
-    expectation: { structureType: 'item', shouldHit: true },
+    // 文字为空，但照片本身串起了书架 / 抽屉 / 证件袋 ⇒ 视觉应当给出位置
+    expectation: { hasLocation: true, shouldHit: true },
   },
   {
     id: 's09',
@@ -131,7 +142,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 1,
     vision: true,
     query: '钥匙在哪',
-    expectation: { structureType: 'item', category: '物品存取', shouldHit: true, pathMatched: true },
+    expectation: { hasLocation: true, category: '物品存取', shouldHit: true, pathMatched: true },
   },
   {
     id: 's10',
@@ -140,7 +151,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 1,
     vision: true,
     query: '猫砂放哪了',
-    expectation: { structureType: 'item', shouldHit: true },
+    expectation: { hasLocation: true, shouldHit: true },
   },
   {
     id: 's11',
@@ -149,7 +160,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 1,
     vision: true,
     query: '手电筒在哪',
-    expectation: { structureType: 'item', shouldHit: true },
+    expectation: { hasLocation: true, shouldHit: true },
   },
   {
     id: 's12',
@@ -158,7 +169,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 1,
     vision: true,
     query: '我护照呢',
-    expectation: { structureType: 'item', shouldHit: true },
+    expectation: { hasLocation: true, shouldHit: true },
   },
   {
     id: 's13',
@@ -167,7 +178,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 1,
     vision: true,
     query: '螺丝刀在哪',
-    expectation: { structureType: 'item', shouldHit: true },
+    expectation: { hasLocation: true, shouldHit: true },
   },
   {
     id: 's14',
@@ -177,7 +188,7 @@ export const SAMPLES: readonly Sample[] = [
     imageNote: '只拍了灯泡底部型号特写',
     vision: true,
     query: '客厅灯泡什么型号',
-    expectation: { structureType: 'item', shouldHit: true, pathMatched: false },
+    expectation: { hasLocation: false, shouldHit: true, pathMatched: false },
   },
   {
     id: 's15',
@@ -186,7 +197,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 1,
     vision: true,
     query: '路由器怎么重置',
-    expectation: { structureType: 'procedure', shouldHit: true },
+    expectation: { hasLocation: false, shouldHit: true },
   },
   {
     id: 's16',
@@ -195,7 +206,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 0,
     vision: true,
     query: '要帮谁买什么',
-    expectation: { structureType: 'todo', shouldHit: true },
+    expectation: { hasLocation: false, shouldHit: true },
   },
   {
     id: 's17',
@@ -205,7 +216,7 @@ export const SAMPLES: readonly Sample[] = [
     imageNote: '报销系统操作截图 5 张',
     vision: true,
     query: '报销怎么操作',
-    expectation: { structureType: 'procedure', shouldHit: true },
+    expectation: { hasLocation: false, shouldHit: true },
   },
   {
     id: 's18',
@@ -215,7 +226,7 @@ export const SAMPLES: readonly Sample[] = [
     imageNote: '关了图片分析，图片只作附件',
     vision: false,
     query: '圣诞装饰在哪',
-    expectation: { structureType: 'item', shouldHit: true },
+    expectation: { hasLocation: true, shouldHit: true },
   },
   {
     id: 's19',
@@ -224,7 +235,7 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 0,
     vision: false,
     query: '物业费怎么交',
-    expectation: { structureType: 'procedure', shouldHit: true },
+    expectation: { hasLocation: false, shouldHit: true },
   },
   {
     id: 's20',
@@ -233,7 +244,8 @@ export const SAMPLES: readonly Sample[] = [
     imageCount: 0,
     vision: true,
     query: '梯子在谁那',
-    expectation: { structureType: 'item', shouldHit: true, pathMatched: false },
+    // 「借给谁」不是存放位置 —— 去掉关联人字段后，这句只该体现在 desc 里，不该变出 path
+    expectation: { hasLocation: false, shouldHit: true, pathMatched: false },
   },
 ];
 

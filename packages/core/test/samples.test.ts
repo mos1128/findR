@@ -25,7 +25,7 @@ test('每条样本都带可判定的期望值', () => {
     expect(s.transcript.length > 0 || s.imageCount > 0, `${s.id} 没有任何素材`).toBe(true);
     expect(s.query.trim().length, `${s.id} 没有检索问句`).toBeGreaterThan(0);
     expect(s.expectation.shouldHit, `${s.id} 未标期望命中`).toBe(true);
-    expect(s.expectation.structureType, `${s.id} 未标期望结构类型`).toBeDefined();
+    expect(s.expectation.hasLocation, `${s.id} 未标「素材里有没有位置」`).toBeDefined();
   }
 });
 
@@ -50,11 +50,15 @@ test('关闭图片分析的样本必须同时有文字，否则会落进「纯�
   }
 });
 
-test('覆盖三种结构类型，且两类短词样本都在', () => {
-  const types = new Set(SAMPLES.map((s) => s.expectation.structureType));
-  expect(types).toContain('item');
-  expect(types).toContain('todo');
-  expect(types).toContain('procedure');
+test('「有位置」与「没位置」两类样本都在，盯住 path 由内容驱动这条规则', () => {
+  const withLoc = SAMPLES.filter((s) => s.expectation.hasLocation === true);
+  const withoutLoc = SAMPLES.filter((s) => s.expectation.hasLocation === false);
+  expect(withLoc.length).toBeGreaterThanOrEqual(5);
+  expect(withoutLoc.length).toBeGreaterThanOrEqual(5);
+  // 「没位置」这一类里必须有靠图才谈得上位置的样本，否则这条规则没被真正考验
+  expect(withoutLoc.some((s) => s.imageCount > 0)).toBe(true);
+  // 也要有「图也给了、但文字没位置」的：模型最容易在这类上硬猜
+  expect(withLoc.some((s) => s.transcript.trim() === '')).toBe(true);
   // trigram 的 <3 字硬限制要有样本盯着，否则 LIKE 降级回归了也发现不了
   expect(SAMPLES.some((s) => s.bad === 'short_term')).toBe(true);
   // 别称扩展也是

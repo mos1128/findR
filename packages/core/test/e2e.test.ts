@@ -9,7 +9,6 @@ import { makeDb } from './helpers';
 const CFG: ProviderConfig = { providerType: 'fake', model: 'fake' };
 
 const P1_DOWN_JACKET = JSON.stringify({
-  structure_type: 'item',
   category: '物品存取',
   entity: '羽绒服',
   aliases: ['厚外套', '冬季外套'],
@@ -36,7 +35,6 @@ const P2_COAT = JSON.stringify({
 });
 
 const P1_PASSPORT = JSON.stringify({
-  structure_type: 'item',
   category: '物品存取',
   entity: '护照',
   aliases: ['出入境证件'],
@@ -88,12 +86,15 @@ test('M0 验收：文本录入 → P1 → 入库 → 检索 全链路', async ()
   expect(llm.requests.length).toBe(2);
 });
 
-test('两字词走 LIKE 降级仍可命中；item 无位置时标记待确认', async () => {
+test('两字词走 LIKE 降级仍可命中；没给位置不再自动待确认（改由模型 ask 追问）', async () => {
   const db = makeDb();
   const llm = new FakeLLMAdapter([P1_PASSPORT, P2_PASSPORT]);
   const card = await ingestText({ db, llm, cfg: CFG }, { transcript: '护照放书房抽屉了' });
   expect(card.entity).toBe('护照');
-  expect(card.needsConfirm).toBe(true);
+  // 旧版有「item 却缺位置 ⇒ 待确认」这条，随结构类型一起删掉了：
+  // 现在「该不该为位置追问」由模型在 ask 里决定，不再由卡片类型机械触发。
+  expect(card.needsConfirm).toBe(false);
+  expect(card.pathIds).toBeNull();
   const res = await searchCards({ db, llm, cfg: CFG }, '护照在哪');
   expect(res.cards.map((c) => c.entity)).toContain('护照');
 });

@@ -60,7 +60,6 @@ function readCategories(db: SqliteDriver): BackupCategory[] {
     name: String(r.name),
     emoji: (r.emoji as string | null) ?? null,
     description: (r.description as string | null) ?? null,
-    structureType: r.structure_type as BackupCategory['structureType'],
     sort: Number(r.sort),
     isPreset: r.is_preset === 1,
   }));
@@ -211,9 +210,9 @@ function mergeCategories(
       continue;
     }
     db.prepare(
-      `INSERT INTO categories (id, name, emoji, description, structure_type, sort, is_preset)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(c.id, c.name, c.emoji, c.description, c.structureType, c.sort, c.isPreset ? 1 : 0);
+      `INSERT INTO categories (id, name, emoji, description, sort, is_preset)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(c.id, c.name, c.emoji, c.description, c.sort, c.isPreset ? 1 : 0);
     map.set(c.id, c.id);
     report.categoriesInserted++;
   }

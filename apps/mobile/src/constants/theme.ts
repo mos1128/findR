@@ -28,10 +28,6 @@ export const Colors = {
     badgeOrganizeBg: '#FDF0EF',
     badgeUnanalyzed: '#4B5563',
     badgeUnanalyzedBg: '#EDEFF2',
-    /** 结构类型 */
-    item: '#1F6FEB',
-    todo: '#C2610A',
-    procedure: '#1D7A34',
     danger: '#B3261E',
     success: '#1D7A34',
   },
@@ -55,9 +51,6 @@ export const Colors = {
     badgeOrganizeBg: '#2F1D1C',
     badgeUnanalyzed: '#B7BDC7',
     badgeUnanalyzedBg: '#24282D',
-    item: '#5C9DFF',
-    todo: '#E09B4A',
-    procedure: '#4FBE6B',
     danger: '#F08C86',
     success: '#4FBE6B',
   },
@@ -88,16 +81,3 @@ export const Radius = {
 } as const;
 
 export const MaxContentWidth = 800;
-
-/** 与「场景分析 四」的结构类型一一对应，分类标签与卡片强调色都用它 */
-export const structureAccent: Record<'item' | 'todo' | 'procedure', ThemeColor> = {
-  item: 'item',
-  todo: 'todo',
-  procedure: 'procedure',
-};
-
-export const structureLabel: Record<'item' | 'todo' | 'procedure', string> = {
-  item: '物品',
-  todo: '待办',
-  procedure: '流程',
-};

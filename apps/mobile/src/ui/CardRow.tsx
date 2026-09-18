@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { badgeLabel, cardBadges, type BadgeContext, type CardBadge, type MemoryCard } from '@findr/core';
 
-import { Radius, Spacing, structureLabel } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { Badge, type BadgeTone } from './kit';
 import { mediaUri } from '@/platform/media';
@@ -37,12 +37,15 @@ export function CardRow({
   card,
   ctx,
   categoryName,
+  categoryEmoji,
   highlight,
   onPress,
 }: {
   card: MemoryCard;
   ctx: BadgeContext;
   categoryName: string | null;
+  /** 没有封面图时用分类的 Emoji 顶着，比以前的「结构类型首字」更贴用户自己的分类 */
+  categoryEmoji?: string | null;
   /** L2 答案依据的卡片，在结果里加一圈强调色（需求六「答案卡片置顶高亮」） */
   highlight?: boolean;
   onPress?: () => void;
@@ -50,7 +53,6 @@ export function CardRow({
   const theme = useTheme();
   const badges = cardBadges(card);
   const cover = card.images && card.images.length > 0 ? card.images[0] : null;
-  const accent = card.structureType ? theme[card.structureType] : theme.textMuted;
 
   return (
     <Pressable
@@ -68,8 +70,8 @@ export function CardRow({
         <Image source={{ uri: mediaUri(cover) }} style={styles.cover} contentFit="cover" />
       ) : (
         <View style={[styles.cover, styles.coverFallback, { backgroundColor: theme.surfaceAlt }]}>
-          <Text style={{ color: accent, fontSize: 18 }}>
-            {card.structureType ? structureLabel[card.structureType].slice(0, 1) : '·'}
+          <Text style={{ fontSize: categoryEmoji ? 22 : 18 }}>
+            {categoryEmoji ?? <Text style={{ color: theme.textMuted }}>·</Text>}
           </Text>
         </View>
       )}

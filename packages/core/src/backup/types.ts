@@ -70,7 +70,6 @@ export interface BackupCategory {
   name: string;
   emoji: string | null;
   description: string | null;
-  structureType: 'item' | 'todo' | 'procedure';
   sort: number;
   isPreset: boolean;
 }

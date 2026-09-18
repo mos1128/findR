@@ -46,13 +46,11 @@ export function describeCardFields(card: MemoryCard): string {
   const push = (label: string, value: string | null | undefined) => {
     if (value) lines.push(`- ${label}：${value}`);
   };
-  push('结构类型', card.structureType);
+  push('分类', card.categoryId ? undefined : undefined); // 分类名由调用方按 id 解析，这里不注入
   push('实体名', card.entity);
   push('位置', card.pathNames);
   push('标签', card.tags?.join('、'));
   push('步骤', card.steps?.map((s) => s.text).join('；'));
-  push('关联人', card.relatedPerson);
-  push('到期/周期', card.dueAt ?? card.cycle);
   return lines.join('\n');
 }
 
@@ -91,10 +89,7 @@ export function buildP3Input(query: string, snippets: string): string {
 export function formatCategoriesForPrompt(categories: Category[]): string {
   if (categories.length === 0) return '（暂无）';
   return categories
-    .map(
-      (c) =>
-        `- ${c.emoji ?? ''}${c.name}（${c.structureType}）${c.description ? '：' + c.description : ''}`,
-    )
+    .map((c) => `- ${c.emoji ?? ''}${c.name}${c.description ? '：' + c.description : ''}`)
     .join('\n');
 }
 

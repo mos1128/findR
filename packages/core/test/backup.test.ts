@@ -57,9 +57,8 @@ function sourceSide(): Side {
     makeCard({
       id: 'c2',
       entity: '买牙膏',
-      structureType: 'todo',
       categoryId: 'cat_todo',
-      todoStatus: 'open',
+      steps: [{ text: '看家里还缺什么', done: false }],
       audioPath: AUDIO,
       source: 'voice',
       status: 'pending_transcript',
@@ -142,7 +141,7 @@ describe('备份：round-trip', () => {
     const c2 = getCard(dst.deps.db, 'c2');
     expect(c2?.status).toBe('pending_transcript');
     expect(c2?.source).toBe('voice');
-    expect(c2?.todoStatus).toBe('open');
+    expect(c2?.steps).toEqual([{ text: '看家里还缺什么', done: false }]);
 
     const locs = dst.deps.db.prepare('SELECT id, parent_id FROM locations ORDER BY id').all();
     expect(locs).toEqual([

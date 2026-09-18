@@ -61,8 +61,9 @@ interface Row {
   bad: string;
   outcome: string;
   ms: number;
-  structureType: string | null;
-  typeOk: boolean;
+  hasPath: boolean;
+  /** 素材里明确有位置 ⇒ 期望模型给出 path；反之期望它别硬猜 */
+  locationOk: boolean;
   category: string | null;
   categoryOk: boolean;
   pathMatched: boolean | null;
@@ -116,10 +117,11 @@ describe.skipIf(!live)('20 条样本 · 真模型指标', () => {
         bad: sample.bad,
         outcome: card.status === 'active' && !card.needsOrganize ? 'ok' : (card.lastError ?? card.status),
         ms,
-        structureType: card.structureType,
-        typeOk: sample.expectation.structureType
-          ? card.structureType === sample.expectation.structureType
-          : true,
+        hasPath: !!card.pathNames,
+        locationOk:
+          sample.expectation.hasLocation === true
+            ? !!card.pathNames
+            : !card.pathNames,
         category: categoryName,
         categoryOk: sample.expectation.category
           ? categoryName === sample.expectation.category
@@ -131,9 +133,9 @@ describe.skipIf(!live)('20 条样本 · 真模型指标', () => {
         error: card.lastError ?? undefined,
       });
 
-      const flag = visionOnly ? '👁 ' : rows.at(-1)!.typeOk ? '  ' : '✗ ';
+      const flag = visionOnly ? '👁 ' : rows.at(-1)!.locationOk ? '  ' : '✗ ';
       console.log(
-        `${flag}${sample.id} [${sample.bad}] ${ms}ms ${card.structureType ?? '-'} ` +
+        `${flag}${sample.id} [${sample.bad}] ${ms}ms ${card.pathNames ?? '（无位置）'} ` +
           `${card.entity ?? '(无实体)'} ${card.needsOrganize ? '待整理' : ''}`,
       );
     }
@@ -143,9 +145,13 @@ describe.skipIf(!live)('20 条样本 · 真模型指标', () => {
     const parsed = textRunnable.filter((r) => r.outcome === 'ok').length;
     const parseRate = textRunnable.length > 0 ? parsed / textRunnable.length : 0;
 
-    const typeChecked = textRunnable.filter((r) => r.structureType !== null);
-    const typeRate =
-      typeChecked.length > 0 ? typeChecked.filter((r) => r.typeOk).length / typeChecked.length : 0;
+    const locationChecked = textRunnable.filter(
+      (r) => r.hasPath || r.locationOk === false,
+    );
+    const locationRate =
+      locationChecked.length > 0
+        ? locationChecked.filter((r) => r.locationOk).length / locationChecked.length
+        : 0;
 
     const askRate =
       textRunnable.length > 0 ? textRunnable.filter((r) => r.askFired).length / textRunnable.length : 0;
@@ -169,7 +175,7 @@ describe.skipIf(!live)('20 条样本 · 真模型指标', () => {
     console.log('\n──────── 指标（已排除只能真机跑的视觉样本）────────');
     console.log(`样本总数            ${rows.length}（其中 vision-only ${rows.length - textRunnable.length}）`);
     console.log(`JSON 可解析率        ${pct(parseRate)}   目标 ≥ 98%`);
-    console.log(`结构类型准确率       ${pct(typeRate)}`);
+    console.log(`位置判定准确率       ${pct(locationRate)}   （「该有位置」与「不该硬猜」两个方向）`);
     console.log(`path 命中率          ${pct(pathRate)}   目标 ≥ 80%（样本 ${pathChecked.length} 条）`);
     console.log(`ask 触发率           ${pct(askRate)}   目标 10% ~ 25%`);
     console.log(`L1 top-5 召回率      ${pct(recallRate)}   目标 ≥ 85%（样本 ${recallChecked.length} 条）`);

@@ -30,21 +30,14 @@ import {
   type LocationNode,
   type MemoryCard,
   type StepItem,
-  type StructureType,
 } from '@findr/core';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Radius, Spacing, structureLabel } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { Badge, Button, Chip, Field, ListRow, Panel, Screen, SectionTitle } from '@/ui/kit';
 import { mediaUri } from '@/platform/media';
 import { currentVision, requireDeps, useRuntime, visionSupported } from '@/platform/runtime';
-
-const STATUS_LABELS: Record<StructureType, { value: string[]; labels: string[] }> = {
-  item: { value: ['in_stock', 'lent', 'used', 'discarded'], labels: ['在库', '借出', '已用', '已弃'] },
-  todo: { value: ['open', 'done', 'dropped'], labels: ['待办', '已完成', '已放弃'] },
-  procedure: { value: ['draft', 'ready'], labels: ['草稿', '可用'] },
-};
 
 /** 秒 → m:ss。duration 在音频还没加载出来时是 0，此时显示 --:-- 而不是 0:00 */
 function fmtClock(seconds: number): string {
@@ -76,8 +69,8 @@ export default function CardDetailScreen() {
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  /** 「补充信息」（关联人 / 到期或周期）默认收起 —— 不是每张卡都有这些，空输入框摆着像必填 */
-  const [moreOpen, setMoreOpen] = useState(false);
+  /** 「步骤」按内容出现：有步骤时自动展开，没有则收起 —— 多数记忆本来就没有步骤 */
+  const [stepsOpen, setStepsOpen] = useState(false);
 
   const player = useAudioPlayer(card?.audioPath ? { uri: mediaUri(card.audioPath) } : null);
   const playerStatus = useAudioPlayerStatus(player);
@@ -99,18 +92,9 @@ export default function CardDetailScreen() {
   };
   const badges = cardBadges(card);
   const images = card.images ?? [];
-  /** 「补充信息」有值时自动展开，否则默认收起 —— 空输入框摆着会让人以为是必填 */
-  const extraFilled = !!(card.relatedPerson || card.dueAt || card.cycle);
-  const showMore = moreOpen || extraFilled;
-  /** 《场景分析.md》字段矩阵：流程类不适用「关联人」，只有物品/待办才展示 */
-  const personApplies = card.structureType !== 'procedure';
-  const statusMeta = card.structureType ? STATUS_LABELS[card.structureType] : null;
-  const currentStatus =
-    card.structureType === 'item'
-      ? card.itemStatus
-      : card.structureType === 'todo'
-        ? card.todoStatus
-        : card.procedureStatus;
+  const steps = card.steps ?? [];
+  /** 有步骤就默认展开 —— 是流程才会解析出 steps，没步骤的卡不该白占一块面板 */
+  const showSteps = stepsOpen || steps.length > 0;
 
   const patch = (fields: Parameters<typeof updateCardFields>[2]) => {
     updateCardFields(rt.driver, card.id, fields, new Date());
@@ -292,85 +276,50 @@ export default function CardDetailScreen() {
         </Panel>
       ) : null}
 
+      {/*
+        分类是唯一的组织维度。这里以前还并排放着「结构类型」和「业务状态」两组 chip ——
+        结构类型对检索零影响、又和分类一一对应（看着就是说两遍），业务状态更是覆盖不全的
+        自造枚举，都已整体移除。详见《开发交接.md》与 db/schema.ts 的 v2 迁移。
+      */}
       <Panel>
-        <SectionTitle>结构类型</SectionTitle>
-        <View style={styles.row}>
-          {(['item', 'todo', 'procedure'] as StructureType[]).map((t) => (
-            <Chip
-              key={t}
-              label={structureLabel[t]}
-              active={card.structureType === t}
-              onPress={() => patch({ structureType: t })}
-            />
-          ))}
-        </View>
-
-        <SectionTitle hint="AI 自动路由，可随时更正">分类</SectionTitle>
+        <SectionTitle hint="AI 自动归类，可随时更正">分类</SectionTitle>
         <View style={styles.row}>
           {categories.map((c) => (
             <Chip
               key={c.id}
               label={`${c.emoji ?? ''}${c.name}`}
               active={card.categoryId === c.id}
-              onPress={() => patch({ categoryId: c.id, structureType: c.structureType })}
+              onPress={() => patch({ categoryId: c.id })}
             />
           ))}
         </View>
 
-        {card.structureType === 'item' ? (
-          <>
-            <SectionTitle hint="仅物品类必填">位置</SectionTitle>
-            {/*
-              位置的来源已经变了：解析卡片时自动匹配/新建，用户来这里只是「看一眼、改一改」。
-              旧文案写的是「从已有位置树里选」，配合一个空位置树，等于逼用户先去手工建房间。
-            */}
-            <ListRow
-              title={card.pathNames ?? '还没记录位置'}
-              subtitle={
-                card.pathNames
-                  ? card.pathMatched === false
-                    ? '解析时新建的位置，不对可以改'
-                    : '解析时自动记录；点这里可以改到别处'
-                  : '解析这条卡片时会自动记录；也可以现在手动选一个'
-              }
-              onPress={() => setPickerOpen(true)}
-              right={
-                <Text style={{ color: theme.record }}>{card.pathNames ? '修改' : '选择'}</Text>
-              }
-            />
-            {card.pathNames ? (
-              <Button
-                title="清除位置"
-                variant="ghost"
-                compact
-                onPress={() => patch({ pathIds: null, pathNames: null })}
-              />
-            ) : null}
-          </>
-        ) : null}
-
-        {statusMeta ? (
-          <>
-            <SectionTitle>业务状态</SectionTitle>
-            <View style={styles.row}>
-              {statusMeta.value.map((v, i) => (
-                <Chip
-                  key={v}
-                  label={statusMeta.labels[i]}
-                  active={currentStatus === v}
-                  onPress={() => {
-                    const key =
-                      card.structureType === 'item'
-                        ? 'itemStatus'
-                        : card.structureType === 'todo'
-                          ? 'todoStatus'
-                          : 'procedureStatus';
-                    patch({ [key]: v } as Parameters<typeof updateCardFields>[2]);
-                  }}
-                />
-              ))}
-            </View>
-          </>
+        <SectionTitle hint="内容里说了就自动记，没说不强求">位置</SectionTitle>
+        {/*
+          位置的来源已经变了：解析卡片时自动匹配/新建，用户来这里只是「看一眼、改一改」。
+          旧文案写的是「从已有位置树里选」，配合一个空位置树，等于逼用户先去手工建房间。
+          去掉了「仅物品类必填」之后，位置对任何一条记忆都可选 —— 说「把护照放回主卧抽屉」
+          本来就是既像待办又带位置。
+        */}
+        <ListRow
+          title={card.pathNames ?? '还没记录位置'}
+          subtitle={
+            card.pathNames
+              ? card.pathMatched === false
+                ? '解析时新建的位置，不对可以改'
+                : '解析时自动记录；点这里可以改到别处'
+              : '解析这条卡片时如果提到了位置会自动记录；也可以现在手动选一个'
+          }
+          onPress={() => setPickerOpen(true)}
+          right={<Text style={{ color: theme.record }}>{card.pathNames ? '修改' : '选择'}</Text>}
+        />
+        {card.pathNames ? (
+          <Button
+            title="清除位置"
+            variant="ghost"
+            compact
+            onPress={() => patch({ pathIds: null, pathNames: null })}
+          />
         ) : null}
       </Panel>
 
@@ -406,47 +355,25 @@ export default function CardDetailScreen() {
       </Panel>
 
       {/*
-        关联人 / 到期或周期 不是每张卡都有（《场景分析.md》字段矩阵：流程类不适用关联人；
-        周期只对「要补货 / 要维护」的东西才有意义）。以前这两个空输入框无条件摆在最显眼处，
-        看着像必填，也让卡片显得拆得过细。收进折叠区，只有真的有值时才自动展开。
+        步骤按内容出现。以前这里挂的是 `structureType !== 'item'`，等于按类型一刀切；
+        现在模型只有在内容本身是一串步骤/清单时才会返回 steps，所以用 steps 是否有值来定。
+        没有步骤时保留一个折叠入口，方便用户自己补。
       */}
       <Panel>
-        <Pressable onPress={() => setMoreOpen((v) => !v)} style={styles.moreHeader}>
+        <Pressable onPress={() => setStepsOpen((v) => !v)} style={styles.collapseHeader}>
           <Text
             style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600', letterSpacing: 0.3 }}>
-            补充信息{extraFilled ? '' : '（一般不用填）'}
+            步骤{steps.length > 0 ? `（${steps.length}）` : '（没有）'}
           </Text>
-          <Text style={{ color: theme.record, fontSize: 13 }}>{showMore ? '收起' : '展开'}</Text>
+          <Text style={{ color: theme.record, fontSize: 13 }}>{showSteps ? '收起' : '展开'}</Text>
         </Pressable>
-        {showMore ? (
-          <View style={{ gap: Spacing.two }}>
-            {personApplies ? (
-              <Field
-                label="关联人"
-                value={card.relatedPerson ?? ''}
-                onChangeText={(v) => patch({ relatedPerson: v })}
-                placeholder="借给谁 / 帮谁买"
-              />
-            ) : null}
-            <Field
-              label="到期或周期"
-              value={card.dueAt ?? card.cycle ?? ''}
-              onChangeText={(v) => patch({ dueAt: v || null })}
-              placeholder="如 2026-04-01 或 半年一次"
-            />
-          </View>
+        {showSteps ? (
+          <StepEditor
+            steps={steps}
+            onChange={(next) => patch({ steps: next.length > 0 ? next : null })}
+          />
         ) : null}
       </Panel>
-
-      {card.structureType !== 'item' ? (
-        <Panel>
-          <SectionTitle hint="流程类必填；待办可选作子待办">步骤</SectionTitle>
-          <StepEditor
-            steps={card.steps ?? []}
-            onChange={(steps) => patch({ steps: steps.length > 0 ? steps : null })}
-          />
-        </Panel>
-      ) : null}
 
       <Panel>
         <SectionTitle>其他操作</SectionTitle>
@@ -635,7 +562,7 @@ const styles = StyleSheet.create({
   audioRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   photoStrip: { gap: Spacing.two, paddingVertical: 2 },
   photo: { width: 132, height: 132, borderRadius: Radius.sm },
-  moreHeader: {
+  collapseHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

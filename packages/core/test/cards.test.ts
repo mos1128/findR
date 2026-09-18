@@ -74,16 +74,25 @@ test('updateCardFields 只写传入的键，JSON 列序列化，恒定刷新 upd
   expect(getCard(db, 'c1')!.tags).toBeNull();
 });
 
-test('三个业务状态与结构类型可编辑（场景分析四：至少能表达已完成/已失效）', () => {
+test('卡片只保留分类这一个组织维度（结构类型与业务状态已从产品移除）', () => {
   const db = makeDb();
-  insertCard(db, makeCard({ id: 'c1', structureType: 'todo', todoStatus: 'open' }));
-  updateCardFields(db, 'c1', { todoStatus: 'done' }, NOW);
-  expect(getCard(db, 'c1')!.todoStatus).toBe('done');
-
-  updateCardFields(db, 'c1', { structureType: 'procedure', procedureStatus: 'ready' }, NOW);
+  insertCard(db, makeCard({ id: 'c1', categoryId: 'cat_todo' }));
+  updateCardFields(db, 'c1', { categoryId: 'cat_procedure' }, NOW);
   const card = getCard(db, 'c1')!;
-  expect(card.structureType).toBe('procedure');
-  expect(card.procedureStatus).toBe('ready');
+  expect(card.categoryId).toBe('cat_procedure');
+  // 物理列也必须真的不存在了，否则备份/检索会读到幽灵数据
+  const cols = (db.prepare('PRAGMA table_info(cards)').all() as { name: string }[]).map((r) => r.name);
+  for (const gone of [
+    'structure_type',
+    'item_status',
+    'todo_status',
+    'procedure_status',
+    'related_person',
+    'due_at',
+    'cycle',
+  ]) {
+    expect(cols, `cards 仍残留列 ${gone}`).not.toContain(gone);
+  }
 });
 
 test('角标标志的清除动作', () => {

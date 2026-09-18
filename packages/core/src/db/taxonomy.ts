@@ -13,20 +13,18 @@ import { listLocations } from './repository';
  */
 export function upsertCategory(db: SqliteDriver, category: Category): void {
   db.prepare(
-    `INSERT INTO categories (id, name, emoji, description, structure_type, sort, is_preset)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO categories (id, name, emoji, description, sort, is_preset)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        name = excluded.name,
        emoji = excluded.emoji,
        description = excluded.description,
-       structure_type = excluded.structure_type,
        sort = excluded.sort`,
   ).run(
     category.id,
     category.name,
     category.emoji,
     category.description,
-    category.structureType,
     category.sort,
     category.isPreset ? 1 : 0,
   );

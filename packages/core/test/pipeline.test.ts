@@ -6,6 +6,7 @@ import {
   listLocations,
   listQueueCards,
   MAX_AUTO_RETRY,
+  upsertLocation,
 } from '../src/db/repository';
 import { FakeLLMAdapter } from '../src/providers/fake';
 import type { MediaIO } from '../src/providers/media';
@@ -47,7 +48,6 @@ class FakeAsr implements ASRProviderAdapter {
 
 function p1(over: Record<string, unknown> = {}): string {
   return JSON.stringify({
-    structure_type: 'item',
     category: '物品存取',
     entity: '备用手电筒',
     aliases: ['手电'],
@@ -238,7 +238,7 @@ test('单卡图片超过上限时只送前 N 张', async () => {
   const db = makeDb();
   const images = Array.from({ length: 9 }, (_, i) => `files/cards/202603/c1/0${i + 1}.webp`);
   createDraft({ db }, { source: 'photo', text: '流程截图', images }, { id: 'c1' });
-  const llm = new FakeLLMAdapter([p1({ structure_type: 'procedure', category: '流程备忘' })]);
+  const llm = new FakeLLMAdapter([p1({ category: '流程备忘' })]);
 
   await advanceCard(deps({ db, llm, maxAnalyzeImages: 3 }), 'c1', { vision: true });
   const sent = (llm.requests[0] as ChatRequest).parts.filter((p) => p.type === 'image');
@@ -249,7 +249,7 @@ test('单卡图片超过上限时只送前 N 张', async () => {
 // 解析结果落库
 // ─────────────────────────────────────────────────────────────
 
-test('低置信度、分类选不出、item 缺位置都触发待确认', async () => {
+test('低置信度、分类选不出、本次新建了位置层级 —— 三者才触发待确认', async () => {
   const db = makeDb();
 
   createDraft({ db }, { source: 'text', text: 'a' }, { id: 'low' });
@@ -260,23 +260,34 @@ test('低置信度、分类选不出、item 缺位置都触发待确认', async 
   await advanceCard(deps({ db, llm: new FakeLLMAdapter([p1({ category: null })]) }), 'nocat');
   expect(getCard(db, 'nocat')!.needsConfirm).toBe(true);
 
-  createDraft({ db }, { source: 'text', text: 'c' }, { id: 'nopath' });
-  await advanceCard(deps({ db, llm: new FakeLLMAdapter([p1({ path: null })]) }), 'nopath');
-  expect(getCard(db, 'nopath')!.needsConfirm).toBe(true);
+  // 位置树里本来没有「主卧/衣柜顶层」⇒ 解析时新建了层级 ⇒ 要用户过一眼
+  createDraft({ db }, { source: 'text', text: 'c' }, { id: 'newpath' });
+  const p1NewPath = p1({ path: ['主卧', '衣柜顶层'], path_matched: false });
+  await advanceCard(deps({ db, llm: new FakeLLMAdapter([p1NewPath]) }), 'newpath');
+  expect(getCard(db, 'newpath')!.needsConfirm).toBe(true);
+
+  // 命中已有位置、分类选得出、置信度够 ⇒ 不打扰
+  upsertLocation(db, { id: 'l_master', parentId: null, name: '主卧', sort: 0 });
+  createDraft({ db }, { source: 'text', text: 'd' }, { id: 'hit' });
+  const p1Hit = p1({ path: ['主卧'], path_matched: true });
+  await advanceCard(deps({ db, llm: new FakeLLMAdapter([p1Hit]) }), 'hit');
+  expect(getCard(db, 'hit')!.needsConfirm).toBe(false);
 });
 
-test('待办与流程类不追问位置，path 恒为 null', async () => {
+test('内容里没有位置时：path 保持 null，也不去追问位置（改由 ask 决定）', async () => {
   const db = makeDb();
   createDraft({ db }, { source: 'text', text: '该买猫砂了' }, { id: 'c1' });
   const llm = new FakeLLMAdapter([
-    p1({ structure_type: 'todo', category: '待买补货', path: null, path_matched: false, ask: '' }),
+    p1({ category: '待买补货', path: null, path_matched: false, ask: '' }),
   ]);
   await advanceCard(deps({ db, llm }), 'c1');
 
   const card = getCard(db, 'c1')!;
-  expect(card.structureType).toBe('todo');
   expect(card.pathIds).toBeNull();
+  expect(card.pathNames).toBeNull();
   expect(card.ask).toBeNull();
+  // 位置树不该被凭空塞进节点
+  expect(listLocations(db)).toHaveLength(0);
 });
 
 test('ask 与 path_suggestion 会落库，供记忆流展示补问入口', async () => {
@@ -517,13 +528,12 @@ test('重新生成 desc 只改 desc，用户编辑过的字段不被模型覆盖
       status: 'active',
       entity: '用户改过的名字',
       categoryId: 'cat_procedure',
-      structureType: 'procedure',
       transcript: '一段口述',
       desc: '旧描述',
     }),
   );
   const llm = new FakeLLMAdapter([
-    p1({ entity: '模型想改的名字', category: '物品存取', structure_type: 'item', desc: '新描述' }),
+    p1({ entity: '模型想改的名字', category: '物品存取', desc: '新描述' }),
   ]);
 
   const r = await regenerateDesc(deps({ db, llm }), 'c1');
@@ -532,7 +542,6 @@ test('重新生成 desc 只改 desc，用户编辑过的字段不被模型覆盖
   const card = getCard(db, 'c1')!;
   expect(card.desc).toBe('新描述');
   expect(card.entity).toBe('用户改过的名字');
-  expect(card.structureType).toBe('procedure');
   expect(card.categoryId).toBe('cat_procedure');
 
   // 是纯文本调用，不带图

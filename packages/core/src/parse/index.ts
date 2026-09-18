@@ -34,7 +34,6 @@ export function parseModelJson<T>(
 }
 
 export const P1OutputSchema = z.object({
-  structure_type: z.enum(['item', 'todo', 'procedure']),
   category: z.string().nullable().catch(null),
   entity: z.string().catch(''),
   aliases: z.array(z.string()).catch([]),

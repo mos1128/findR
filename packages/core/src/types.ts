@@ -1,4 +1,3 @@
-export type StructureType = 'item' | 'todo' | 'procedure';
 export type CardStatus = 'pending_transcript' | 'pending' | 'active' | 'archived';
 export type SourceKind = 'photo' | 'voice' | 'text';
 
@@ -7,23 +6,30 @@ export interface StepItem {
   done: boolean;
 }
 
+/**
+ * 一条记忆卡片。
+ *
+ * 关于「卡片长什么样」，这里刻意**只有 `categoryId` 一个组织维度**：
+ * 早期版本还有 `structureType`（item/todo/procedure）与三个业务状态
+ * （`itemStatus`/`todoStatus`/`procedureStatus`），用来决定字段必填性和卡片强调色。
+ * 真机验证后确认这套东西对检索零影响、又逼着用户理解一套模型自己的概念，
+ * 已于 2026-09-18 整体移除（见 `db/schema.ts` 的 v2 迁移）。
+ *
+ * 代价与替代：原来「物品必须有位置」靠 `structureType === 'item'` 判定，
+ * 现在改成**由内容驱动** —— 模型在内容确实提到存放位置时才填 `path`，
+ * 确实是一串步骤时才填 `steps`，缺关键信息则由 `ask` 追问。
+ * 这比按类型一刀切更贴近真实口述（「把护照放回主卧抽屉」既是待办也带位置）。
+ */
 export interface MemoryCard {
   id: string;
   status: CardStatus;
   needsConfirm: boolean;
   needsOrganize: boolean;
-  structureType: StructureType | null;
   categoryId: string | null;
   entity: string | null;
   pathIds: string[] | null;
   pathNames: string | null;
-  itemStatus: 'in_stock' | 'lent' | 'used' | 'discarded' | null;
-  todoStatus: 'open' | 'done' | 'dropped' | null;
-  procedureStatus: 'draft' | 'ready' | null;
   steps: StepItem[] | null;
-  relatedPerson: string | null;
-  dueAt: string | null;
-  cycle: string | null;
   transcript: string | null;
   desc: string | null;
   images: string[] | null;
@@ -45,12 +51,17 @@ export interface MemoryCard {
   updatedAt: string;
 }
 
+/**
+ * 分类：用户唯一的组织桶，也是 P1 自动路由的目标池。
+ *
+ * 以前每个分类还绑一个 `structureType` 来推导卡片形状，现已去掉 ——
+ * 分类就是分类，卡片是「东西 / 待办 / 流程」由内容自己决定。
+ */
 export interface Category {
   id: string;
   name: string;
   emoji: string | null;
   description: string | null;
-  structureType: StructureType;
   sort: number;
   isPreset: boolean;
 }

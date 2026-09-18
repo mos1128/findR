@@ -25,7 +25,7 @@ test('没有 JSON 时失败且不抛异常', () => {
 });
 
 test('P1 schema：字段缺失走宽松缺省', () => {
-  const r = parseModelJson('{"structure_type":"item","entity":"护照"}', P1OutputSchema);
+  const r = parseModelJson('{"category":"物品存取","entity":"护照"}', P1OutputSchema);
   expect(r.ok).toBe(true);
   if (r.ok) {
     expect(r.value.desc).toBe('');
@@ -35,6 +35,15 @@ test('P1 schema：字段缺失走宽松缺省', () => {
   }
 });
 
-test('P1 schema：结构类型非法则失败（触发待整理路径）', () => {
-  expect(parseModelJson('{"structure_type":"xxx","entity":"x"}', P1OutputSchema).ok).toBe(false);
+test('P1 schema：模型多吐已废弃字段不影响解析（老提示词 / 缓存样本仍可用）', () => {
+  const r = parseModelJson(
+    '{"structure_type":"item","item_status":"in_stock","related_person":"老王","entity":"梯子"}',
+    P1OutputSchema,
+  );
+  expect(r.ok).toBe(true);
+  if (r.ok) expect(r.value.entity).toBe('梯子');
+});
+
+test('P1 schema：model 完全没给 JSON 才失败（触发待整理路径）', () => {
+  expect(parseModelJson('我不知道该怎么整理这条', P1OutputSchema).ok).toBe(false);
 });

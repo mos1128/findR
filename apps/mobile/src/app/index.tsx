@@ -155,6 +155,8 @@ export default function MemoryStreamScreen() {
   };
   const categoryName = (id: string | null) =>
     id ? (categories.find((c) => c.id === id)?.name ?? null) : null;
+  const categoryEmoji = (id: string | null) =>
+    id ? (categories.find((c) => c.id === id)?.emoji ?? null) : null;
 
   const offline = network.isConnected === false;
   const noAsr = !rt?.asr;
@@ -298,6 +300,7 @@ export default function MemoryStreamScreen() {
               card={card}
               ctx={ctx}
               categoryName={categoryName(card.categoryId)}
+              categoryEmoji={categoryEmoji(card.categoryId)}
               highlight={answer?.hitIds.includes(card.id) ?? false}
               onPress={() => router.push(`/card/${card.id}`)}
             />
