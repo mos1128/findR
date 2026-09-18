@@ -70,10 +70,11 @@ export function rowToCard(row: Record<string, unknown>): MemoryCard {
   };
 }
 
-export function insertCard(db: SqliteDriver, card: MemoryCard): void {
-  db.prepare(
-    `INSERT INTO cards (${CARD_COLS}) VALUES (${CARD_COLS.split(',').map(() => '?').join(',')})`,
-  ).run(
+const CARD_COL_LIST = CARD_COLS.split(',').map((c) => c.trim());
+
+/** cards 行的绑定值，顺序与 CARD_COLS 严格一致（insert / upsert 共用） */
+function cardValues(card: MemoryCard): unknown[] {
+  return [
     card.id,
     card.status,
     card.needsConfirm ? 1 : 0,
@@ -106,7 +107,29 @@ export function insertCard(db: SqliteDriver, card: MemoryCard): void {
     card.lastError,
     card.createdAt,
     card.updatedAt,
-  );
+  ];
+}
+
+export function insertCard(db: SqliteDriver, card: MemoryCard): void {
+  db.prepare(
+    `INSERT INTO cards (${CARD_COLS}) VALUES (${CARD_COL_LIST.map(() => '?').join(',')})`,
+  ).run(...cardValues(card));
+}
+
+/**
+ * 按 id 全字段写入，已存在则整行覆盖。
+ * 备份导入用它：导入要还原的是「那一行的完整样子」，包括 status / source / retry_count
+ * 这些不在 updateCardFields 白名单里的列（那是给用户编辑用的，不该让用户改这个）。
+ * 是否覆盖由调用方按 updated_at 判定——本函数不自己判断新旧。
+ */
+export function upsertCard(db: SqliteDriver, card: MemoryCard): void {
+  const updates = CARD_COL_LIST.filter((c) => c !== 'id')
+    .map((c) => `${c} = excluded.${c}`)
+    .join(', ');
+  db.prepare(
+    `INSERT INTO cards (${CARD_COLS}) VALUES (${CARD_COL_LIST.map(() => '?').join(',')})
+     ON CONFLICT(id) DO UPDATE SET ${updates}`,
+  ).run(...cardValues(card));
 }
 
 export function getCard(db: SqliteDriver, id: string): MemoryCard | undefined {
