@@ -3,7 +3,13 @@ import type { MemoryCard } from '../types';
 export type CardBadge =
   /** 待转写：有音频但还没转成文字 */
   | 'pending-transcript'
-  /** 待解析：素材已落盘，正在（或等待）理解 */
+  /**
+   * 待解析：素材已落盘，等待（或正在）理解。
+   *
+   * 文案刻意用「待解析」而不是「解析中」——与《需求.md》状态表的 `pending 待解析` 一致。
+   * 理由：没配模型时队列根本不会跑，卡片会无限期停在这一步，说「解析中（进行中）」是误导，
+   * 用户会一直等一个不会发生的动作（真机反馈）。
+   */
   | 'processing'
   /** 待确认：低置信 / 分类选不出 / item 缺位置 */
   | 'needs-confirm'
@@ -47,7 +53,7 @@ export function badgeLabel(badge: CardBadge, ctx: BadgeContext): string {
     case 'pending-transcript':
       return ctx.asrConfigured ? '待转写' : '待转写·未配 ASR';
     case 'processing':
-      return '解析中';
+      return '待解析';
     case 'needs-confirm':
       return '待确认';
     case 'needs-organize':

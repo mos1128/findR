@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Image } from 'expo-image';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import {
   advanceCard,
@@ -45,6 +46,13 @@ const STATUS_LABELS: Record<StructureType, { value: string[]; labels: string[] }
   procedure: { value: ['draft', 'ready'], labels: ['草稿', '可用'] },
 };
 
+/** 秒 → m:ss。duration 在音频还没加载出来时是 0，此时显示 --:-- 而不是 0:00 */
+function fmtClock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '--:--';
+  const s = Math.floor(seconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
 export default function CardDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
@@ -68,6 +76,8 @@ export default function CardDetailScreen() {
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** 「补充信息」（关联人 / 到期或周期）默认收起 —— 不是每张卡都有这些，空输入框摆着像必填 */
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const player = useAudioPlayer(card?.audioPath ? { uri: mediaUri(card.audioPath) } : null);
   const playerStatus = useAudioPlayerStatus(player);
@@ -88,6 +98,12 @@ export default function CardDetailScreen() {
     asrConfigured: !!rt.asr,
   };
   const badges = cardBadges(card);
+  const images = card.images ?? [];
+  /** 「补充信息」有值时自动展开，否则默认收起 —— 空输入框摆着会让人以为是必填 */
+  const extraFilled = !!(card.relatedPerson || card.dueAt || card.cycle);
+  const showMore = moreOpen || extraFilled;
+  /** 《场景分析.md》字段矩阵：流程类不适用「关联人」，只有物品/待办才展示 */
+  const personApplies = card.structureType !== 'procedure';
   const statusMeta = card.structureType ? STATUS_LABELS[card.structureType] : null;
   const currentStatus =
     card.structureType === 'item'
@@ -137,6 +153,12 @@ export default function CardDetailScreen() {
 
   return (
     <Screen>
+      {/*
+        详情页首屏 = 用户自己录进来的原始素材：原文 → 音频 → 照片。
+        以前这段是错的：照片**压根没渲染**（只有记忆流列表里的缩略图），
+        原文藏在「描述」面板的第 4 个输入框里，音频播放器排在第三个面板 ——
+        用户点进来第一眼看不到「我记了什么」，只看到一堆分类/状态选择器。
+      */}
       <Panel>
         <View style={styles.headerRow}>
           <Text style={[styles.title, { color: theme.text }]} numberOfLines={3}>
@@ -157,6 +179,50 @@ export default function CardDetailScreen() {
           <Text style={{ color: theme.textSecondary, fontSize: 12 }}>
             模型猜的位置：{card.pathSuggestion}
           </Text>
+        ) : null}
+
+        <SectionTitle hint="在下面「卡片文字」里可以改">原文</SectionTitle>
+        {card.transcript ? (
+          <Text style={{ color: theme.text, fontSize: 15, lineHeight: 23 }}>{card.transcript}</Text>
+        ) : (
+          <Text style={{ color: theme.textMuted, fontSize: 13, lineHeight: 19 }}>
+            {card.audioPath
+              ? '还没有文字。在下面「卡片文字 → 口述原文」里补一句，这张卡就能解析入库。'
+              : '没有原文。'}
+          </Text>
+        )}
+
+        {card.audioPath ? (
+          <View style={styles.audioRow}>
+            <Button
+              title={playerStatus.playing ? '⏸ 暂停' : '▶ 播放录音'}
+              variant="secondary"
+              compact
+              onPress={() => (playerStatus.playing ? player.pause() : player.play())}
+            />
+            <Text style={{ color: theme.textMuted, fontSize: 12 }}>
+              {fmtClock(playerStatus.currentTime)} / {fmtClock(playerStatus.duration)}
+            </Text>
+          </View>
+        ) : null}
+
+        {images.length > 0 ? (
+          <>
+            <SectionTitle hint={`${images.length} 张`}>照片</SectionTitle>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.photoStrip}>
+              {images.map((rel) => (
+                <Image
+                  key={rel}
+                  source={{ uri: mediaUri(rel) }}
+                  style={styles.photo}
+                  contentFit="cover"
+                />
+              ))}
+            </ScrollView>
+          </>
         ) : null}
       </Panel>
 
@@ -222,22 +288,6 @@ export default function CardDetailScreen() {
           ) : null}
           {card.lastError ? (
             <Text style={{ color: theme.textMuted, fontSize: 11 }}>上次错误：{card.lastError}</Text>
-          ) : null}
-        </Panel>
-      ) : null}
-
-      {card.audioPath ? (
-        <Panel>
-          <SectionTitle>录音</SectionTitle>
-          <Button
-            title={playerStatus.playing ? '暂停' : '播放'}
-            variant="secondary"
-            onPress={() => (playerStatus.playing ? player.pause() : player.play())}
-          />
-          {card.status === 'pending_transcript' ? (
-            <Text style={{ color: theme.textMuted, fontSize: 12 }}>
-              还没有文字。在下面「口述原文」里补一句，卡片就能解析入库。
-            </Text>
           ) : null}
         </Panel>
       ) : null}
@@ -325,8 +375,20 @@ export default function CardDetailScreen() {
       </Panel>
 
       <Panel>
-        <SectionTitle hint="可编辑，改完可以重新生成描述">描述</SectionTitle>
-        <Field label="desc" value={card.desc ?? ''} onChangeText={(v) => patch({ desc: v })} multiline />
+        <SectionTitle hint="改完可以重新生成描述">卡片文字</SectionTitle>
+        <Field
+          label="口述原文"
+          hint="顶部「原文」显示的就是这里的内容"
+          value={card.transcript ?? ''}
+          onChangeText={(v) => patch({ transcript: v })}
+          multiline
+        />
+        <Field
+          label="描述"
+          value={card.desc ?? ''}
+          onChangeText={(v) => patch({ desc: v })}
+          multiline
+        />
         <Field
           label="实体名"
           value={card.entity ?? ''}
@@ -341,24 +403,39 @@ export default function CardDetailScreen() {
           }
           placeholder="用、或逗号分隔"
         />
-        <Field
-          label="口述原文"
-          value={card.transcript ?? ''}
-          onChangeText={(v) => patch({ transcript: v })}
-          multiline
-        />
-        <Field
-          label="关联人"
-          value={card.relatedPerson ?? ''}
-          onChangeText={(v) => patch({ relatedPerson: v })}
-          placeholder="借给谁 / 帮谁买"
-        />
-        <Field
-          label="到期或周期"
-          value={card.dueAt ?? card.cycle ?? ''}
-          onChangeText={(v) => patch({ dueAt: v || null })}
-          placeholder="如 2026-04-01 或 半年一次"
-        />
+      </Panel>
+
+      {/*
+        关联人 / 到期或周期 不是每张卡都有（《场景分析.md》字段矩阵：流程类不适用关联人；
+        周期只对「要补货 / 要维护」的东西才有意义）。以前这两个空输入框无条件摆在最显眼处，
+        看着像必填，也让卡片显得拆得过细。收进折叠区，只有真的有值时才自动展开。
+      */}
+      <Panel>
+        <Pressable onPress={() => setMoreOpen((v) => !v)} style={styles.moreHeader}>
+          <Text
+            style={{ color: theme.textSecondary, fontSize: 13, fontWeight: '600', letterSpacing: 0.3 }}>
+            补充信息{extraFilled ? '' : '（一般不用填）'}
+          </Text>
+          <Text style={{ color: theme.record, fontSize: 13 }}>{showMore ? '收起' : '展开'}</Text>
+        </Pressable>
+        {showMore ? (
+          <View style={{ gap: Spacing.two }}>
+            {personApplies ? (
+              <Field
+                label="关联人"
+                value={card.relatedPerson ?? ''}
+                onChangeText={(v) => patch({ relatedPerson: v })}
+                placeholder="借给谁 / 帮谁买"
+              />
+            ) : null}
+            <Field
+              label="到期或周期"
+              value={card.dueAt ?? card.cycle ?? ''}
+              onChangeText={(v) => patch({ dueAt: v || null })}
+              placeholder="如 2026-04-01 或 半年一次"
+            />
+          </View>
+        ) : null}
       </Panel>
 
       {card.structureType !== 'item' ? (
@@ -555,6 +632,15 @@ const styles = StyleSheet.create({
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  audioRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  photoStrip: { gap: Spacing.two, paddingVertical: 2 },
+  photo: { width: 132, height: 132, borderRadius: Radius.sm },
+  moreHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',

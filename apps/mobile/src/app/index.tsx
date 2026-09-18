@@ -198,6 +198,26 @@ export default function MemoryStreamScreen() {
           ))}
           <Chip label="➕ 新建分类" onPress={() => router.push('/settings/categories')} />
         </View>
+
+        {/*
+          这里以前是一个 `position:'absolute', top:8` 的浮层，正好压在上面的搜索框（y≈8~42）上。
+          它只在「未配模型」时显示，而多数用户一开始都没配模型 ⇒ 搜索框被永久遮住，
+          表现为「找不到搜索入口」（真机反馈）。
+          改成正常文档流里的一行：既不会被任何东西盖住，也不必滚到列表底部才看见。
+          文案里带上「点这里」，代替原来的浮层按钮。
+        */}
+        {!llmReady ? (
+          <Pressable
+            onPress={() => router.push('/settings/provider')}
+            style={({ pressed }) => [
+              styles.topHint,
+              { backgroundColor: theme.badgeConfirmBg, opacity: pressed ? 0.75 : 1 },
+            ]}>
+            <Text style={{ color: theme.badgeConfirm, fontSize: 12, lineHeight: 17 }}>
+              还没配置模型：内容都留在本地，随时能翻找和编辑。点这里填写 →
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.list}>
@@ -298,16 +318,13 @@ export default function MemoryStreamScreen() {
         ) : null}
 
         {/* 需求 3.2：无网时先提示「先拍照，稍后补一句」，而不是让用户说完才发现转写不了。
-            没配模型时口径要变 —— 「稍后联网会自动补上解析」对不打算配模型的用户是假承诺：
-            他们永远不会自动解析，但那不代表 App 不能当本地记事本用好 */}
-        {!llmReady || offline || noAsr ? (
+            「没配模型」那一种已在顶部提示条里说明，这里不重复，否则同一屏会出现两段几乎一样的话 */}
+        {offline || noAsr ? (
           <View style={[styles.notice, { backgroundColor: theme.badgeConfirmBg }]}>
             <Text style={[styles.noticeText, { color: theme.badgeConfirm }]}>
-              {!llmReady
-                ? '还没配置模型：记下的内容都留在本地，可以随时翻找和编辑；配好模型后才会自动解析归档。'
-                : offline
-                  ? '当前无网络：先拍照或打字，稍后联网会自动补上解析。'
-                  : '还没配置 ASR：语音会先存着，之后补一句话就能解析。'}
+              {offline
+                ? '当前无网络：先拍照或打字，稍后联网会自动补上解析。'
+                : '还没配置 ASR：语音会先存着，之后补一句话就能解析。'}
             </Text>
           </View>
         ) : null}
@@ -361,15 +378,6 @@ export default function MemoryStreamScreen() {
         </View>
       ) : null}
 
-      {rt && !rt.llm ? (
-        <Pressable
-          onPress={() => router.push('/settings/provider')}
-          style={[styles.setupHint, { backgroundColor: theme.badgeConfirmBg }]}>
-          <Text style={{ color: theme.badgeConfirm, fontSize: 13 }}>
-            还没配置主模型，点这里去填写 →
-          </Text>
-        </Pressable>
-      ) : null}
     </View>
   );
 }
@@ -447,13 +455,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  setupHint: {
-    position: 'absolute',
-    left: Spacing.three,
-    right: Spacing.three,
-    top: 8,
+  /**
+   * 「未配模型」提示条：必须在正常文档流里。
+   * 曾经写成 `position:'absolute', top:8`，正好盖住上面的搜索框 —— 别再改回浮层。
+   */
+  topHint: {
     borderRadius: Radius.md,
-    padding: Spacing.three,
-    alignItems: 'center',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
   },
 });

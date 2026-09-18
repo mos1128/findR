@@ -20,6 +20,12 @@ test('未配 ASR 时「待转写」的文案改为提示配置', () => {
   expect(badgeLabel('pending-transcript', NO_ASR)).toBe('待转写·未配 ASR');
 });
 
+test('pending 的文案是「待解析」而不是「解析中」', () => {
+  // 与《需求.md》状态表对齐（pending = 待解析）。
+  // 没配模型时卡片会一直停在这一步，写成「解析中」会让人以为正在跑、白等。
+  expect(badgeLabel('processing', CTX)).toBe('待解析');
+});
+
 test('待确认与待整理各自独立', () => {
   expect(cardBadges(makeCard({ id: 'a', needsConfirm: true }))).toEqual(['needs-confirm']);
   expect(cardBadges(makeCard({ id: 'b', needsOrganize: true }))).toEqual(['needs-organize']);
