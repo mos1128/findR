@@ -290,7 +290,10 @@ export function resolveCategoryId(db: SqliteDriver, name: string): string | null
   return loose?.id ?? null;
 }
 
-/** 按位置名逐级匹配已有位置树；任一级失配返回 null（由用户确认后写入） */
+/**
+ * 按位置名逐级匹配已有位置树；任一级失配返回 null。
+ * **只读、不建节点** —— 需要「匹配不到就创建」的场景请用 ensurePath。
+ */
 export function resolvePath(
   db: SqliteDriver,
   names: string[],
@@ -306,6 +309,74 @@ export function resolvePath(
     parent = row.id;
   }
   return { ids, namesStr: names.join('/') };
+}
+
+/** 在指定父节点下找同名（或同别名）的位置 id；找不到返回 undefined */
+function findLocationIdUnder(
+  db: SqliteDriver,
+  name: string,
+  parentId: string | null,
+): string | undefined {
+  // 别名优先：模型或用户可能用「睡房」指代已经建好的「主卧」
+  const viaAlias = db
+    .prepare(
+      `SELECT l.id FROM aliases a JOIN locations l ON l.id = a.location_id
+       WHERE a.kind = 'location' AND a.name = ? AND l.parent_id IS ?`,
+    )
+    .get(name, parentId) as { id: string } | undefined;
+  if (viaAlias) return viaAlias.id;
+
+  const direct = db
+    .prepare('SELECT id FROM locations WHERE name = ? AND parent_id IS ?')
+    .get(name, parentId) as { id: string } | undefined;
+  return direct?.id;
+}
+
+/** 同级下一个排序值（表上有 (COALESCE(parent_id,''), name) 唯一索引，重名插不进去） */
+function nextLocationSort(db: SqliteDriver, parentId: string | null): number {
+  const row = db
+    .prepare('SELECT MAX(sort) AS m FROM locations WHERE parent_id IS ?')
+    .get(parentId) as { m: number | null } | undefined;
+  return (row?.m ?? -1) + 1;
+}
+
+/**
+ * 逐级解析位置路径，**缺失的层级直接落库新建**，返回实际使用的 id 链。
+ *
+ * 为什么不是「失配就交给用户去建」：位置树本该由解析结果**增量长出来** ——
+ * 用户说「放在次卧的左侧床头柜了」，有就复用、没有就新建。让用户先去设置里
+ * 手工把房间建好、再回来点选，等于把「模型会产出什么词」这个无从预知的责任
+ * 推给了用户；而位置树一空，连选都没得选（旧实现就是这样把用户堵死的）。
+ * 用户仍然可以改（卡片里的「位置」一栏），但那从「必须」变成了「可选」。
+ *
+ * created 列出本次真正新建的层级名：界面据此标出「新位置」并让用户确认一次，
+ * 避免模型偶尔产出奇怪层级时无声无息地污染位置树。
+ */
+export function ensurePath(
+  db: SqliteDriver,
+  rawNames: string[],
+  idGen: () => string = makeId,
+): { ids: string[]; namesStr: string; created: string[] } {
+  const names = rawNames.map((n) => n.trim()).filter((n) => n.length > 0);
+  const ids: string[] = [];
+  const created: string[] = [];
+  let parent: string | null = null;
+
+  for (const name of names) {
+    const existing = findLocationIdUnder(db, name, parent);
+    if (existing) {
+      ids.push(existing);
+      parent = existing;
+      continue;
+    }
+    const id = idGen();
+    upsertLocation(db, { id, parentId: parent, name, sort: nextLocationSort(db, parent) });
+    ids.push(id);
+    created.push(name);
+    parent = id;
+  }
+
+  return { ids, namesStr: names.join('/'), created };
 }
 
 /** 别名命中后把实体规范名补进检索词 */

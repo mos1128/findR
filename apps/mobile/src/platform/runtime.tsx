@@ -16,6 +16,7 @@ import {
   toAsrProviderConfig,
   toProviderConfig,
   type AdvanceDeps,
+  type AnswerResult,
   type AsrSettings,
   type CaptureSettings,
   type LlmSettings,
@@ -123,11 +124,18 @@ export function requireDeps(rt: RuntimeState): AdvanceDeps {
   return built.deps;
 }
 
-/** L1 检索。core 的 searchCards 自带无网兜底，调用失败也能用原始 query 直查 */
+/**
+ * L1 检索。**没有模型也要能用** —— 字面检索（FTS + LIKE）不依赖模型。
+ * 未配模型时传 null 让 core 直接走字面兜底，不再抛错（抛了连兜底都没了）。
+ */
 export async function runSearch(rt: RuntimeState, query: string) {
   const built = buildAdvanceDeps(rt);
-  if (!built.ok) throw new Error(built.error);
-  return searchCards({ db: rt.driver, llm: built.deps.llm, cfg: built.deps.cfg }, query);
+  return searchCards(
+    built.ok
+      ? { db: rt.driver, llm: built.deps.llm, cfg: built.deps.cfg }
+      : { db: rt.driver, llm: null, cfg: null },
+    query,
+  );
 }
 
 /**

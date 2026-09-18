@@ -1,5 +1,12 @@
 import { expect, test } from 'vitest';
-import { getCard, insertCard, listQueueCards, MAX_AUTO_RETRY } from '../src/db/repository';
+import {
+  ensurePath,
+  getCard,
+  insertCard,
+  listLocations,
+  listQueueCards,
+  MAX_AUTO_RETRY,
+} from '../src/db/repository';
 import { FakeLLMAdapter } from '../src/providers/fake';
 import type { MediaIO } from '../src/providers/media';
 import type {
@@ -556,4 +563,38 @@ test('ingestCapture 一次走完落盘后的全流程', async () => {
   );
   expect(card.id).toBe('fixed-id');
   expect(card.status).toBe('active');
+});
+
+// ─────────────────────────────────────────────────────────────
+// 位置树增量维护（问题：不该要求用户先去手工建位置）
+// ─────────────────────────────────────────────────────────────
+
+test('解析出的位置自动建树：新建了层级就要用户确认一次', async () => {
+  const db = makeDb();
+  const llm = new FakeLLMAdapter([p1({ path: ['主卧', '衣柜'], confidence: 0.9 })]);
+  const card = await ingestCapture(deps({ db, llm }), {
+    source: 'text',
+    text: '手电筒放主卧衣柜',
+  });
+
+  expect(card.pathNames).toBe('主卧/衣柜');
+  expect(card.pathMatched).toBe(false); // 有新建 ⇒ 没命中已有树
+  expect(card.needsConfirm).toBe(true); // 新位置对不对，让用户过一眼
+  expect(listLocations(db).map((l) => l.name).sort()).toEqual(['主卧', '衣柜']);
+});
+
+test('位置已存在时复用，不再要求用户确认', async () => {
+  const db = makeDb();
+  // 上次已经长出来的树
+  ensurePath(db, ['主卧', '衣柜']);
+
+  const llm = new FakeLLMAdapter([p1({ path: ['主卧', '衣柜'], confidence: 0.9 })]);
+  const card = await ingestCapture(deps({ db, llm }), {
+    source: 'text',
+    text: '手电筒放主卧衣柜',
+  });
+
+  expect(card.pathMatched).toBe(true);
+  expect(card.needsConfirm).toBe(false);
+  expect(listLocations(db)).toHaveLength(2); // 没有因为重复解析又长出一套
 });

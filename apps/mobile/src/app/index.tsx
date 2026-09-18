@@ -9,7 +9,14 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { CardRow } from '@/ui/CardRow';
 import { Button, Chip, EmptyState } from '@/ui/kit';
-import { runAnswer, runQueueNow, runSearch, useRuntime, visionSupported } from '@/platform/runtime';
+import {
+  llmConfigured,
+  runAnswer,
+  runQueueNow,
+  runSearch,
+  useRuntime,
+  visionSupported,
+} from '@/platform/runtime';
 import { useLongPressRecorder } from '@/capture/recorder';
 import { persistCapture } from '@/capture/submit';
 
@@ -27,11 +34,15 @@ export default function MemoryStreamScreen() {
   const [results, setResults] = useState<MemoryCard[] | null>(null);
   const [answer, setAnswer] = useState<AnswerResult | null>(null);
   const [answering, setAnswering] = useState(false);
+  /** 本次检索实际走了哪条路（未配模型 / 模型不可达 / 意图不明）—— 空结果时必须说清原因 */
+  const [searchNote, setSearchNote] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const queueRunning = useRef(false);
+  /** 有可用的主模型配置（模型名 + 可选地址；API Key 不参与判定）—— 决定检索走哪条路 */
+  const llmReady = llmConfigured(rt?.llm ?? null);
 
   const reload = useCallback(() => {
     if (!rt) return;
@@ -79,10 +90,24 @@ export default function MemoryStreamScreen() {
     try {
       const res = await runSearch(rt, q);
       setResults(res.cards);
-      // 需求 5.3：本地无结果时自动组织一次答案，让模型说明「没找到 + 还缺什么线索」
-      if (res.cards.length === 0) void requestAnswer(q, []);
-    } catch {
+      // 没配模型时检索**照样能用**（字面兜底），但结果比有模型时弱，
+      // 空结果尤其容易被误读成「卡片丢了」—— 所以必须说清走的是哪条路。
+      if (res.unclear) {
+        setSearchNote('模型没听懂这句话，换个说法试试。');
+      } else if (res.usedFallback) {
+        setSearchNote(
+          llmReady
+            ? '模型当前不可达，已退化为按关键词字面检索（没有同义词扩展与分类/位置约束）。'
+            : '还没配置模型，按关键词字面检索。多个关键词用空格分开会更准。',
+        );
+      } else {
+        setSearchNote(null);
+      }
+      // 需求 5.3：本地无结果时自动组织一次答案。没有模型就别触发 —— 那必然是一次失败请求。
+      if (res.cards.length === 0 && llmReady) void requestAnswer(q, []);
+    } catch (e) {
       setResults([]);
+      setSearchNote(e instanceof Error ? e.message : '检索失败');
     } finally {
       setSearching(false);
     }
@@ -197,7 +222,8 @@ export default function MemoryStreamScreen() {
               检索结果 {results.length} 条
             </Text>
             <View style={styles.headerActions}>
-              {results.length > 0 && !answer ? (
+              {/* 没有模型时不给「AI 总结」入口 —— 点了必然失败 */}
+              {results.length > 0 && !answer && llmReady ? (
                 <Button
                   title="AI 总结"
                   variant="ghost"
@@ -216,6 +242,14 @@ export default function MemoryStreamScreen() {
                 }}
               />
             </View>
+          </View>
+        ) : null}
+
+        {/* 走的是哪条检索路必须说清楚：没配模型 / 模型不可达时结果会明显变弱，
+            不说的话用户会把「字面没搜到」误读成「卡片丢了」 */}
+        {results && searchNote ? (
+          <View style={[styles.notice, { backgroundColor: theme.surfaceAlt }]}>
+            <Text style={[styles.noticeText, { color: theme.textSecondary }]}>{searchNote}</Text>
           </View>
         ) : null}
 
@@ -255,19 +289,25 @@ export default function MemoryStreamScreen() {
             title={results ? '没找到相关记忆' : '还没有记忆'}
             hint={
               results
-                ? '换个说法试试，或者先看看底部怎么记一笔'
+                ? llmReady
+                  ? '换个说法试试，或者先看看底部怎么记一笔'
+                  : '当前没有可用模型，只做了关键词字面匹配。试试更具体的词，或把几个关键词用空格分开，比如「护照 柜子」。'
                 : '用底部的相机、键盘或长按麦克风记下第一笔'
             }
           />
         ) : null}
 
-        {/* 需求 3.2：无网时先提示「先拍照，稍后补一句」，而不是让用户说完才发现转写不了 */}
-        {offline || noAsr ? (
+        {/* 需求 3.2：无网时先提示「先拍照，稍后补一句」，而不是让用户说完才发现转写不了。
+            没配模型时口径要变 —— 「稍后联网会自动补上解析」对不打算配模型的用户是假承诺：
+            他们永远不会自动解析，但那不代表 App 不能当本地记事本用好 */}
+        {!llmReady || offline || noAsr ? (
           <View style={[styles.notice, { backgroundColor: theme.badgeConfirmBg }]}>
             <Text style={[styles.noticeText, { color: theme.badgeConfirm }]}>
-              {offline
-                ? '当前无网络：先拍照或打字，稍后联网会自动补上解析。'
-                : '还没配置 ASR：语音会先存着，之后补一句话就能解析。'}
+              {!llmReady
+                ? '还没配置模型：记下的内容都留在本地，可以随时翻找和编辑；配好模型后才会自动解析归档。'
+                : offline
+                  ? '当前无网络：先拍照或打字，稍后联网会自动补上解析。'
+                  : '还没配置 ASR：语音会先存着，之后补一句话就能解析。'}
             </Text>
           </View>
         ) : null}

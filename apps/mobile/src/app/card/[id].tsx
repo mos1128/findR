@@ -270,11 +270,23 @@ export default function CardDetailScreen() {
         {card.structureType === 'item' ? (
           <>
             <SectionTitle hint="仅物品类必填">位置</SectionTitle>
+            {/*
+              位置的来源已经变了：解析卡片时自动匹配/新建，用户来这里只是「看一眼、改一改」。
+              旧文案写的是「从已有位置树里选」，配合一个空位置树，等于逼用户先去手工建房间。
+            */}
             <ListRow
-              title={card.pathNames ?? '未选择'}
-              subtitle="从已有位置树里选，避免「主卧/主卧室」分裂成两条路径"
+              title={card.pathNames ?? '还没记录位置'}
+              subtitle={
+                card.pathNames
+                  ? card.pathMatched === false
+                    ? '解析时新建的位置，不对可以改'
+                    : '解析时自动记录；点这里可以改到别处'
+                  : '解析这条卡片时会自动记录；也可以现在手动选一个'
+              }
               onPress={() => setPickerOpen(true)}
-              right={<Text style={{ color: theme.record }}>选择</Text>}
+              right={
+                <Text style={{ color: theme.record }}>{card.pathNames ? '修改' : '选择'}</Text>
+              }
             />
             {card.pathNames ? (
               <Button
@@ -478,13 +490,19 @@ function LocationPickerModal({
 
   const depth = (node: LocationNode) => pathOf(node).ids.length;
 
+  // 守卫不能省：这个组件是被无条件渲染的（<LocationPickerModal visible={pickerOpen}>），
+  // 真正决定显隐的是下面 Modal 的 visible 属性。CameraModal 同样有这道守卫。
+  if (!visible) return null;
+
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
+    // ⚠️ 必须写 visible={visible}，绝不能写成布尔简写 `<Modal visible ...>` ——
+    // 那是 visible={true}，弹窗会从进入页面起永久盖在最上层：视觉上一切正常，
+    // 但全屏触摸都被它接住，关闭按钮与返回手势全部失效，用户只能杀进程。
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: theme.background }}>
         {/*
           顶部安全区必须手动补：Android 开了边到边（gradle.properties edgeToEdgeEnabled=true），
-          RN 的 Modal 是独立窗口、也会从 y=0 开始画，标题和「关闭」会落进状态栏底下 ——
-          而状态栏会吃掉那一带的触摸，于是整屏一个可点的元素都没有，用户只能杀进程。
+          RN 的 Modal 是独立窗口、也会从 y=0 开始画，标题和「关闭」会落进状态栏底下。
           CameraModal 是同一个坑，那边已经这么补了。
         */}
         <View
@@ -503,7 +521,7 @@ function LocationPickerModal({
           }}>
           {locations.length === 0 ? (
             <Text style={{ color: theme.textSecondary }}>
-              位置树还是空的。先去「设置 → 位置树」建好房间，再回来选。
+              还没有位置。解析卡片时会自动创建；也可以先去「设置 → 位置树」手动加一个。
             </Text>
           ) : (
             locations.map((l) => {

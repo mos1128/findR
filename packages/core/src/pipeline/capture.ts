@@ -1,6 +1,7 @@
 import type { SqliteDriver } from '../db/driver';
 import {
   applyParseResult,
+  ensurePath,
   getCard,
   insertCard,
   listCategories,
@@ -10,7 +11,6 @@ import {
   markPlainCard,
   markRetry,
   resolveCategoryId,
-  resolvePath,
   setTranscript,
   setVisionAnalyzed,
 } from '../db/repository';
@@ -124,7 +124,7 @@ export function createDraft(
 }
 
 // ─────────────────────────────────────────────────────────────
-// 理解步骤：纯计算 + 一次模型调用，不写库。
+// 理解步骤：一次模型调用，外加位置树的增量维护（会写 locations 表）。
 // 抽出来是为了让「对已入库卡片重新理解」不必先把卡片降级成草稿。
 // ─────────────────────────────────────────────────────────────
 
@@ -194,11 +194,17 @@ export async function runUnderstanding(
 
   const out = parsed.value;
   const categoryId = out.category ? resolveCategoryId(deps.db, out.category) : null;
-  const path = out.structure_type === 'item' && out.path ? resolvePath(deps.db, out.path) : null;
+  // item 的位置：匹配得到就复用，匹配不到就**新建**。位置树应当由解析结果增量长出来，
+  // 而不是要求用户先去设置页手工建好房间再回来选（那等于把「模型会产出什么词」推给用户猜）
+  const path =
+    out.structure_type === 'item' && out.path
+      ? ensurePath(deps.db, out.path, deps.idGen ?? makeId)
+      : null;
   const needsConfirm =
     (out.confidence != null && out.confidence < (deps.confirmThreshold ?? 0.6)) ||
     categoryId === null ||
-    (out.structure_type === 'item' && !path);
+    // item 却没路径 ⇒ 得让用户补；路径里含新建层级 ⇒ 新位置对不对要用户过一眼
+    (out.structure_type === 'item' && (!path || path.created.length > 0));
 
   return {
     kind: 'parsed',
@@ -217,7 +223,8 @@ export async function runUnderstanding(
       aliases: out.aliases,
       ask: out.ask || null,
       pathSuggestion: out.path_suggestion ?? null,
-      pathMatched: out.path_matched ?? null,
+      // 以「本次真的新建过节点」为准，比模型自报可靠：新建过 ⇒ 没匹配上已有树
+      pathMatched: path ? path.created.length === 0 : (out.path_matched ?? null),
     },
   };
 }

@@ -3,6 +3,7 @@ import { executeSearch, insertCard } from '../src/db/repository';
 import type { P2Output } from '../src/parse';
 import type { BuiltSearch } from '../src/search/builder';
 import { buildRawSearch, buildSearch, escapeLike, quoteFts, splitTerms } from '../src/search/builder';
+import { searchCards } from '../src/search/service';
 import { makeCard, makeDb } from './helpers';
 
 const EMPTY: BuiltSearch = {
@@ -65,8 +66,32 @@ test('archived 卡不进检索结果', () => {
   expect(hits).toEqual([]);
 });
 
-test('buildRawSearch：整句按标点切分', () => {
+test('buildRawSearch：整句先按标点切，再丢掉虚词', () => {
   const b = buildRawSearch('我那件厚外套，放哪了？');
-  expect(b.ftsExpr).toContain('厚外套');
-  expect(b.ftsExpr).toContain('放哪了');
+  expect(b.ftsExpr).toContain('我那件厚外套');
+  // 「了」是虚词：留着的话「放哪了」会变成一句无从匹配的短语，去掉后才可能命中卡片原文
+  expect(b.ftsExpr ?? '').not.toContain('放哪了');
+  expect(b.likeTerms).toContain('放哪');
+});
+
+test('未配模型时字面检索照常可用，不再抛错', async () => {
+  const db = makeDb();
+  insertCard(db, makeCard({ id: 'passport', entity: '护照', desc: '护照放在书房抽屉' }));
+
+  // 显式 null 与整个字段缺失都要能用 —— 与「配了模型但端点不通」殊途同归
+  const explicit = await searchCards({ db, llm: null, cfg: null }, '护照');
+  expect(explicit.cards.map((c) => c.id)).toEqual(['passport']);
+  expect(explicit.usedFallback).toBe(true);
+
+  const omitted = await searchCards({ db }, '护照');
+  expect(omitted.cards.map((c) => c.id)).toEqual(['passport']);
+  expect(omitted.usedFallback).toBe(true);
+});
+
+test('未配模型时中文整句也能搜到（虚词切掉后落到实词上）', async () => {
+  const db = makeDb();
+  insertCard(db, makeCard({ id: 'passport', entity: '护照', desc: '护照放在书房抽屉' }));
+  // 旧实现把整句当一个 8 字短语 ⇒ 连续子串对不上 ⇒ 0 条，离线搜索形同虚设
+  const res = await searchCards({ db }, '我的护照在哪');
+  expect(res.cards.map((c) => c.id)).toEqual(['passport']);
 });

@@ -52,7 +52,8 @@ export function CameraModal({
   const granted = permission?.granted ?? false;
 
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
+    // 同上：显式传值，不要用布尔简写（简写等于恒 true，弹窗关不掉）
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={[styles.root, { backgroundColor: '#000000' }]}>
         {granted ? (
           <CameraView ref={cameraRef} style={styles.preview} facing="back" />

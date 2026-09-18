@@ -150,10 +150,11 @@ export default function LocationsScreen() {
       <Panel>
         <SectionTitle hint="房间 → 家具 → 容器，层级用父子关系表达">位置树</SectionTitle>
         <Text style={{ color: theme.textMuted, fontSize: 11, lineHeight: 16 }}>
-          位置名是检索质量的命脉：模型只会从这棵树里选路径，匹配不到才交给你确认。
+          位置会在解析卡片时自动长出来：说「次卧左侧床头柜」，没有就建、有就复用。这里是查看和整理的地方
+          —— 改名、调层级、删除。位置名越规整，检索越准。
         </Text>
         {locations.length === 0 ? (
-          <EmptyState title="还没有位置" hint="先建几个房间，比如「主卧」「书房」" />
+          <EmptyState title="还没有位置" hint="解析第一张带位置的卡片时会自动建，也可以现在手动加一个" />
         ) : (
           renderTree(null, 0)
         )}
@@ -186,6 +187,10 @@ export default function LocationsScreen() {
 
       <Panel>
         <SectionTitle>说明</SectionTitle>
+        <ListRow
+          title="自动新建"
+          subtitle="解析卡片时，匹配不到的位置会自动建出来；卡片上会标出「新位置」，可以改选"
+        />
         <ListRow title="重命名" subtitle="长按任一位置即可改名；改完会自动刷新卡片里的位置串" />
         <ListRow title="删除限制" subtitle="有子节点或仍被卡片引用的位置不允许删除" />
       </Panel>
