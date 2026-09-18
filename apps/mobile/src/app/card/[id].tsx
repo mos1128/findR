@@ -31,6 +31,7 @@ import {
   type StepItem,
   type StructureType,
 } from '@findr/core';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Radius, Spacing, structureLabel } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -460,6 +461,7 @@ function LocationPickerModal({
   onPick: (ids: string[], names: string) => void;
 }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const byId = useMemo(() => new Map(locations.map((l) => [l.id, l])), [locations]);
 
   const pathOf = (node: LocationNode) => {
@@ -479,11 +481,26 @@ function LocationPickerModal({
   return (
     <Modal visible animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: theme.background }}>
-        <View style={[styles.modalHeader, { borderColor: theme.border }]}>
+        {/*
+          顶部安全区必须手动补：Android 开了边到边（gradle.properties edgeToEdgeEnabled=true），
+          RN 的 Modal 是独立窗口、也会从 y=0 开始画，标题和「关闭」会落进状态栏底下 ——
+          而状态栏会吃掉那一带的触摸，于是整屏一个可点的元素都没有，用户只能杀进程。
+          CameraModal 是同一个坑，那边已经这么补了。
+        */}
+        <View
+          style={[
+            styles.modalHeader,
+            { borderColor: theme.border, paddingTop: insets.top + Spacing.two },
+          ]}>
           <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>选择位置</Text>
           <Button title="关闭" variant="ghost" compact onPress={onClose} />
         </View>
-        <ScrollView contentContainerStyle={{ padding: Spacing.three, gap: Spacing.one }}>
+        <ScrollView
+          contentContainerStyle={{
+            padding: Spacing.three,
+            gap: Spacing.one,
+            paddingBottom: Spacing.three + insets.bottom,
+          }}>
           {locations.length === 0 ? (
             <Text style={{ color: theme.textSecondary }}>
               位置树还是空的。先去「设置 → 位置树」建好房间，再回来选。
