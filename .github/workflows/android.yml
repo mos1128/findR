@@ -24,12 +24,31 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
+      # 刻意不用 android-actions/setup-android：它认不出当前 runner 镜像自带的
+      # cmdline-tools 12.0（判定为「Wrong version」），会自作主张再下一份，
+      # 然后在 sdkmanager --licenses 那步失败。ubuntu 镜像本来就预装了完整 SDK，
+      # 这里只把实际情况打出来，真缺东西时能一眼看见。
+      - name: Check preinstalled Android SDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-<未设置>}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<未设置>}"
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -z "$sdk" ] || [ ! -d "$sdk" ]; then
+            echo "::error::runner 上没有 Android SDK，需要另找安装方式"
+            exit 1
+          fi
+          echo "--- platforms ---"; ls "$sdk/platforms" || true
+          echo "--- build-tools ---"; ls "$sdk/build-tools" || true
+          echo "--- licenses ---"; ls "$sdk/licenses" || true
+          if [ ! -d "$sdk/licenses" ]; then
+            echo "licenses 目录不存在，尝试用镜像自带的 sdkmanager 接受一次"
+            yes | "$sdk/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+          fi
 
       - uses: gradle/actions/setup-gradle@v4
 
