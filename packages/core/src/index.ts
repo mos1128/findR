@@ -5,6 +5,7 @@ export * from './db/migrate';
 export * from './db/repository';
 export * from './providers/types';
 export * from './providers/fake';
+export * from './providers/anthropic';
 export * from './parse';
 export * from './prompts/templates';
 export * from './prompts/render';

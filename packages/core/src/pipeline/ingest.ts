@@ -8,6 +8,7 @@ import {
   makeId,
   markNeedsOrganize,
   markRetry,
+  resolveCategoryId,
   resolvePath,
 } from '../db/repository';
 import { P1OutputSchema, parseModelJson } from '../parse';
@@ -100,20 +101,18 @@ export async function ingestText(
       return getCard(deps.db, id)!;
     }
     const out = parsed.value;
-    const category = out.category
-      ? (categories.find((c) => c.name === out.category) ?? null)
-      : null;
+    const categoryId = out.category ? resolveCategoryId(deps.db, out.category) : null;
     const path = out.structure_type === 'item' && out.path ? resolvePath(deps.db, out.path) : null;
     const needsConfirm =
       (out.confidence != null && out.confidence < (deps.confirmThreshold ?? 0.6)) ||
-      !category ||
+      categoryId === null ||
       (out.structure_type === 'item' && !path);
     applyParseResult(
       deps.db,
       id,
       {
         structureType: out.structure_type,
-        categoryId: category?.id ?? null,
+        categoryId,
         entity: out.entity,
         pathIds: path?.ids ?? null,
         pathNames: path?.namesStr ?? null,

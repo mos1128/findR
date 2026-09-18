@@ -206,11 +206,22 @@ export function upsertLocation(db: SqliteDriver, node: LocationNode): void {
   ).run(node.id, node.parentId, node.name, node.sort);
 }
 
+function normalizeCategoryName(s: string): string {
+  return s.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, '').toLowerCase();
+}
+
+/** 分类名匹配（容忍模型回显带 emoji / 空白 / 标点的变体） */
 export function resolveCategoryId(db: SqliteDriver, name: string): string | null {
-  const row = db.prepare('SELECT id FROM categories WHERE name = ?').get(name) as
-    | { id: string }
-    | undefined;
-  return row ? row.id : null;
+  const rows = listCategories(db);
+  const exact = rows.find((c) => c.name === name);
+  if (exact) return exact.id;
+  const target = normalizeCategoryName(name);
+  if (!target) return null;
+  const loose = rows.find((c) => {
+    const n = normalizeCategoryName(c.name);
+    return n.length > 0 && (n === target || target.includes(n) || n.includes(target));
+  });
+  return loose?.id ?? null;
 }
 
 /** 按位置名逐级匹配已有位置树；任一级失配返回 null（由用户确认后写入） */
