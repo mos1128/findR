@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import {
+  answerFromCards,
   capabilitiesStale,
   effectiveVision,
   makeAsrAdapter,
@@ -18,6 +19,7 @@ import {
   type AsrSettings,
   type CaptureSettings,
   type LlmSettings,
+  type MemoryCard,
   type PipelineSettings,
   type QueueRunResult,
   type SqliteDriver,
@@ -126,6 +128,16 @@ export async function runSearch(rt: RuntimeState, query: string) {
   const built = buildAdvanceDeps(rt);
   if (!built.ok) throw new Error(built.error);
   return searchCards({ db: rt.driver, llm: built.deps.llm, cfg: built.deps.cfg }, query);
+}
+
+/**
+ * L2 答案组织。按需求 5.3 只在「本地无结果」或「用户手动触发」时调用——
+ * 每次搜索都跑会白花一次模型调用，而 L1 的卡片列表本身往往就够用了。
+ */
+export async function runAnswer(rt: RuntimeState, query: string, cards: MemoryCard[]) {
+  const built = buildAdvanceDeps(rt);
+  if (!built.ok) throw new Error(built.error);
+  return answerFromCards({ llm: built.deps.llm, cfg: built.deps.cfg }, query, cards);
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { listCards, listCategories, type Category, type MemoryCard } from '@findr/core';
+import { listCards, listCategories, type AnswerResult, type Category, type MemoryCard } from '@findr/core';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNetworkState } from 'expo-network';
 
@@ -9,7 +9,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { CardRow } from '@/ui/CardRow';
 import { Button, Chip, EmptyState } from '@/ui/kit';
-import { runQueueNow, runSearch, useRuntime, visionSupported } from '@/platform/runtime';
+import { runAnswer, runQueueNow, runSearch, useRuntime, visionSupported } from '@/platform/runtime';
 import { useLongPressRecorder } from '@/capture/recorder';
 import { persistCapture } from '@/capture/submit';
 
@@ -25,6 +25,8 @@ export default function MemoryStreamScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<MemoryCard[] | null>(null);
+  const [answer, setAnswer] = useState<AnswerResult | null>(null);
+  const [answering, setAnswering] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -64,14 +66,30 @@ export default function MemoryStreamScreen() {
 
   const onSearch = async () => {
     if (!rt || !query.trim()) return;
+    const q = query.trim();
     setSearching(true);
+    setAnswer(null);
     try {
-      const res = await runSearch(rt, query.trim());
+      const res = await runSearch(rt, q);
       setResults(res.cards);
+      // 需求 5.3：本地无结果时自动组织一次答案，让模型说明「没找到 + 还缺什么线索」
+      if (res.cards.length === 0) void requestAnswer(q, []);
     } catch {
       setResults([]);
     } finally {
       setSearching(false);
+    }
+  };
+
+  /** 需求 5.3：L2 只在无结果或用户手动触发时跑，不是每次搜索都跑 */
+  const requestAnswer = async (q: string, cards: MemoryCard[]) => {
+    if (!rt) return;
+    setAnswering(true);
+    try {
+      const res = await runAnswer(rt, q, cards);
+      setAnswer(res.ok ? res : { ...res, answer: res.error ?? '总结失败' });
+    } finally {
+      setAnswering(false);
     }
   };
 
@@ -129,6 +147,7 @@ export default function MemoryStreamScreen() {
               onPress={() => {
                 setQuery('');
                 setResults(null);
+                setAnswer(null);
               }}>
               <Text style={{ color: theme.textMuted, fontSize: 14 }}>✕</Text>
             </Pressable>
@@ -157,7 +176,44 @@ export default function MemoryStreamScreen() {
             <Text style={[styles.resultsLabel, { color: theme.textSecondary }]}>
               检索结果 {results.length} 条
             </Text>
-            <Button title="回到记忆流" variant="ghost" compact onPress={() => setResults(null)} />
+            <View style={styles.headerActions}>
+              {results.length > 0 && !answer ? (
+                <Button
+                  title="AI 总结"
+                  variant="ghost"
+                  compact
+                  loading={answering}
+                  onPress={() => void requestAnswer(query.trim(), results)}
+                />
+              ) : null}
+              <Button
+                title="回到记忆流"
+                variant="ghost"
+                compact
+                onPress={() => {
+                  setResults(null);
+                  setAnswer(null);
+                }}
+              />
+            </View>
+          </View>
+        ) : null}
+
+        {/* 需求六：搜索时 AI 答案卡片置顶高亮 */}
+        {answer ? (
+          <View style={[styles.answerCard, { backgroundColor: theme.surface, borderColor: theme.record }]}>
+            <Text style={[styles.answerTag, { color: theme.record }]}>AI 答案</Text>
+            <Text style={{ color: theme.text, fontSize: 15, lineHeight: 22 }}>{answer.answer}</Text>
+            {answer.suggest ? (
+              <Text style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 17 }}>
+                {answer.suggest}
+              </Text>
+            ) : null}
+            {answer.hitIds.length > 0 ? (
+              <Text style={{ color: theme.textMuted, fontSize: 11 }}>
+                依据 {answer.hitIds.length} 张卡片，已在下面高亮
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -168,6 +224,7 @@ export default function MemoryStreamScreen() {
               card={card}
               ctx={ctx}
               categoryName={categoryName(card.categoryId)}
+              highlight={answer?.hitIds.includes(card.id) ?? false}
               onPress={() => router.push(`/card/${card.id}`)}
             />
           ))}
@@ -280,7 +337,15 @@ const styles = StyleSheet.create({
   list: { flex: 1, padding: Spacing.three, gap: Spacing.two },
   cards: { gap: Spacing.two },
   resultsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerActions: { flexDirection: 'row', gap: Spacing.one, alignItems: 'center' },
   resultsLabel: { fontSize: 13, fontWeight: '600' },
+  answerCard: {
+    borderRadius: Radius.md,
+    borderWidth: 1.5,
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
+  answerTag: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
   notice: { borderRadius: Radius.md, padding: Spacing.three },
   noticeText: { fontSize: 12, lineHeight: 17 },
   bottomBar: {

@@ -37,11 +37,14 @@ export function CardRow({
   card,
   ctx,
   categoryName,
+  highlight,
   onPress,
 }: {
   card: MemoryCard;
   ctx: BadgeContext;
   categoryName: string | null;
+  /** L2 答案依据的卡片，在结果里加一圈强调色（需求六「答案卡片置顶高亮」） */
+  highlight?: boolean;
   onPress?: () => void;
 }) {
   const theme = useTheme();
@@ -54,7 +57,12 @@ export function CardRow({
       onPress={onPress}
       style={({ pressed }) => [
         styles.row,
-        { backgroundColor: theme.surface, borderColor: theme.border, opacity: pressed ? 0.75 : 1 },
+        {
+          backgroundColor: theme.surface,
+          borderColor: highlight ? theme.record : theme.border,
+          borderWidth: highlight ? 1.5 : StyleSheet.hairlineWidth,
+          opacity: pressed ? 0.75 : 1,
+        },
       ]}>
       {cover ? (
         <Image source={{ uri: mediaUri(cover) }} style={styles.cover} contentFit="cover" />
