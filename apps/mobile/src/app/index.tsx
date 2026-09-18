@@ -17,7 +17,7 @@ export default function MemoryStreamScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { state: rt } = useRuntime();
+  const { state: rt, error: runtimeError } = useRuntime();
   const network = useNetworkState();
   const recorder = useLongPressRecorder();
 
@@ -30,12 +30,19 @@ export default function MemoryStreamScreen() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const queueRunning = useRef(false);
 
   const reload = useCallback(() => {
     if (!rt) return;
-    setCards(listCards(rt.driver, { categoryId: categoryFilter, limit: 100 }));
-    setCategories(listCategories(rt.driver));
+    try {
+      setCards(listCards(rt.driver, { categoryId: categoryFilter, limit: 100 }));
+      setCategories(listCategories(rt.driver));
+      setLoadError(null);
+    } catch (e) {
+      // 查询失败时不要把整块屏炸掉——自检期间这类错误必须看得见才有意义
+      setLoadError(e instanceof Error ? e.message : String(e));
+    }
   }, [rt, categoryFilter]);
 
   // 从录入/详情页返回时刷新，保证刚记的卡立刻出现在流里
@@ -169,6 +176,19 @@ export default function MemoryStreamScreen() {
       </View>
 
       <View style={styles.list}>
+        {/* 数据库都没打开的话，其余界面全是空转；必须让用户看得见原因，
+            否则只会看到一片空白，而自检入口还在设置里根本走不到 */}
+        {runtimeError || loadError ? (
+          <View style={[styles.fatal, { backgroundColor: theme.badgeOrganizeBg, borderColor: theme.danger }]}>
+            <Text style={{ color: theme.danger, fontWeight: '700', fontSize: 14 }}>
+              {runtimeError ? '数据库没能打开' : '读取卡片失败'}
+            </Text>
+            <Text style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 17 }}>
+              {runtimeError ?? loadError}
+            </Text>
+          </View>
+        ) : null}
+
         {searching ? <ActivityIndicator color={theme.record} style={{ marginTop: Spacing.three }} /> : null}
 
         {results ? (
@@ -346,6 +366,12 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   answerTag: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5 },
+  fatal: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
   notice: { borderRadius: Radius.md, padding: Spacing.three },
   noticeText: { fontSize: 12, lineHeight: 17 },
   bottomBar: {
