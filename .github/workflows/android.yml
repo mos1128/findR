@@ -1,0 +1,103 @@
+name: android
+
+# 刻意不挂 push：私有仓库的 Actions 额度有限，而 Android 构建一次要十几分钟。
+# 需要出包时用 tag（apk-*）或手动 workflow_dispatch 触发。
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'apk-*'
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate native Android project
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --platform android --clean --no-install
+        env:
+          EXPO_NO_TELEMETRY: '1'
+
+      - name: Guard release signing config
+        working-directory: apps/mobile/android
+        run: |
+          # 目前刻意沿用 debug 签名（用户选择先跑通）。模板一旦变更会静默改成未签名，
+          # 到真机上就是「解析包错误」，所以在这里挡住。
+          if ! grep -q 'signingConfig signingConfigs.debug' app/build.gradle; then
+            echo "::error::release 未使用 debug 签名，请检查 expo prebuild 模板变化"
+            exit 1
+          fi
+
+      - name: Build release APK
+        working-directory: apps/mobile/android
+        run: |
+          set -o pipefail
+          ./gradlew assembleRelease --no-daemon 2>&1 | tee gradle-build.log
+
+      - name: Assert op-sqlite compiled with FTS5
+        working-directory: apps/mobile/android
+        run: |
+          # op-sqlite 只有在它能从 package.json 读到 op-sqlite.fts5 时才会编译 FTS5。
+          # 读错文件就会静默少编译，M1 的整个检索方案随之作废 —— 让构建期就失败。
+          if grep -q '\[OP-SQLITE\] FTS5 enabled' gradle-build.log; then
+            echo "op-sqlite: FTS5 enabled"
+          else
+            echo "::error::op-sqlite 未检测到 fts5 配置，FTS5 未编译进 APK"
+            grep -i 'op-sqlite' gradle-build.log | head -20 || true
+            exit 1
+          fi
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: findr-apk
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Publish rolling dev release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev-latest
+          name: Findr 开发版（最新）
+          body: |
+            自动构建的开发版 APK，用于真机验收。
+
+            - 当前沿用 **debug 签名**；将来换正式 keystore 必须卸载重装、本地记忆库会清空，
+              所以那一步会和 M4 的导出备份同批做。
+            - `make install` 不适用，直接在手机浏览器点资源下载安装即可。
+          prerelease: true
+          files: apps/mobile/android/app/build/outputs/apk/release/*.apk
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: apps/mobile/android/gradle-build.log
+          retention-days: 7
+          if-no-files-found: ignore

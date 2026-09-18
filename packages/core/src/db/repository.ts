@@ -12,7 +12,19 @@ import { escapeLike } from '../search/builder';
 import type { BuiltSearch } from '../search/builder';
 
 const CARD_COLS =
-  'id, status, needs_confirm, needs_organize, structure_type, category_id, entity, path_ids, path_names, item_status, todo_status, procedure_status, steps, related_person, due_at, cycle, transcript, desc_text, images, audio_path, vision_analyzed, tags, confidence, source, retry_count, next_retry_at, last_error, created_at, updated_at';
+  'id, status, needs_confirm, needs_organize, structure_type, category_id, entity, path_ids, path_names, item_status, todo_status, procedure_status, steps, related_person, due_at, cycle, transcript, desc_text, images, audio_path, vision_analyzed, tags, confidence, ask, path_suggestion, path_matched, source, retry_count, next_retry_at, last_error, created_at, updated_at';
+
+/** 退避序列：1min → 5min → 30min → 2h → 次日；到上限后只留手动重试 / 批量补转写 */
+export const RETRY_BACKOFF_MS: readonly number[] = [
+  60_000, 300_000, 1_800_000, 7_200_000, 86_400_000,
+];
+export const MAX_AUTO_RETRY = RETRY_BACKOFF_MS.length;
+
+/** 传入本次失败后的 retry_count（已自增），返回下次可自动重试的延后毫秒数 */
+export function computeBackoffMs(retryCount: number): number {
+  const idx = Math.min(Math.max(retryCount, 1), RETRY_BACKOFF_MS.length) - 1;
+  return RETRY_BACKOFF_MS[idx];
+}
 
 export function makeId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
@@ -58,6 +70,9 @@ export function rowToCard(row: Record<string, unknown>): MemoryCard {
     visionAnalyzed: row.vision_analyzed == null ? null : row.vision_analyzed === 1,
     tags: parseJsonArray<string>(row.tags),
     confidence: row.confidence == null ? null : Number(row.confidence),
+    ask: (row.ask as string | null) ?? null,
+    pathSuggestion: (row.path_suggestion as string | null) ?? null,
+    pathMatched: row.path_matched == null ? null : row.path_matched === 1,
     source: row.source as SourceKind,
     retryCount: Number(row.retry_count ?? 0),
     nextRetryAt: (row.next_retry_at as string | null) ?? null,
@@ -94,6 +109,9 @@ export function insertCard(db: SqliteDriver, card: MemoryCard): void {
     card.visionAnalyzed == null ? null : card.visionAnalyzed ? 1 : 0,
     toJson(card.tags),
     card.confidence,
+    card.ask,
+    card.pathSuggestion,
+    card.pathMatched == null ? null : card.pathMatched ? 1 : 0,
     card.source,
     card.retryCount,
     card.nextRetryAt,
@@ -121,6 +139,9 @@ export interface ParsedCardFields {
   tags: string[];
   confidence: number | null;
   aliases: string[];
+  ask?: string | null;
+  pathSuggestion?: string | null;
+  pathMatched?: boolean | null;
 }
 
 export function applyParseResult(
@@ -129,12 +150,13 @@ export function applyParseResult(
   f: ParsedCardFields,
   needsConfirm: boolean,
   now: Date,
+  idGen: () => string = makeId,
 ): void {
   db.transaction(() => {
     db.prepare(
       `UPDATE cards SET status = 'active', needs_confirm = ?, structure_type = ?, category_id = ?,
        entity = ?, path_ids = ?, path_names = ?, steps = ?, desc_text = ?, tags = ?, confidence = ?,
-       updated_at = ? WHERE id = ?`,
+       ask = ?, path_suggestion = ?, path_matched = ?, updated_at = ? WHERE id = ?`,
     ).run(
       needsConfirm ? 1 : 0,
       f.structureType,
@@ -146,6 +168,9 @@ export function applyParseResult(
       f.desc,
       toJson(f.tags),
       f.confidence,
+      f.ask ?? null,
+      f.pathSuggestion ?? null,
+      f.pathMatched == null ? null : f.pathMatched ? 1 : 0,
       now.toISOString(),
       id,
     );
@@ -154,7 +179,7 @@ export function applyParseResult(
       if (!name) continue;
       db.prepare(
         "INSERT OR IGNORE INTO aliases (id, kind, name, card_id) VALUES (?, 'entity', ?, ?)",
-      ).run(makeId(), name, id);
+      ).run(idGen(), name, id);
     }
   });
 }
@@ -165,10 +190,17 @@ export function markNeedsOrganize(db: SqliteDriver, id: string, now: Date): void
   ).run(now.toISOString(), id);
 }
 
+/**
+ * 记一次可重试的失败：retry_count 自增，并按退避序列算出 next_retry_at。
+ * 是否还能被队列自动捞起由 listQueueCards 的 retry_count < MAX_AUTO_RETRY 决定——
+ * 因此第 5 次失败仍会排期，但排完就只剩手动重试 / 批量补转写。
+ */
 export function markRetry(db: SqliteDriver, id: string, error: string, now: Date): void {
+  const nextCount = (getCard(db, id)?.retryCount ?? 0) + 1;
+  const nextAt = new Date(now.getTime() + computeBackoffMs(nextCount)).toISOString();
   db.prepare(
-    'UPDATE cards SET retry_count = retry_count + 1, last_error = ?, updated_at = ? WHERE id = ?',
-  ).run(error, now.toISOString(), id);
+    'UPDATE cards SET retry_count = ?, last_error = ?, next_retry_at = ?, updated_at = ? WHERE id = ?',
+  ).run(nextCount, error, nextAt, now.toISOString(), id);
 }
 
 export function listCategories(db: SqliteDriver): Category[] {
@@ -206,8 +238,31 @@ export function upsertLocation(db: SqliteDriver, node: LocationNode): void {
   ).run(node.id, node.parentId, node.name, node.sort);
 }
 
+/**
+ * 判定码点是否属于「汉字」范畴。
+ * 刻意不用 /\p{Script=Han}/u —— Hermes 对 Unicode property escape 的支持历来不稳，
+ * 而这条路径在每次 P1 入库时都会走到，一旦抛错整条录入链路就断了。
+ */
+function isHanCodePoint(cp: number): boolean {
+  return (
+    (cp >= 0x3400 && cp <= 0x4dbf) || // 扩展 A
+    (cp >= 0x4e00 && cp <= 0x9fff) || // 基本区
+    (cp >= 0xf900 && cp <= 0xfaff) || // 兼容表意文字
+    (cp >= 0x20000 && cp <= 0x2ebef) // 扩展 B~F
+  );
+}
+
+function isAsciiAlphanumeric(cp: number): boolean {
+  return (cp >= 0x30 && cp <= 0x39) || (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a);
+}
+
 function normalizeCategoryName(s: string): string {
-  return s.replace(/[^\p{Script=Han}A-Za-z0-9]/gu, '').toLowerCase();
+  let out = '';
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (isHanCodePoint(cp) || isAsciiAlphanumeric(cp)) out += ch;
+  }
+  return out.toLowerCase();
 }
 
 /** 分类名匹配（容忍模型回显带 emoji / 空白 / 标点的变体） */

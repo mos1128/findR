@@ -12,6 +12,9 @@ export interface BetterSqliteDatabase {
 }
 
 export function nodeDriver(db: BetterSqliteDatabase): SqliteDriver {
+  // 与设备端驱动保持同一套 PRAGMA（见技术设计三）：漏掉 foreign_keys 会出现
+  // 「本地测试全绿、真机 insert 被外键拒」的不对称
+  db.exec('PRAGMA foreign_keys = ON');
   return {
     exec: (sql: string) => db.exec(sql),
     prepare: (sql: string) => db.prepare(sql) as unknown as SqliteStatement,

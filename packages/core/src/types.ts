@@ -31,6 +31,12 @@ export interface MemoryCard {
   visionAnalyzed: boolean | null;
   tags: string[] | null;
   confidence: number | null;
+  /** P1 补问文案；非空时记忆流展示补问入口，用户编辑后清空（需求 5.1「最多一次」） */
+  ask: string | null;
+  /** 位置失配时模型给出的完整路径猜测，供用户点选或新建 */
+  pathSuggestion: string | null;
+  /** 本次 path 是否命中已有位置树（测试计划指标依据） */
+  pathMatched: boolean | null;
   source: SourceKind;
   retryCount: number;
   nextRetryAt: string | null;

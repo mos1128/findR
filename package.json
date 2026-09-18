@@ -4,6 +4,10 @@
   "packageManager": "pnpm@12.4.1",
   "scripts": {
     "check": "pnpm -r run check",
-    "test": "pnpm -r run test"
+    "test": "pnpm -r run test",
+    "android:apk": "pnpm --filter @findr/mobile run prebuild:android && cd apps/mobile/android && gradlew.bat assembleRelease"
+  },
+  "op-sqlite": {
+    "fts5": true
   }
 }

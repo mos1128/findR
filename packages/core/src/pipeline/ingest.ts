@@ -67,6 +67,9 @@ export async function ingestText(
     visionAnalyzed: null,
     tags: null,
     confidence: null,
+    ask: null,
+    pathSuggestion: null,
+    pathMatched: null,
     source: 'text',
     retryCount: 0,
     nextRetryAt: null,
@@ -121,9 +124,13 @@ export async function ingestText(
         tags: out.tags,
         confidence: out.confidence ?? null,
         aliases: out.aliases,
+        ask: out.ask || null,
+        pathSuggestion: out.path_suggestion ?? null,
+        pathMatched: out.path_matched ?? null,
       },
       needsConfirm,
       now(),
+      deps.idGen ?? makeId,
     );
     return getCard(deps.db, id)!;
   } catch (e) {
