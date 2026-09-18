@@ -8,6 +8,7 @@ import type {
   StructureType,
 } from '../types';
 import type { SqliteDriver } from './driver';
+import { parseJsonArray, toJson } from './json';
 import { escapeLike } from '../search/builder';
 import type { BuiltSearch } from '../search/builder';
 
@@ -30,19 +31,6 @@ export function makeId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (c && typeof c.randomUUID === 'function') return c.randomUUID();
   return 'id-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-}
-
-function toJson(v: unknown[] | null): string | null {
-  return v == null ? null : JSON.stringify(v);
-}
-
-function parseJsonArray<T>(v: unknown): T[] | null {
-  if (v == null) return null;
-  try {
-    return JSON.parse(String(v)) as T[];
-  } catch {
-    return null;
-  }
 }
 
 export function rowToCard(row: Record<string, unknown>): MemoryCard {
@@ -387,4 +375,217 @@ export function executeSearch(db: SqliteDriver, s: BuiltSearch): MemoryCard[] {
     .sort((a, b) => a.score - b.score || (a.createdAt < b.createdAt ? 1 : -1))
     .slice(0, s.limit)
     .map((h) => h.card);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 记忆流读取与卡片编辑（M1 编辑闭环）
+// ─────────────────────────────────────────────────────────────
+
+export interface ListCardsOptions {
+  limit?: number;
+  offset?: number;
+  categoryId?: string | null;
+  /** 显式指定要哪些生命周期状态；不传则按 includeArchived 决定 */
+  statuses?: CardStatus[];
+  /** 默认排除 archived。草稿（pending / pending_transcript）恒定可见—— */
+  /** 否则飞行模式录入的卡在 UI 上等于不存在，用户会以为丢了 */
+  includeArchived?: boolean;
+}
+
+export function listCards(db: SqliteDriver, opts: ListCardsOptions = {}): MemoryCard[] {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (opts.statuses && opts.statuses.length > 0) {
+    where.push(`status IN (${opts.statuses.map(() => '?').join(', ')})`);
+    params.push(...opts.statuses);
+  } else if (!opts.includeArchived) {
+    where.push("status <> 'archived'");
+  }
+  if (opts.categoryId) {
+    where.push('category_id = ?');
+    params.push(opts.categoryId);
+  }
+  const sql =
+    `SELECT * FROM cards` +
+    (where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '') +
+    ` ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+  params.push(opts.limit ?? 50, opts.offset ?? 0);
+  return (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(rowToCard);
+}
+
+export function countCards(db: SqliteDriver, opts: ListCardsOptions = {}): number {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (opts.statuses && opts.statuses.length > 0) {
+    where.push(`status IN (${opts.statuses.map(() => '?').join(', ')})`);
+    params.push(...opts.statuses);
+  } else if (!opts.includeArchived) {
+    where.push("status <> 'archived'");
+  }
+  if (opts.categoryId) {
+    where.push('category_id = ?');
+    params.push(opts.categoryId);
+  }
+  const sql =
+    'SELECT COUNT(*) AS n FROM cards' + (where.length > 0 ? ` WHERE ${where.join(' AND ')}` : '');
+  const row = db.prepare(sql).get(...params) as { n?: number } | undefined;
+  return Number(row?.n ?? 0);
+}
+
+/** 可编辑字段白名单 → 列名；JSON 列需要序列化后写入 */
+const CARD_PATCH_COLUMNS = {
+  structureType: { col: 'structure_type' },
+  categoryId: { col: 'category_id' },
+  entity: { col: 'entity' },
+  pathIds: { col: 'path_ids', json: true },
+  pathNames: { col: 'path_names' },
+  itemStatus: { col: 'item_status' },
+  todoStatus: { col: 'todo_status' },
+  procedureStatus: { col: 'procedure_status' },
+  steps: { col: 'steps', json: true },
+  relatedPerson: { col: 'related_person' },
+  dueAt: { col: 'due_at' },
+  cycle: { col: 'cycle' },
+  transcript: { col: 'transcript' },
+  desc: { col: 'desc_text' },
+  images: { col: 'images', json: true },
+  tags: { col: 'tags', json: true },
+  ask: { col: 'ask' },
+  pathSuggestion: { col: 'path_suggestion' },
+  pathMatched: { col: 'path_matched' },
+} as const satisfies Record<string, { col: string; json?: boolean }>;
+
+export type CardPatch = {
+  [K in keyof typeof CARD_PATCH_COLUMNS]?: K extends 'pathMatched'
+    ? boolean | null
+    : K extends 'pathIds' | 'images' | 'tags' | 'steps'
+      ? MemoryCard[K]
+      : MemoryCard[K];
+};
+
+/** 按白名单更新卡片字段，恒定刷新 updated_at。只写 patch 里出现的键 */
+export function updateCardFields(db: SqliteDriver, id: string, patch: CardPatch, now: Date): void {
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  const raw = patch as Record<string, unknown>;
+  for (const [key, spec] of Object.entries(CARD_PATCH_COLUMNS)) {
+    if (!(key in raw)) continue;
+    const value = raw[key];
+    sets.push(`${spec.col} = ?`);
+    if ('json' in spec && spec.json) params.push(toJson(value as unknown[] | null));
+    else if (key === 'pathMatched') params.push(value == null ? null : value ? 1 : 0);
+    else params.push(value);
+  }
+  if (sets.length === 0) return;
+  sets.push('updated_at = ?');
+  params.push(now.toISOString(), id);
+  db.prepare(`UPDATE cards SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+}
+
+export function clearNeedsConfirm(db: SqliteDriver, id: string, now: Date): void {
+  db.prepare('UPDATE cards SET needs_confirm = 0, updated_at = ? WHERE id = ?').run(
+    now.toISOString(),
+    id,
+  );
+}
+
+export function setNeedsConfirm(db: SqliteDriver, id: string, value: boolean, now: Date): void {
+  db.prepare('UPDATE cards SET needs_confirm = ?, updated_at = ? WHERE id = ?').run(
+    value ? 1 : 0,
+    now.toISOString(),
+    id,
+  );
+}
+
+/**
+ * 终态：本次录入既没有可送模型的图片、也没有文本（图片分析关闭 + 无文字）。
+ * 需求 5.1 允许用户坚持存为「纯图片卡片」——desc 为空，只能靠分类和标签检索，
+ * 所以强制打上待确认，让用户至少把分类定下来。
+ */
+export function markPlainCard(db: SqliteDriver, id: string, now: Date): void {
+  db.prepare(
+    "UPDATE cards SET status = 'active', desc_text = NULL, needs_confirm = 1, updated_at = ? WHERE id = ?",
+  ).run(now.toISOString(), id);
+}
+
+export function clearNeedsOrganize(db: SqliteDriver, id: string, now: Date): void {
+  db.prepare('UPDATE cards SET needs_organize = 0, updated_at = ? WHERE id = ?').run(
+    now.toISOString(),
+    id,
+  );
+}
+
+export function setVisionAnalyzed(db: SqliteDriver, id: string, value: boolean, now: Date): void {
+  db.prepare('UPDATE cards SET vision_analyzed = ?, updated_at = ? WHERE id = ?').run(
+    value ? 1 : 0,
+    now.toISOString(),
+    id,
+  );
+}
+
+export function setCardStatus(db: SqliteDriver, id: string, status: CardStatus, now: Date): void {
+  db.prepare('UPDATE cards SET status = ?, updated_at = ? WHERE id = ?').run(
+    status,
+    now.toISOString(),
+    id,
+  );
+}
+
+/**
+ * 补文字 / 转写回填：写入 transcript 并清掉补问，同时把待转写推进到待解析。
+ * 需求四「打字则跳过转写」——已经有文本就不该再送去转写。
+ */
+export function setTranscript(db: SqliteDriver, id: string, text: string, now: Date): void {
+  db.prepare(
+    `UPDATE cards SET transcript = ?, ask = NULL,
+       status = CASE WHEN status = 'pending_transcript' THEN 'pending' ELSE status END,
+       updated_at = ? WHERE id = ?`,
+  ).run(text, now.toISOString(), id);
+}
+
+/** 删除卡片并连带清掉它的别名；媒体文件由平台层按 images/audio_path 回收 */
+export function deleteCard(db: SqliteDriver, id: string): void {
+  db.transaction(() => {
+    db.prepare('DELETE FROM aliases WHERE card_id = ?').run(id);
+    db.prepare('DELETE FROM cards WHERE id = ?').run(id);
+  });
+}
+
+export interface QueueQueryOptions {
+  /** 默认待转写 + 待解析；没配 ASR 时调用方应只传 ['pending']， */
+  /** 否则一串待转写卡会堵在队头，后面的卡永远轮不到 */
+  statuses?: CardStatus[];
+}
+
+/** 队列取卡：待处理、未达自动重试上限、且已过退避时间 */
+export function listQueueCards(
+  db: SqliteDriver,
+  now: Date,
+  limit = 20,
+  opts: QueueQueryOptions = {},
+): MemoryCard[] {
+  const statuses = opts.statuses ?? ['pending_transcript', 'pending'];
+  if (statuses.length === 0) return [];
+  const rows = db
+    .prepare(
+      `SELECT * FROM cards
+       WHERE status IN (${statuses.map(() => '?').join(', ')})
+         AND retry_count < ?
+         AND (next_retry_at IS NULL OR next_retry_at <= ?)
+       ORDER BY created_at ASC
+       LIMIT ?`,
+    )
+    .all(...statuses, MAX_AUTO_RETRY, now.toISOString(), limit) as Record<string, unknown>[];
+  return rows.map(rowToCard);
+}
+
+/** 「批量补转写」：无视退避与上限，把所有待转写卡片重置为可立刻重试 */
+export function resetTranscriptRetries(db: SqliteDriver, now: Date): number {
+  const r = db
+    .prepare(
+      `UPDATE cards SET retry_count = 0, next_retry_at = NULL, last_error = NULL, updated_at = ?
+       WHERE status = 'pending_transcript'`,
+    )
+    .run(now.toISOString());
+  return r.changes;
 }

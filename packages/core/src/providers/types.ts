@@ -17,9 +17,18 @@ export interface ChatResponse {
   usage?: { inputTokens?: number; outputTokens?: number };
 }
 
+/**
+ * 音频引用。模式 2（/audio/transcriptions）走原生文件直传，m4a 不进 JS 内存；
+ * base64 分支供 node 测试与模式 1（chat 的 input_audio）使用。
+ */
+export type AudioRef =
+  | { kind: 'file'; rel: string; mime: string }
+  | { kind: 'base64'; base64: string; mime: string };
+
 export interface TranscribeRequest {
-  audioBase64: string;
-  mime: string;
+  audio: AudioRef;
+  /** 上传文件名，部分服务端靠后缀嗅探格式 */
+  filename?: string;
   lang?: string;
   hotwords?: string[];
   timeoutMs?: number;

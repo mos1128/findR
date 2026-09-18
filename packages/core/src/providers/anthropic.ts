@@ -1,3 +1,4 @@
+import { anthropicDelta, readSseText } from './sse';
 import type { ChatRequest, ChatResponse, LLMProviderAdapter, ProviderConfig } from './types';
 
 export interface AnthropicAdapterOptions {
@@ -14,44 +15,6 @@ function messagesUrl(baseUrl: string): string {
 interface AnthropicMessageResponse {
   content?: Array<{ type?: string; text?: string }>;
   usage?: { input_tokens?: number; output_tokens?: number };
-}
-
-/** 网关常强制 SSE 流式返回：兜底解析 content_block_delta 文本增量 */
-async function readSseText(res: Response): Promise<string> {
-  const reader = res.body?.getReader();
-  if (!reader) return '';
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let out = '';
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith('data:')) continue;
-      const payload = trimmed.slice(5).trim();
-      if (!payload || payload === '[DONE]') continue;
-      try {
-        const evt = JSON.parse(payload) as {
-          type?: string;
-          delta?: { type?: string; text?: string };
-        };
-        if (
-          evt.type === 'content_block_delta' &&
-          evt.delta?.type === 'text_delta' &&
-          typeof evt.delta.text === 'string'
-        ) {
-          out += evt.delta.text;
-        }
-      } catch {
-        // 跳过非 JSON 事件行
-      }
-    }
-  }
-  return out;
 }
 
 /**
@@ -120,7 +83,7 @@ export class AnthropicAdapter implements LLMProviderAdapter {
       }
       const ctype = res.headers.get('content-type') ?? '';
       if (ctype.includes('text/event-stream')) {
-        return { text: await readSseText(res) };
+        return { text: await readSseText(res, anthropicDelta) };
       }
       const data = (await res.json()) as AnthropicMessageResponse;
       const text = (data.content ?? [])

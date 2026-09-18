@@ -1,4 +1,4 @@
-import type { Category, LocationNode } from '../types';
+import type { Category, LocationNode, MemoryCard } from '../types';
 import {
   ASK_RULES,
   DESC_RULES,
@@ -38,6 +38,36 @@ export function buildP1User(transcript: string | null): string {
   return render(P1_USER, {
     transcript: transcript ?? '（本次没有文字输入，请仅根据图片判断。）',
   });
+}
+
+/** 把卡片已确认的结构化字段渲染成「既定事实」清单 */
+export function describeCardFields(card: MemoryCard): string {
+  const lines: string[] = [];
+  const push = (label: string, value: string | null | undefined) => {
+    if (value) lines.push(`- ${label}：${value}`);
+  };
+  push('结构类型', card.structureType);
+  push('实体名', card.entity);
+  push('位置', card.pathNames);
+  push('标签', card.tags?.join('、'));
+  push('步骤', card.steps?.map((s) => s.text).join('；'));
+  push('关联人', card.relatedPerson);
+  push('到期/周期', card.dueAt ?? card.cycle);
+  return lines.join('\n');
+}
+
+/**
+ * 编辑结构化字段后重新生成 desc（需求四「编辑闭环」）。
+ * 把用户已确认的字段作为既定事实注入，避免模型又按自己的理解改写回去。
+ *
+ * 注意：这段追加文案目前只存在于代码里，M1 收尾时要补进《prompt设计.md》，
+ * 那份文档才是 prompt 文本的唯一权威。
+ */
+export function buildRegenerateDescUser(card: MemoryCard): string {
+  const base = buildP1User(card.transcript);
+  const locked = describeCardFields(card);
+  if (!locked) return base;
+  return `${base}\n\n用户已确认以下字段，请视为既定事实，不要改动，只重新生成 desc：\n${locked}`;
 }
 
 export function buildP2System(ctx: { categories: string; locations: string }): string {
