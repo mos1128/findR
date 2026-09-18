@@ -6,3 +6,5 @@ coverage/
 .DS_Store
 .env*
 .commandcode/
+# 临时工作目录（下 APK、导出证书等）；.workbuddy/memory 仍然要进版本库
+.workbuddy/tmp/
