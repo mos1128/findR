@@ -1,5 +1,6 @@
 export * from './types';
 export * from './settings';
+export * from './cards/badges';
 export * from './util/base64';
 export * from './db/driver';
 export * from './db/schema';

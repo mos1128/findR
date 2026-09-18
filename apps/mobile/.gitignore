@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# 本地 Metro 冒烟打包
+dist-smoke/

@@ -34,6 +34,26 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Findr 需要麦克风来录制口述，音频只存在手机本地。"
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Findr 需要相机来拍摄物品存放位置的照片。",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Findr 需要访问相册，以便把截图和已有照片存成记忆卡片。"
+        }
       ]
     ],
     "experiments": {
