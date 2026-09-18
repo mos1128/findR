@@ -17,6 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ubuntu-latest 只有约 14GB 可用，而 RN 依赖 + Gradle 中间产物 + op-sqlite 的
+      # C++ 源码编译（跨多个 ABI）会把磁盘撑爆（实测 32 分钟后 No space left on device）。
+      # 这里删掉构建用不到的大件：模拟器镜像与模拟器本体、CodeQL、.NET、Haskell、Swift、Boost。
+      # 刻意不碰 NDK —— 它里面的 sources/ 可能有 C++ 编译需要的东西，为这点空间不值得冒险。
+      - name: Free disk space
+        run: |
+          echo "=== 清理前 ==="; df -h /
+          sudo rm -rf /usr/local/lib/android/sdk/system-images || true
+          sudo rm -rf /usr/local/lib/android/sdk/emulator || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc /usr/local/.ghcup || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo apt-get clean
+          echo "=== 清理后 ==="; df -h /
+
       - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
@@ -75,7 +92,15 @@ jobs:
         working-directory: apps/mobile/android
         run: |
           set -o pipefail
-          ./gradlew assembleRelease --no-daemon 2>&1 | tee gradle-build.log
+          # 只编 arm64-v8a：现代手机全是 arm64，而 4 个 ABI 会让 op-sqlite 那类
+          # 需要从 C++ 源码编译的原生库各编一遍，既慢又吃磁盘。
+          # 将来要跑 x86_64 模拟器时，把这里改回默认（去掉 -P 参数）即可。
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a 2>&1 | tee gradle-build.log
+
+      - name: Disk usage after build
+        if: always()
+        working-directory: apps/mobile/android
+        run: df -h / || true
 
       - name: Assert op-sqlite compiled with FTS5
         working-directory: apps/mobile/android
