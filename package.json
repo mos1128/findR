@@ -1,0 +1,9 @@
+{
+  "name": "findr",
+  "private": true,
+  "packageManager": "pnpm@12.4.1",
+  "scripts": {
+    "check": "pnpm -r run check",
+    "test": "pnpm -r run test"
+  }
+}
