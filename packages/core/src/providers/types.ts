@@ -1,7 +1,14 @@
+/**
+ * 送给主 LLM 的输入块。**刻意只有文本与图片** —— 语音不走这条路。
+ *
+ * 需求 3.2 原本还有一条「模式 1 · LLM 原生音频」（把音频塞进 chat 的 `input_audio`
+ * 内容块让模型自己听），已于 2026-09-19 废止：格式各家不一、拿不到热词、
+ * 成本与延迟都明显更高，且从 1.0 起就没有任何代码走过它。
+ * 转写一律走 `ASRProviderAdapter.transcribe`（`/audio/transcriptions`）。
+ */
 export type Part =
   | { type: 'text'; text: string }
-  | { type: 'image'; mime: string; base64: string }
-  | { type: 'audio'; mime: string; base64: string };
+  | { type: 'image'; mime: string; base64: string };
 
 export interface ChatRequest {
   system: string;
@@ -38,23 +45,8 @@ export function httpStatusError(prefix: string, status: number, body: string): H
 }
 
 /**
- * 适配器在本地就判定「这个协议不支持某种输入」（还没发出去，或协议层面就没有这种字段）。
- * 与服务端拒绝要分开：两者都算能力缺失，但前者是我们自己知道的确定结论。
- */
-export interface UnsupportedInputError extends Error {
-  unsupportedInput: true;
-}
-
-export function unsupportedInput(message: string): UnsupportedInputError {
-  const err = new Error(message) as UnsupportedInputError;
-  err.name = 'UnsupportedInputError';
-  err.unsupportedInput = true;
-  return err;
-}
-
-/**
- * 音频引用。模式 2（/audio/transcriptions）走原生文件直传，m4a 不进 JS 内存；
- * base64 分支供 node 测试与模式 1（chat 的 input_audio）使用。
+ * 音频引用。走原生文件直传，m4a 不进 JS 内存；
+ * base64 分支供 node 测试与设置页的 ASR 槽探测（内嵌 1 秒 WAV）使用。
  */
 export type AudioRef =
   | { kind: 'file'; rel: string; mime: string }

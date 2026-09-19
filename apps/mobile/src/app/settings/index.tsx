@@ -157,7 +157,6 @@ export default function SettingsScreen() {
         <SectionTitle>关于</SectionTitle>
         <View style={{ flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' }}>
           <Chip label={`图片分析${rt.llm?.capabilities ? (rt.llm.capabilities.vision ? '：支持' : '：不支持') : '：未探测'}`} />
-          <Chip label={`音频输入${rt.llm?.capabilities ? (rt.llm.capabilities.audio ? '：支持' : '：不支持') : '：未探测'}`} />
         </View>
         <Text style={{ color: theme.textMuted, fontSize: 11, lineHeight: 16 }}>
           数据库：{rt.dbPath}

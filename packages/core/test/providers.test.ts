@@ -157,29 +157,42 @@ test('openai-compat LLM：baseUrl 已带 /v1 时不重复拼接', async () => {
   expect(calls[0].url).toBe('http://host/v1/chat/completions');
 });
 
-test('openai-compat LLM：input_audio 只接受 wav/mp3，m4a 明确报错', async () => {
-  const { fn } = fakeFetch([]);
-  const adapter = new OpenAICompatAdapter({ fetchFn: fn });
-
-  await expect(
-    adapter.chat(
-      { system: 's', parts: [{ type: 'audio', mime: 'audio/m4a', base64: 'AA' }] },
-      CFG,
-    ),
-  ).rejects.toThrow(/只接受 wav\/mp3/);
-
-  // wav 可以走通
-  const { fn: okFn, calls } = fakeFetch([{ json: { choices: [{ message: { content: 'ok' } }] } }]);
-  await new OpenAICompatAdapter({ fetchFn: okFn }).chat(
-    { system: 's', parts: [{ type: 'audio', mime: 'audio/wav', base64: 'AA' }] },
-    CFG,
+test('anthropic LLM：图片走 source base64 块，请求头按 authStyle 切换', async () => {
+  const { fn, calls } = fakeFetch([{ json: { content: [{ type: 'text', text: '{"ok":1}' }] } }]);
+  const res = await new AnthropicAdapter({ fetchFn: fn }).chat(
+    {
+      system: '你是整理助手',
+      parts: [
+        { type: 'text', text: '口述原文' },
+        { type: 'image', mime: 'image/webp', base64: 'QUJD' },
+      ],
+    },
+    {
+      providerType: 'anthropic',
+      baseUrl: 'http://192.168.1.9:7788',
+      model: 'claude-sonnet-4',
+      apiKey: 'sk-test',
+      authStyle: 'x-api-key',
+    },
   );
+
+  expect(res.text).toBe('{"ok":1}');
+  expect(calls[0].url).toBe('http://192.168.1.9:7788/v1/messages');
+
+  const headers = calls[0].init.headers as Record<string, string>;
+  expect(headers['x-api-key']).toBe('sk-test');
+  expect(headers.authorization).toBeUndefined();
+  expect(headers['anthropic-version']).toBe('2023-06-01');
+
   const body = JSON.parse(String(calls[0].init.body)) as {
+    system: string;
     messages: Array<{ content: Array<Record<string, unknown>> }>;
   };
-  expect(body.messages[1].content[0]).toEqual({
-    type: 'input_audio',
-    input_audio: { data: 'AA', format: 'wav' },
+  expect(body.system).toBe('你是整理助手');
+  expect(body.messages[0].content[0]).toEqual({ type: 'text', text: '口述原文' });
+  expect(body.messages[0].content[1]).toEqual({
+    type: 'image',
+    source: { type: 'base64', media_type: 'image/webp', data: 'QUJD' },
   });
 });
 
@@ -290,10 +303,7 @@ test('ASR 失败时抛出带状态码的错误', async () => {
 // ─────────────────────────────────────────────────────────────
 
 test('能力探测：正常返回即视为具备该能力，并把样本真的发出去了', async () => {
-  const { fn, calls } = fakeFetch([
-    { json: { choices: [{ message: { content: '棋盘' } }] } },
-    { json: { choices: [{ message: { content: 'ok' } }] } },
-  ]);
+  const { fn, calls } = fakeFetch([{ json: { choices: [{ message: { content: '棋盘' } }] } }]);
 
   const vision = await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'vision');
   expect(vision).toMatchObject({ ok: true, status: 'ok', detail: '棋盘' });
@@ -303,9 +313,6 @@ test('能力探测：正常返回即视为具备该能力，并把样本真的�
   };
   const imagePart = body.messages[1].content.find((c) => c.type === 'image_url');
   expect(imagePart?.image_url?.url.startsWith('data:image/png;base64,')).toBe(true);
-
-  const audio = await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'audio');
-  expect(audio.ok).toBe(true);
 });
 
 test('能力探测：端点明确拒绝这类输入 ⇒ unsupported', async () => {
@@ -343,42 +350,33 @@ test('能力探测：认证失败是配置问题（error），不是能力问题
   expect(res.detail).toMatch(/API Key/);
 });
 
-test('能力探测：DeepSeek 那种「不认识 input_audio 的 422」翻成人话并指向 ASR 槽', async () => {
+test('能力探测：服务端说「不认这种内容块」时翻成人话，并说明降级后果', async () => {
   const body = JSON.stringify({
     error: {
       message:
-        'Failed to deserialize the JSON body into the target type: messages[1]: unknown variant `input_audio`, expected one of `text`, `image_url`, `file`',
+        'Failed to deserialize the JSON body into the target type: messages[1]: unknown variant `image_url`, expected one of `text`, `file`',
       type: 'invalid_request_error',
     },
   });
   const { fn } = fakeFetch([{ status: 422, text: body }]);
-  const audio = await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'audio');
+  const vision = await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'vision');
 
-  expect(audio).toMatchObject({ ok: false, status: 'unsupported' });
-  expect(audio.detail).toMatch(/不接受音频输入/);
-  expect(audio.detail).toMatch(/ASR/);
+  expect(vision).toMatchObject({ ok: false, status: 'unsupported' });
+  expect(vision.detail).toMatch(/不接受图片输入/);
+  expect(vision.detail).toMatch(/降级成纯附件/);
 });
 
-test('能力探测：适配器本地就拒绝（anthropic 无音频）也算 unsupported', async () => {
-  const { fn } = fakeFetch([]);
-  const res = await probeCapability(new AnthropicAdapter({ fetchFn: fn }), CFG, 'audio');
-  expect(res).toMatchObject({ ok: false, status: 'unsupported' });
-  expect(res.detail).toMatch(/不支持音频输入/);
-});
-
-test('probeLlm：先验纯文本连通性，再并发探两项能力', async () => {
+test('probeLlm：先验纯文本连通性，再探图片能力（一共两次请求）', async () => {
   const { fn, calls } = fakeFetch([
     { json: { choices: [{ message: { content: 'ok' } }] } },
     { json: { choices: [{ message: { content: '棋盘' } }] } },
-    { status: 400, text: 'audio not supported' },
   ]);
   const caps = await probeLlm(new OpenAICompatAdapter({ fetchFn: fn }), CFG);
 
   expect(caps.text).toBe(true);
   expect(caps.vision).toBe(true);
-  expect(caps.audio).toBe(false);
-  expect(caps.audioDetail).toMatch(/不接受音频输入/);
-  expect(calls).toHaveLength(3);
+  expect(caps.visionStatus).toBe('ok');
+  expect(calls).toHaveLength(2);
 
   // 第一个请求必须是纯文本，不能带样本 —— 用户要的是「我配的对不对」这个答案
   const first = JSON.parse(String(calls[0].init.body)) as {
@@ -393,30 +391,25 @@ test('probeLlm：图片「没测出来」不算不支持 —— vision 必须保
   const { fn } = fakeFetch([
     { json: { choices: [{ message: { content: 'ok' } }] } }, // text → ok
     { json: { choices: [{ message: { content: '', reasoning_content: '嗯…' } }] } }, // vision → unknown
-    { status: 422, text: '{"error":{"message":"unknown variant `input_audio`"}}' }, // audio → unsupported
   ]);
   const caps = await probeLlm(new OpenAICompatAdapter({ fetchFn: fn }), CFG);
 
   expect(caps.visionStatus).toBe('unknown');
   expect(caps.vision).toBe(true);
-  expect(caps.audioStatus).toBe('unsupported');
-  expect(caps.audio).toBe(false);
 });
 
 test('probeLlm：端点明确否定图片时，vision 才是 false（该锁就锁）', async () => {
   const { fn } = fakeFetch([
     { json: { choices: [{ message: { content: 'ok' } }] } },
     { status: 400, text: 'this model does not support image input' },
-    { status: 400, text: 'audio not supported' },
   ]);
   const caps = await probeLlm(new OpenAICompatAdapter({ fetchFn: fn }), CFG);
 
   expect(caps.visionStatus).toBe('unsupported');
   expect(caps.vision).toBe(false);
-  expect(caps.audio).toBe(false);
 });
 
-test('probeLlm：配置就没通过时短路，不再白等两个超时', async () => {
+test('probeLlm：配置就没通过时短路，不再白等一个超时', async () => {
   const { fn, calls } = fakeFetch([{ status: 401, text: 'bad key' }]);
   const caps = await probeLlm(new OpenAICompatAdapter({ fetchFn: fn }), CFG);
 
@@ -424,6 +417,6 @@ test('probeLlm：配置就没通过时短路，不再白等两个超时', async 
   expect(caps.textDetail).toMatch(/认证失败/);
   expect(caps.vision).toBe(false);
   expect(caps.visionDetail).toMatch(/未测/);
-  expect(caps.audioDetail).toMatch(/未测/);
+  expect(caps.visionStatus).toBe('error');
   expect(calls).toHaveLength(1);
 });

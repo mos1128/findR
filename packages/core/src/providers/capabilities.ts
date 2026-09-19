@@ -1,13 +1,20 @@
-import { testPngBase64, testWavBase64 } from './samples';
+import { testPngBase64 } from './samples';
 import type { LLMProviderAdapter, Part, ProviderConfig } from './types';
 
-export type CapabilityKind = 'text' | 'vision' | 'audio';
+/**
+ * 探测的种类。**只有 text 与 vision 两项** —— 语音那条探测已于 2026-09-19 删除：
+ * 它测的是「chat 的 `input_audio` 内容块能不能用」（需求 3.2 的模式 1），
+ * 而那条路从来没有被任何业务代码走过（见 `providers/types.ts` 里 `Part` 的注释）。
+ * 一个不控制任何功能的探测项，只会给用户多一句看不懂的结论、多一次请求。
+ * 语音转写请直接探测 ASR 槽（设置页 ASR 槽的「开始探测」）。
+ */
+export type CapabilityKind = 'text' | 'vision';
 
 /**
  * 探测结论。刻意做成四态而不是布尔：
  *
  * - `ok`          端点接受了这类输入，而且模型给了正文
- * - `unsupported` 端点/协议明确不接受这类输入（服务端 4xx 说 content 块不合法，或适配器本地就拒绝）
+ * - `unsupported` 端点/协议明确不接受这类输入（服务端 4xx 说 content 块不合法）
  * - `unknown`     请求被接受了，但模型没给正文 —— **不能据此判定不支持**
  * - `error`       认证 / 模型名 / 网络 / 限流等，与「输入类型」无关的问题
  *
@@ -33,13 +40,11 @@ const PROBE_MAX_TOKENS = 2048;
 
 function samplePart(kind: CapabilityKind): Part | null {
   if (kind === 'vision') return { type: 'image', mime: 'image/png', base64: testPngBase64() };
-  if (kind === 'audio') return { type: 'audio', mime: 'audio/wav', base64: testWavBase64() };
   return null;
 }
 
 function promptFor(kind: CapabilityKind): string {
   if (kind === 'vision') return '这张图的图案是什么？用不超过五个字回答。';
-  if (kind === 'audio') return '确认你能收到这段音频，回复「ok」即可。';
   return '这是一次连通性检查，请只回复「ok」。';
 }
 
@@ -72,25 +77,13 @@ function looksUnsupported(body: string): boolean {
 /** 把「服务端拒绝某类输入」翻译成用户能据此行动的话，并保留一小段原话当证据 */
 function explainUnsupported(status: number, body: string): string {
   const raw = serverMessage(body).replace(/\s+/g, ' ').slice(0, 90);
-  if (/input_audio|audio|音频/i.test(body)) {
-    return (
-      `该端点不接受音频输入（服务端 HTTP ${status}：${raw}）。` +
-      '「OpenAI 兼容」不等于支持音频 —— DeepSeek、通义、GLM 这类端点通常只有文本与图片接口，' +
-      '语音转写请到「ASR」槽单独配一家'
-    );
-  }
-  if (/image_url|image/i.test(body)) {
+  if (/image_url|image|图片/i.test(body)) {
     return `该端点不接受图片输入（服务端 HTTP ${status}：${raw}）；图片会降级成纯附件，仍可正常记录`;
   }
   return `该端点不接受这类输入（服务端 HTTP ${status}：${raw}）`;
 }
 
 function classify(e: unknown): CapabilityResult {
-  // 适配器本地就判定不支持（协议里根本没这种字段），是最确定的「不支持」
-  if (typeof (e as { unsupportedInput?: unknown }).unsupportedInput === 'boolean') {
-    return { ok: false, status: 'unsupported', detail: e instanceof Error ? e.message : String(e) };
-  }
-
   const httpStatus = (e as { status?: unknown }).status;
   if (typeof httpStatus === 'number') {
     const body = String((e as { body?: unknown }).body ?? '');
@@ -132,10 +125,10 @@ function classify(e: unknown): CapabilityResult {
 }
 
 /**
- * 能力探测：用内嵌微型样本各发一次 chat，能正常返回即视为该能力可用（技术设计四）。
+ * 能力探测：用内嵌微型样本发一次 chat，能正常返回即视为该能力可用（技术设计四）。
  *
  * 注意「用户主动关闭图片分析」与「模型不支持图片」是两回事（需求 5.1）：
- * 这里探测的是后者，结果只用于把图片分析开关置灰锁定，以及决定 ASR 模式 1 是否可用。
+ * 这里探测的是后者，结果用于把图片分析开关置灰锁定。
  */
 export async function probeCapability(
   adapter: LLMProviderAdapter,
@@ -170,7 +163,6 @@ export async function probeCapability(
         : '请求已被接受，但模型没返回任何内容，无法判定是否支持',
     };
   } catch (e) {
-    // 适配器自身的「不支持音频」也算作能力缺失，而不是调用失败
     return classify(e);
   }
 }
@@ -181,12 +173,9 @@ export interface ProbedCapabilities {
   textDetail: string;
   /** 业务用的简化视图：vision=false 会**锁死「图片分析」开关**，见下面 probeLlm 的注释 */
   vision: boolean;
-  audio: boolean;
   visionDetail: string;
-  audioDetail: string;
   /** 给 UI 用的完整结论，让用户能分清「不支持」与「没测出来」 */
   visionStatus: CapabilityStatus;
-  audioStatus: CapabilityStatus;
 }
 
 export async function probeLlm(
@@ -194,27 +183,20 @@ export async function probeLlm(
   cfg: ProviderConfig,
 ): Promise<ProbedCapabilities> {
   // 先单独验一次纯文本：用户最想知道的「我配的对不对」就靠这一步。
-  // 也只有它失败了才说明是配置问题 —— 图片/音频失败可能只是能力缺失。
+  // 也只有它失败了才说明是配置问题 —— 图片失败可能只是能力缺失。
   const text = await probeCapability(adapter, cfg, 'text');
   if (text.status === 'error') {
-    // 连纯文本都跑不通，再发图片和音频只会拿到同样的错，白等两个 60 秒超时
-    const skipped = `未测（配置本身就没通过：${text.detail}）`;
+    // 连纯文本都跑不通，再发图片只会拿到同样的错，白等一个 60 秒超时
     return {
       text: false,
       textDetail: text.detail,
       vision: false,
-      audio: false,
-      visionDetail: skipped,
-      audioDetail: skipped,
+      visionDetail: `未测（配置本身就没通过：${text.detail}）`,
       visionStatus: 'error',
-      audioStatus: 'error',
     };
   }
 
-  const [vision, audio] = await Promise.all([
-    probeCapability(adapter, cfg, 'vision'),
-    probeCapability(adapter, cfg, 'audio'),
-  ]);
+  const vision = await probeCapability(adapter, cfg, 'vision');
   return {
     text: true,
     textDetail: text.status === 'ok' ? text.detail : `${text.detail}（地址与 Key 是通的）`,
@@ -223,11 +205,7 @@ export async function probeLlm(
     // 「没测出来」（unknown）不是否定的证据，不能拿它去关用户的功能 ——
     // 这正是第十二版要消灭的那类误判，别让它从后门回来。
     vision: vision.status !== 'unsupported',
-    // audio 的 false 只意味着「别走 ASR 模式 1（chat 的 input_audio）」，代价小，按 ok 严格要求
-    audio: audio.ok,
     visionDetail: vision.detail,
-    audioDetail: audio.detail,
     visionStatus: vision.status,
-    audioStatus: audio.status,
   };
 }

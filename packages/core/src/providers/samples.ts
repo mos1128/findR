@@ -102,7 +102,7 @@ export function makeTestPng(size = 64): Uint8Array {
 
 /**
  * 1 秒 8kHz 单声道 8bit PCM WAV，带 440Hz 低幅正弦。
- * 刻意用 wav 而不是 m4a：chat 的 input_audio 只接受 wav/mp3。
+ * 只有设置页的 ASR 槽探测会把它发出去（试转一次，能返回就算连通）。
  */
 export function makeTestWav(seconds = 1, sampleRate = 8000): Uint8Array {
   const samples = Math.floor(seconds * sampleRate);

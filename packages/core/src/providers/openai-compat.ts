@@ -1,7 +1,7 @@
 import { base64ToBytes } from '../util/base64';
 import type { MediaIO } from './media';
 import { openaiDelta, readSseText } from './sse';
-import { httpStatusError, unsupportedInput } from './types';
+import { httpStatusError } from './types';
 import type {
   ASRProviderAdapter,
   ChatRequest,
@@ -58,7 +58,11 @@ interface OpenAIChatResponse {
 
 /**
  * OpenAI 兼容协议适配器（/v1/chat/completions），覆盖 OpenAI、DeepSeek、通义、火山、GLM、
- * 硅基流动等一切兼容端点。图片走 image_url data URI，音频走 input_audio。
+ * 硅基流动等一切兼容端点。图片走 image_url data URI。
+ *
+ * **不发音频**：chat 的 `input_audio` 内容块只认 wav/mp3（我们录的是 m4a），
+ * 且 DeepSeek / 通义 / GLM 这类端点在反序列化阶段就会拒掉它。
+ * 语音转写一律走下面的 `OpenAICompatAsrAdapter`（`/audio/transcriptions`）。
  */
 export class OpenAICompatAdapter implements LLMProviderAdapter {
   private readonly fetchFn: typeof fetch;
@@ -75,21 +79,11 @@ export class OpenAICompatAdapter implements LLMProviderAdapter {
     for (const p of req.parts) {
       if (p.type === 'text') {
         content.push({ type: 'text', text: p.text });
-      } else if (p.type === 'image') {
+      } else {
         content.push({
           type: 'image_url',
           image_url: { url: `data:${p.mime};base64,${p.base64}` },
         });
-      } else {
-        // chat 的 input_audio 只认 wav / mp3 —— m4a 必须走 /audio/transcriptions
-        const format = p.mime.includes('wav') ? 'wav' : p.mime.includes('mp3') ? 'mp3' : null;
-        if (!format) {
-          // 本地就能判定：chat 的 input_audio 只有 wav/mp3 两种格式，其它一律走不了这条路
-          throw unsupportedInput(
-            `openai-compat 的 input_audio 只接受 wav/mp3，收到 ${p.mime}；m4a 请走专用 ASR（模式 2）`,
-          );
-        }
-        content.push({ type: 'input_audio', input_audio: { data: p.base64, format } });
       }
     }
 

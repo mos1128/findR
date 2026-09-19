@@ -50,9 +50,11 @@ function capLine(
 }
 
 /**
- * 探测结果的三段式摘要。顺序刻意如此：**先说「配置本身对不对」**（用户最想知道的），
- * 再说两项能力。第十二版之前只有后两行，而且把「模型没回话」直接写成「不可用」，
- * 用户会一直以为是自己填错了。
+ * 探测结果的摘要。顺序刻意如此：**先说「配置本身对不对」**（用户最想知道的），再说图片能力。
+ *
+ * 第十三版删掉了原来的「语音识别」那一行：它测的是主模型 chat 的 `input_audio` 内容块，
+ * 而那条路从来没有被业务代码走过 —— 转写始终只走 ASR 槽。测一个不存在的功能，
+ * 只会让用户在设置页看到一句对自己毫无用处、还会误导的「不支持」。
  */
 function probeSummary(caps: {
   text?: boolean;
@@ -60,9 +62,6 @@ function probeSummary(caps: {
   vision: boolean;
   visionStatus?: CapabilityStatus;
   visionDetail: string;
-  audio: boolean;
-  audioStatus?: CapabilityStatus;
-  audioDetail: string;
 }): string {
   const connectivity =
     caps.text === undefined
@@ -72,13 +71,10 @@ function probeSummary(caps: {
   const lines = [
     connectivity,
     capLine('图片分析', caps.visionStatus, caps.visionDetail, caps.vision),
-    capLine('语音识别', caps.audioStatus, caps.audioDetail, caps.audio),
   ];
 
   if (caps.text === false) {
     lines.push('先解决第一条：地址 / Key / 模型名有问题，与模型能力无关。');
-  } else if (!caps.audio) {
-    lines.push('语音不影响记录：录音会先存着，等配好「ASR」槽再补转写。');
   }
   return lines.join('\n');
 }
@@ -287,7 +283,7 @@ export default function ProviderScreen() {
       </Panel>
 
       <Panel>
-        <SectionTitle hint={isLlm ? '发一张 64×64 测试图与一段 1 秒音频各试一次' : '发一段 1 秒测试音频试转'}>
+        <SectionTitle hint={isLlm ? '发一条纯文本与一张 64×64 测试图各试一次' : '发一段 1 秒测试音频试转'}>
           连通性 / 能力探测
         </SectionTitle>
         <Button title="开始探测" variant="secondary" loading={busy} onPress={() => void onProbe()} />
@@ -297,8 +293,7 @@ export default function ProviderScreen() {
         {isLlm && rt.llm?.capabilities ? (
           <Text style={{ color: theme.textMuted, fontSize: 11, lineHeight: 16 }}>
             上次探测（{rt.llm.capabilities.probedModel}，{rt.llm.capabilities.probedAt.slice(0, 19)}）：
-            配置{capsMark(rt.llm.capabilities.text)}、图片{capsMark(rt.llm.capabilities.vision)}、语音
-            {capsMark(rt.llm.capabilities.audio)}
+            配置{capsMark(rt.llm.capabilities.text)}、图片{capsMark(rt.llm.capabilities.vision)}
           </Text>
         ) : null}
       </Panel>

@@ -1,5 +1,5 @@
 import { anthropicDelta, readSseText } from './sse';
-import { httpStatusError, unsupportedInput } from './types';
+import { httpStatusError } from './types';
 import type { ChatRequest, ChatResponse, LLMProviderAdapter, ProviderConfig } from './types';
 
 export interface AnthropicAdapterOptions {
@@ -21,7 +21,7 @@ interface AnthropicMessageResponse {
 /**
  * Anthropic Messages 协议适配器（/v1/messages）。
  * 兼容 ccg-gateway 等本地网关：authStyle='bearer' + userAgent 伪装 claude-cli。
- * 不支持音频输入（Anthropic 协议限制，走专用 ASR）。
+ * 只送文本与图片 —— 语音转写走专用 ASR（Anthropic 协议本身没有音频输入）。
  */
 export class AnthropicAdapter implements LLMProviderAdapter {
   private readonly fetchFn: typeof fetch;
@@ -38,12 +38,11 @@ export class AnthropicAdapter implements LLMProviderAdapter {
     const content: unknown[] = [];
     for (const p of req.parts) {
       if (p.type === 'text') content.push({ type: 'text', text: p.text });
-      else if (p.type === 'image')
+      else
         content.push({
           type: 'image',
           source: { type: 'base64', media_type: p.mime, data: p.base64 },
         });
-      else throw unsupportedInput('anthropic 适配器不支持音频输入（请配置专用 ASR）');
     }
 
     const headers: Record<string, string> = {
