@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  AppState,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { listCards, listCategories, type AnswerResult, type Category, type MemoryCard } from '@findr/core';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -222,7 +231,16 @@ export default function MemoryStreamScreen() {
         ) : null}
       </View>
 
-      <View style={styles.list}>
+      {/*
+        记忆流必须是滚动容器：这里以前是一个普通 <View style={styles.list}>，
+        既没有 ScrollView 也没有 FlatList，卡片一多就只是「被下边缘挡住」而划不动
+        （真机反馈：首页列表划不动）。注意 padding/gap 要放在 contentContainerStyle 上
+        —— 放在 style 上会把内容区压掉一圈，滚动时首尾卡片会贴边。
+      */}
+      <ScrollView
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        keyboardShouldPersistTaps="handled">
         {/* 数据库都没打开的话，其余界面全是空转；必须让用户看得见原因，
             否则只会看到一片空白，而自检入口还在设置里根本走不到 */}
         {runtimeError || loadError ? (
@@ -331,7 +349,7 @@ export default function MemoryStreamScreen() {
             </Text>
           </View>
         ) : null}
-      </View>
+      </ScrollView>
 
       {/* 底部：记 */}
       <View
@@ -405,7 +423,9 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15, padding: 0 },
   chips: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
-  list: { flex: 1, padding: Spacing.three, gap: Spacing.two },
+  /** 滚动容器本体只管占满剩余高度，内边距与间距全交给 contentContainerStyle */
+  list: { flex: 1 },
+  listContent: { padding: Spacing.three, gap: Spacing.two, paddingBottom: Spacing.four },
   cards: { gap: Spacing.two },
   resultsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   headerActions: { flexDirection: 'row', gap: Spacing.one, alignItems: 'center' },
