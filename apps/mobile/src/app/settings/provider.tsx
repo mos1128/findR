@@ -23,6 +23,46 @@ import { runQueueNow, useRuntime } from '@/platform/runtime';
 
 type Slot = 'llm' | 'asr';
 
+/**
+ * 探测结果的三段式摘要。顺序刻意如此：**先说「配置本身对不对」**（用户最想知道的），
+ * 再说两项能力。第十二版之前只有后两行，而且把「模型没回话」直接写成「不可用」，
+ * 用户会一直以为是自己填错了。
+ */
+/** 布尔 → 一个符号；旧缓存里没记录的项目显示「未记录」，别装成「不支持」 */
+function capsMark(ok: boolean | undefined): string {
+  if (ok === undefined) return '未记录';
+  return ok ? '✅' : '⬜';
+}
+
+function probeSummary(caps: {
+  text?: boolean;
+  textDetail?: string;
+  vision: boolean;
+  visionDetail: string;
+  audio: boolean;
+  audioDetail: string;
+}): string {
+  const line = (label: string, ok: boolean, detail: string) =>
+    `${ok ? '✅' : '⬜'} ${label}：${ok ? '可用' : '不可用'} —— ${detail}`;
+
+  const lines = [
+    line(
+      '配置连通性',
+      caps.text === true,
+      caps.textDetail ?? '旧版探测没记录这一项，重新探测一次',
+    ),
+    line('图片分析', caps.vision, caps.visionDetail),
+    line('语音识别', caps.audio, caps.audioDetail),
+  ];
+
+  if (caps.text === false) {
+    lines.push('先解决第一条：地址 / Key / 模型名有问题，与模型能力无关。');
+  } else if (!caps.audio) {
+    lines.push('语音不影响记录：录音会先存着，等配好「ASR」槽再补转写。');
+  }
+  return lines.join('\n');
+}
+
 export default function ProviderScreen() {
   const theme = useTheme();
   const params = useLocalSearchParams<{ slot?: string }>();
@@ -111,10 +151,7 @@ export default function ProviderScreen() {
           },
         });
         await refresh();
-        setProbeText(
-          `图片输入：${caps.vision ? '可用' : '不可用'}（${caps.visionDetail}）\n` +
-            `音频输入：${caps.audio ? '可用' : '不可用'}（${caps.audioDetail}）`,
-        );
+        setProbeText(probeSummary(caps));
       } else {
         const cfg: AsrSettings = {
           providerType: 'openai-compat',
@@ -240,8 +277,8 @@ export default function ProviderScreen() {
         {isLlm && rt.llm?.capabilities ? (
           <Text style={{ color: theme.textMuted, fontSize: 11, lineHeight: 16 }}>
             上次探测（{rt.llm.capabilities.probedModel}，{rt.llm.capabilities.probedAt.slice(0, 19)}）：
-            图片{rt.llm.capabilities.vision ? '支持' : '不支持'}、音频
-            {rt.llm.capabilities.audio ? '支持' : '不支持'}
+            配置{capsMark(rt.llm.capabilities.text)}、图片{capsMark(rt.llm.capabilities.vision)}、语音
+            {capsMark(rt.llm.capabilities.audio)}
           </Text>
         ) : null}
       </Panel>

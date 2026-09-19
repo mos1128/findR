@@ -1,6 +1,7 @@
 import { base64ToBytes } from '../util/base64';
 import type { MediaIO } from './media';
 import { openaiDelta, readSseText } from './sse';
+import { httpStatusError, unsupportedInput } from './types';
 import type {
   ASRProviderAdapter,
   ChatRequest,
@@ -50,7 +51,8 @@ function withTimeout(timeoutMs: number, signal?: AbortSignal) {
 }
 
 interface OpenAIChatResponse {
-  choices?: Array<{ message?: { content?: string | null } }>;
+  // reasoning_content 是 DeepSeek 等思考型模型的扩展字段，与 content 同级
+  choices?: Array<{ message?: { content?: string | null; reasoning_content?: string | null } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
 }
 
@@ -82,7 +84,8 @@ export class OpenAICompatAdapter implements LLMProviderAdapter {
         // chat 的 input_audio 只认 wav / mp3 —— m4a 必须走 /audio/transcriptions
         const format = p.mime.includes('wav') ? 'wav' : p.mime.includes('mp3') ? 'mp3' : null;
         if (!format) {
-          throw new Error(
+          // 本地就能判定：chat 的 input_audio 只有 wav/mp3 两种格式，其它一律走不了这条路
+          throw unsupportedInput(
             `openai-compat 的 input_audio 只接受 wav/mp3，收到 ${p.mime}；m4a 请走专用 ASR（模式 2）`,
           );
         }
@@ -108,15 +111,17 @@ export class OpenAICompatAdapter implements LLMProviderAdapter {
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new Error(`openai-compat 调用失败 HTTP ${res.status}: ${text.slice(0, 300)}`);
+        throw httpStatusError('openai-compat', res.status, text);
       }
       const ctype = res.headers.get('content-type') ?? '';
       if (ctype.includes('text/event-stream')) {
         return { text: await readSseText(res, openaiDelta) };
       }
       const data = (await res.json()) as OpenAIChatResponse;
+      const msg = data.choices?.[0]?.message;
       return {
-        text: data.choices?.[0]?.message?.content ?? '',
+        text: msg?.content ?? '',
+        reasoning: msg?.reasoning_content ?? undefined,
         usage: data.usage
           ? { inputTokens: data.usage.prompt_tokens, outputTokens: data.usage.completion_tokens }
           : undefined,
@@ -185,7 +190,7 @@ export class OpenAICompatAsrAdapter implements ASRProviderAdapter {
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new Error(`ASR 调用失败 HTTP ${res.status}: ${text.slice(0, 300)}`);
+        throw httpStatusError('ASR', res.status, text);
       }
       const data = (await res.json()) as OpenAITranscriptionResponse;
       return { text: data.text ?? '' };

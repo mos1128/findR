@@ -1,4 +1,5 @@
 import { anthropicDelta, readSseText } from './sse';
+import { httpStatusError, unsupportedInput } from './types';
 import type { ChatRequest, ChatResponse, LLMProviderAdapter, ProviderConfig } from './types';
 
 export interface AnthropicAdapterOptions {
@@ -42,7 +43,7 @@ export class AnthropicAdapter implements LLMProviderAdapter {
           type: 'image',
           source: { type: 'base64', media_type: p.mime, data: p.base64 },
         });
-      else throw new Error('anthropic 适配器不支持音频输入（请配置专用 ASR）');
+      else throw unsupportedInput('anthropic 适配器不支持音频输入（请配置专用 ASR）');
     }
 
     const headers: Record<string, string> = {
@@ -79,7 +80,7 @@ export class AnthropicAdapter implements LLMProviderAdapter {
       });
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new Error(`anthropic 调用失败 HTTP ${res.status}: ${text.slice(0, 300)}`);
+        throw httpStatusError('anthropic', res.status, text);
       }
       const ctype = res.headers.get('content-type') ?? '';
       if (ctype.includes('text/event-stream')) {

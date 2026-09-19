@@ -14,7 +14,42 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   text: string;
+  /**
+   * 思考型模型的过程文本（DeepSeek 的 `reasoning_content`）。默认不参与业务逻辑，
+   * 只在 text 为空时用来解释「为什么是空的」：思考模式默认开启且会吃掉 max_tokens 预算，
+   * 额度不够时正文可以是空的，此时它往往是唯一产出。
+   */
+  reasoning?: string;
   usage?: { inputTokens?: number; outputTokens?: number };
+}
+
+/** 带 HTTP 状态码的调用失败。调用方据此区分「认证 / 模型名 / 限流」与「端点不接受这种输入」 */
+export interface HttpStatusError extends Error {
+  status: number;
+  body: string;
+}
+
+export function httpStatusError(prefix: string, status: number, body: string): HttpStatusError {
+  const err = new Error(`${prefix} 调用失败 HTTP ${status}: ${body.slice(0, 300)}`) as HttpStatusError;
+  err.name = 'HttpStatusError';
+  err.status = status;
+  err.body = body;
+  return err;
+}
+
+/**
+ * 适配器在本地就判定「这个协议不支持某种输入」（还没发出去，或协议层面就没有这种字段）。
+ * 与服务端拒绝要分开：两者都算能力缺失，但前者是我们自己知道的确定结论。
+ */
+export interface UnsupportedInputError extends Error {
+  unsupportedInput: true;
+}
+
+export function unsupportedInput(message: string): UnsupportedInputError {
+  const err = new Error(message) as UnsupportedInputError;
+  err.name = 'UnsupportedInputError';
+  err.unsupportedInput = true;
+  return err;
 }
 
 /**

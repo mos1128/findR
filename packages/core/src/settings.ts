@@ -15,6 +15,12 @@ export const SETTINGS_KEYS = {
 export type LlmProviderType = 'anthropic' | 'openai-compat';
 
 export interface CapabilityCache {
+  /**
+   * 纯文本连通性：跑通就说明「地址 / Key / 模型名」这几样没配错，
+   * 图片与音频失败就只剩「能力缺失」一种解释。第十二版新增，旧缓存里没有这一项。
+   */
+  text?: boolean;
+  textDetail?: string;
   vision: boolean;
   audio: boolean;
   visionDetail: string;

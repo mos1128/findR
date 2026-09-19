@@ -3,6 +3,7 @@ import { inflateSync } from 'node:zlib';
 import { base64ToBytes, bytesToBase64 } from '../src/util/base64';
 import { makeTestPng, makeTestWav } from '../src/providers/samples';
 import { anthropicDelta, openaiDelta } from '../src/providers/sse';
+import { AnthropicAdapter } from '../src/providers/anthropic';
 import { OpenAICompatAdapter, OpenAICompatAsrAdapter } from '../src/providers/openai-compat';
 import { probeCapability, probeLlm } from '../src/providers/capabilities';
 import type { MediaIO } from '../src/providers/media';
@@ -295,7 +296,7 @@ test('能力探测：正常返回即视为具备该能力，并把样本真的�
   ]);
 
   const vision = await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'vision');
-  expect(vision).toEqual({ ok: true, detail: '棋盘' });
+  expect(vision).toMatchObject({ ok: true, status: 'ok', detail: '棋盘' });
 
   const body = JSON.parse(String(calls[0].init.body)) as {
     messages: Array<{ content: Array<{ type?: string; image_url?: { url: string } }> }>;
@@ -307,25 +308,93 @@ test('能力探测：正常返回即视为具备该能力，并把样本真的�
   expect(audio.ok).toBe(true);
 });
 
-test('能力探测：调用失败与空返回都判为不具备，且带出原因', async () => {
+test('能力探测：端点明确拒绝这类输入 ⇒ unsupported', async () => {
   const { fn } = fakeFetch([{ status: 400, text: 'model does not support image input' }]);
   const vision = await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'vision');
-  expect(vision.ok).toBe(false);
-  expect(vision.detail).toMatch(/does not support image/);
-
-  const { fn: emptyFn } = fakeFetch([{ json: { choices: [{ message: { content: '   ' } }] } }]);
-  const empty = await probeCapability(new OpenAICompatAdapter({ fetchFn: emptyFn }), CFG, 'vision');
-  expect(empty).toEqual({ ok: false, detail: '模型返回为空' });
+  expect(vision).toMatchObject({ ok: false, status: 'unsupported' });
+  expect(vision.detail).toMatch(/不接受图片输入/);
 });
 
-test('probeLlm 并发探测两项能力', async () => {
+test('能力探测：正文为空但被接受了 ⇒ unknown，绝不是「不支持」', async () => {
+  // 第十二版的教训：DeepSeek thinking 默认开启，max_tokens 给不够时正文就是空的，
+  // 但端点完全支持这种输入。旧代码把它说成「图片不支持」，用户白折腾了一晚上。
+  const { fn } = fakeFetch([
+    { json: { choices: [{ message: { content: '   ', reasoning_content: '先看看这张图…' } }] } },
+  ]);
+  const vision = await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'vision');
+
+  expect(vision.ok).toBe(false);
+  expect(vision.status).toBe('unknown');
+  expect(vision.detail).toMatch(/请求已被接受/);
+  expect(vision.detail).toMatch(/不代表端点不支持/);
+});
+
+test('能力探测：探测请求不给 64 这种会被思考吃光的 max_tokens', async () => {
+  const { fn, calls } = fakeFetch([{ json: { choices: [{ message: { content: 'ok' } }] } }]);
+  await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'vision');
+  const body = JSON.parse(String(calls[0].init.body)) as { max_tokens: number };
+  expect(body.max_tokens).toBeGreaterThanOrEqual(2048);
+});
+
+test('能力探测：认证失败是配置问题（error），不是能力问题', async () => {
+  const { fn } = fakeFetch([{ status: 401, text: '{"error":{"message":"Authentication Fails"}}' }]);
+  const res = await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'text');
+  expect(res).toMatchObject({ ok: false, status: 'error' });
+  expect(res.detail).toMatch(/API Key/);
+});
+
+test('能力探测：DeepSeek 那种「不认识 input_audio 的 422」翻成人话并指向 ASR 槽', async () => {
+  const body = JSON.stringify({
+    error: {
+      message:
+        'Failed to deserialize the JSON body into the target type: messages[1]: unknown variant `input_audio`, expected one of `text`, `image_url`, `file`',
+      type: 'invalid_request_error',
+    },
+  });
+  const { fn } = fakeFetch([{ status: 422, text: body }]);
+  const audio = await probeCapability(new OpenAICompatAdapter({ fetchFn: fn }), CFG, 'audio');
+
+  expect(audio).toMatchObject({ ok: false, status: 'unsupported' });
+  expect(audio.detail).toMatch(/不接受音频输入/);
+  expect(audio.detail).toMatch(/ASR/);
+});
+
+test('能力探测：适配器本地就拒绝（anthropic 无音频）也算 unsupported', async () => {
+  const { fn } = fakeFetch([]);
+  const res = await probeCapability(new AnthropicAdapter({ fetchFn: fn }), CFG, 'audio');
+  expect(res).toMatchObject({ ok: false, status: 'unsupported' });
+  expect(res.detail).toMatch(/不支持音频输入/);
+});
+
+test('probeLlm：先验纯文本连通性，再并发探两项能力', async () => {
   const { fn, calls } = fakeFetch([
+    { json: { choices: [{ message: { content: 'ok' } }] } },
     { json: { choices: [{ message: { content: '棋盘' } }] } },
     { status: 400, text: 'audio not supported' },
   ]);
   const caps = await probeLlm(new OpenAICompatAdapter({ fetchFn: fn }), CFG);
+
+  expect(caps.text).toBe(true);
   expect(caps.vision).toBe(true);
   expect(caps.audio).toBe(false);
-  expect(caps.audioDetail).toMatch(/audio not supported/);
-  expect(calls).toHaveLength(2);
+  expect(caps.audioDetail).toMatch(/不接受音频输入/);
+  expect(calls).toHaveLength(3);
+
+  // 第一个请求必须是纯文本，不能带样本 —— 用户要的是「我配的对不对」这个答案
+  const first = JSON.parse(String(calls[0].init.body)) as {
+    messages: Array<{ content: Array<{ type: string }> }>;
+  };
+  expect(first.messages[1].content.map((c) => c.type)).toEqual(['text']);
+});
+
+test('probeLlm：配置就没通过时短路，不再白等两个超时', async () => {
+  const { fn, calls } = fakeFetch([{ status: 401, text: 'bad key' }]);
+  const caps = await probeLlm(new OpenAICompatAdapter({ fetchFn: fn }), CFG);
+
+  expect(caps.text).toBe(false);
+  expect(caps.textDetail).toMatch(/认证失败/);
+  expect(caps.vision).toBe(false);
+  expect(caps.visionDetail).toMatch(/未测/);
+  expect(caps.audioDetail).toMatch(/未测/);
+  expect(calls).toHaveLength(1);
 });
