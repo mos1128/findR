@@ -1,5 +1,6 @@
 import { getSetting, setSetting } from './db/settings';
 import type { SqliteDriver } from './db/driver';
+import type { CapabilityStatus } from './providers/capabilities';
 
 /**
  * 设置项的唯一权威定义。DB 的 settings 表只存这里列出的非机密项；
@@ -25,6 +26,9 @@ export interface CapabilityCache {
   audio: boolean;
   visionDetail: string;
   audioDetail: string;
+  /** 图片/语音的完整结论，用来在 UI 上区分「不支持」与「没测出来」。第十二版新增，旧缓存没有 */
+  visionStatus?: CapabilityStatus;
+  audioStatus?: CapabilityStatus;
   probedAt: string;
   /** 探测时的模型名；与当前模型不一致即视为过期，需要重探 */
   probedModel: string;

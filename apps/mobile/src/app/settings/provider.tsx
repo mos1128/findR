@@ -11,6 +11,7 @@ import {
   writeAsrSettings,
   writeLlmSettings,
   type AsrSettings,
+  type CapabilityStatus,
   type LlmSettings,
   type LlmProviderType,
 } from '@findr/core';
@@ -23,36 +24,55 @@ import { runQueueNow, useRuntime } from '@/platform/runtime';
 
 type Slot = 'llm' | 'asr';
 
-/**
- * 探测结果的三段式摘要。顺序刻意如此：**先说「配置本身对不对」**（用户最想知道的），
- * 再说两项能力。第十二版之前只有后两行，而且把「模型没回话」直接写成「不可用」，
- * 用户会一直以为是自己填错了。
- */
 /** 布尔 → 一个符号；旧缓存里没记录的项目显示「未记录」，别装成「不支持」 */
 function capsMark(ok: boolean | undefined): string {
   if (ok === undefined) return '未记录';
   return ok ? '✅' : '⬜';
 }
 
+/**
+ * 一项能力的结论行。**「不支持」与「没测出来」必须分开说** ——
+ * 后者不是否定的证据，用户不需要为它改配置，更不该因此被锁掉功能。
+ */
+function capLine(
+  label: string,
+  status: CapabilityStatus | undefined,
+  detail: string,
+  ok: boolean,
+): string {
+  if (status === undefined) {
+    return `${ok ? '✅' : '⬜'} ${label}：${ok ? '可用' : '不可用'} —— ${detail}`;
+  }
+  if (status === 'ok') return `✅ ${label}：可用 —— ${detail}`;
+  if (status === 'unsupported') return `⬜ ${label}：不支持 —— ${detail}`;
+  if (status === 'unknown') return `⬜ ${label}：没测出来 —— ${detail}`;
+  return `⬜ ${label}：不可用 —— ${detail}`;
+}
+
+/**
+ * 探测结果的三段式摘要。顺序刻意如此：**先说「配置本身对不对」**（用户最想知道的），
+ * 再说两项能力。第十二版之前只有后两行，而且把「模型没回话」直接写成「不可用」，
+ * 用户会一直以为是自己填错了。
+ */
 function probeSummary(caps: {
   text?: boolean;
   textDetail?: string;
   vision: boolean;
+  visionStatus?: CapabilityStatus;
   visionDetail: string;
   audio: boolean;
+  audioStatus?: CapabilityStatus;
   audioDetail: string;
 }): string {
-  const line = (label: string, ok: boolean, detail: string) =>
-    `${ok ? '✅' : '⬜'} ${label}：${ok ? '可用' : '不可用'} —— ${detail}`;
+  const connectivity =
+    caps.text === undefined
+      ? '⬜ 配置连通性：未记录 —— 旧版探测没记这一项，重新探测一次'
+      : `${caps.text ? '✅ 配置连通性：可用' : '⬜ 配置连通性：不可用'} —— ${caps.textDetail ?? ''}`;
 
   const lines = [
-    line(
-      '配置连通性',
-      caps.text === true,
-      caps.textDetail ?? '旧版探测没记录这一项，重新探测一次',
-    ),
-    line('图片分析', caps.vision, caps.visionDetail),
-    line('语音识别', caps.audio, caps.audioDetail),
+    connectivity,
+    capLine('图片分析', caps.visionStatus, caps.visionDetail, caps.vision),
+    capLine('语音识别', caps.audioStatus, caps.audioDetail, caps.audio),
   ];
 
   if (caps.text === false) {

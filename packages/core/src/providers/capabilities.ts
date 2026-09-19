@@ -179,10 +179,14 @@ export interface ProbedCapabilities {
   /** 配置连通性：纯文本能否跑通。false ⇒ 是配置/网络问题，与能力无关 */
   text: boolean;
   textDetail: string;
+  /** 业务用的简化视图：vision=false 会**锁死「图片分析」开关**，见下面 probeLlm 的注释 */
   vision: boolean;
   audio: boolean;
   visionDetail: string;
   audioDetail: string;
+  /** 给 UI 用的完整结论，让用户能分清「不支持」与「没测出来」 */
+  visionStatus: CapabilityStatus;
+  audioStatus: CapabilityStatus;
 }
 
 export async function probeLlm(
@@ -202,6 +206,8 @@ export async function probeLlm(
       audio: false,
       visionDetail: skipped,
       audioDetail: skipped,
+      visionStatus: 'error',
+      audioStatus: 'error',
     };
   }
 
@@ -212,9 +218,16 @@ export async function probeLlm(
   return {
     text: true,
     textDetail: text.status === 'ok' ? text.detail : `${text.detail}（地址与 Key 是通的）`,
-    vision: vision.ok,
+    // ⚠️ `vision: false` 会经 apps 侧的 `visionSupported()` **锁死「图片分析」开关**
+    // （需求 3.3 的置灰锁定），所以**只有「端点明确否定」才允许置 false**：
+    // 「没测出来」（unknown）不是否定的证据，不能拿它去关用户的功能 ——
+    // 这正是第十二版要消灭的那类误判，别让它从后门回来。
+    vision: vision.status !== 'unsupported',
+    // audio 的 false 只意味着「别走 ASR 模式 1（chat 的 input_audio）」，代价小，按 ok 严格要求
     audio: audio.ok,
     visionDetail: vision.detail,
     audioDetail: audio.detail,
+    visionStatus: vision.status,
+    audioStatus: audio.status,
   };
 }

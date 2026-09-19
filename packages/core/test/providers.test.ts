@@ -387,6 +387,35 @@ test('probeLlm：先验纯文本连通性，再并发探两项能力', async () 
   expect(first.messages[1].content.map((c) => c.type)).toEqual(['text']);
 });
 
+test('probeLlm：图片「没测出来」不算不支持 —— vision 必须保持 true，否则会锁死图片分析开关', async () => {
+  // apps 侧 visionSupported() 直接读 capabilities.vision 去置灰锁定「图片分析」。
+  // 若把 unknown 也算成 false，用户会莫名其妙失去图片分析，且看不出为什么。
+  const { fn } = fakeFetch([
+    { json: { choices: [{ message: { content: 'ok' } }] } }, // text → ok
+    { json: { choices: [{ message: { content: '', reasoning_content: '嗯…' } }] } }, // vision → unknown
+    { status: 422, text: '{"error":{"message":"unknown variant `input_audio`"}}' }, // audio → unsupported
+  ]);
+  const caps = await probeLlm(new OpenAICompatAdapter({ fetchFn: fn }), CFG);
+
+  expect(caps.visionStatus).toBe('unknown');
+  expect(caps.vision).toBe(true);
+  expect(caps.audioStatus).toBe('unsupported');
+  expect(caps.audio).toBe(false);
+});
+
+test('probeLlm：端点明确否定图片时，vision 才是 false（该锁就锁）', async () => {
+  const { fn } = fakeFetch([
+    { json: { choices: [{ message: { content: 'ok' } }] } },
+    { status: 400, text: 'this model does not support image input' },
+    { status: 400, text: 'audio not supported' },
+  ]);
+  const caps = await probeLlm(new OpenAICompatAdapter({ fetchFn: fn }), CFG);
+
+  expect(caps.visionStatus).toBe('unsupported');
+  expect(caps.vision).toBe(false);
+  expect(caps.audio).toBe(false);
+});
+
 test('probeLlm：配置就没通过时短路，不再白等两个超时', async () => {
   const { fn, calls } = fakeFetch([{ status: 401, text: 'bad key' }]);
   const caps = await probeLlm(new OpenAICompatAdapter({ fetchFn: fn }), CFG);
