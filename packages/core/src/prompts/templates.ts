@@ -73,13 +73,29 @@ export const P1_TEXT_ONLY_OFF = `（本次用户选择不分析图片，图片�
 
 export const P1_TEXT_ONLY_UNSUPPORTED = `（当前模型无法接收图片）请仅根据文字整理，不要猜测图片内容。若文字信息不足，在 desc 中如实说明，并在 missing 中标注 "visual"。同时把 "ask" 留空——能力缺失不能靠追问用户解决。`;
 
-export const P2_SYSTEM = `你是个人记忆库的检索助手。用户用口语提问，你需要把它翻译成一组本地全文检索条件。
+export const P2_SYSTEM = `你是个人记忆库的检索助手。用户用口语提问，你要先判断这是哪一类问题，再产出对应的东西。
 
-严格约束：
-1. 只能看到用户的提问，看不到记忆库内容。只做「提问侧」的扩展。
-2. 绝不假设库里存在什么物品、什么位置。不要把你猜测的实体名当作关键词输出。
-3. 关键词必须是用户提问中明确出现的词，或其天然同义词、简称、别称。
-4. 只输出一个 JSON 对象，不要解释，不要 markdown 代码块。
+两类问题：
+- **定位题**（mode = "locate"）：用户知道自己要什么，问的是「它是什么 / 在哪 / 有哪些 / 怎么做」。
+  例：「我护照放哪了」「有哪些东西该买了」「换驾照怎么弄」。
+- **推理题**（mode = "advise"）：用户给一个情景或用途，问「需要什么」。答案要靠常识把情景
+  与用户库里的东西连起来，**字面检索对此无效**。
+  例：「我去国外玩应该会用到哪些东西」「搬新家要添置什么」「露营要带什么」。
+
+通用约束：
+1. 只输出一个 JSON 对象，不要解释，不要 markdown 代码块。
+2. 你看不到记忆库内容。**任何时候都不要把具体物品名当作关键词输出** —— 你不知道用户记了什么。
+
+locate 的约束：
+3. keywords 必须是用户提问中明确出现的词，或其天然同义词、简称、别称。
+4. keywords 与 synonyms 会被拼成本地全文检索表达式，所以要具体、能吃中卡片原文。
+
+advise 的约束：
+5. keywords 与 synonyms 一律留空数组 —— 硬填关键词只会让检索跑偏。
+6. scenario 用一句话写清情景（如「出国旅游需要随身携带的物品」）。
+7. aspects 写这个情景下**通常需要的东西类别**，2~6 个，用通用名词
+   （如 ["证件","洗漱用品","电子产品","常用药品"]）。
+   注意：写的是**类别**，不是具体物品名 —— 它是给检索用的方向，不是给用户的答案。
 
 已有分类：
 {{categories}}
@@ -87,7 +103,11 @@ export const P2_SYSTEM = `你是个人记忆库的检索助手。用户用口语
 已有位置：
 {{locations}}`;
 
-export const P2_RULES = `- keywords 与 synonyms 会被拼成本地全文检索表达式（SQLite FTS5）。
+export const P2_RULES = `- mode 决定走哪条路，判错的代价是**答非所问**：locate 走本地字面检索；advise 会把整个记忆库
+  的条目清单交给模型逐条判定相关性。**拿不准时一律选 locate**（字面检索至少还能给出字面命中的东西）。
+- 判断依据看「答案从哪里来」：答案在用户库里躺着 → locate；答案要靠「这种东西那个场合用得上」
+  这类常识推出来 → advise。
+- keywords 与 synonyms 会被拼成本地全文检索表达式（SQLite FTS5）。
 - match_mode 默认 any（命中任一关键词，按相关度排序）；仅当用户明确并列多个条件时才用 all。
 - category、path_prefix、time_hint 走结构化字段过滤，不参与全文匹配。
 - category 可依意图判断（如「有哪些该买的」→ 待买补货）；path_prefix 仅当用户提问中明确提到该位置时才填写。
@@ -96,6 +116,7 @@ export const P2_RULES = `- keywords 与 synonyms 会被拼成本地全文检索�
 export const P2_FEWSHOT = `输入：『我护照放哪了』
 
 {
+  "mode": "locate",
   "intent": "find_item",
   "keywords": ["护照"],
   "synonyms": ["出入境证件", "passport"],
@@ -103,12 +124,15 @@ export const P2_FEWSHOT = `输入：『我护照放哪了』
   "path_prefix": null,
   "time_hint": null,
   "match_mode": "any",
+  "scenario": null,
+  "aspects": [],
   "normalized_query": "护照放在哪里"
 }
 
 输入：『有哪些东西该买了』
 
 {
+  "mode": "locate",
   "intent": "list_todo",
   "keywords": ["买", "补货", "缺"],
   "synonyms": ["采购", "需要买", "用完了"],
@@ -116,17 +140,38 @@ export const P2_FEWSHOT = `输入：『我护照放哪了』
   "path_prefix": null,
   "time_hint": null,
   "match_mode": "any",
+  "scenario": null,
+  "aspects": [],
   "normalized_query": "待买清单有哪些"
+}
+
+输入：『我去国外玩应该会用到哪些东西』
+
+{
+  "mode": "advise",
+  "intent": "unknown",
+  "keywords": [],
+  "synonyms": [],
+  "category": null,
+  "path_prefix": null,
+  "time_hint": null,
+  "match_mode": "any",
+  "scenario": "出国旅游需要随身携带的物品",
+  "aspects": ["证件", "洗漱用品", "电子产品", "常用药品", "衣物"],
+  "normalized_query": "出国旅游需要带哪些东西"
 }`;
 
 export const P2_OUTPUT_SCHEMA = `{
-  "intent": "find_item | list_todo | recall_steps | unknown",
-  "keywords": ["核心关键词，2~5 个"],
-  "synonyms": ["同义词、别称、简称，最多 6 个"],
+  "mode": "locate | advise（判不准就填 locate）",
+  "intent": "find_item | list_todo | recall_steps | unknown（仅 locate 有意义，advise 时填 unknown）",
+  "keywords": ["locate：核心关键词 2~5 个；advise：必须为空数组"],
+  "synonyms": ["locate：同义词、别称、简称，最多 6 个；advise：必须为空数组"],
   "category": "已有分类名或 null",
   "path_prefix": ["位置限定前缀，如 ['主卧']"] 或 null,
   "time_hint": "recent | this_week | this_month | this_year | null",
   "match_mode": "any | all",
+  "scenario": "advise：一句话情景描述；locate：null",
+  "aspects": ["advise：该情景通常需要的类别 2~6 个（写类别不写具体物品名）；locate：空数组"],
   "normalized_query": "改写后的规范问句"
 }`;
 
@@ -147,3 +192,30 @@ export const P3_INPUT_TEMPLATE = `用户问题：{{query}}
 
 候选片段（最多 8 条）：
 {{snippets}}`;
+
+export const P4_SYSTEM = `你是用户的私人生活助手，可以查阅他的个人记忆库。用户给一个情景或需求，你要从记忆库里挑出这个情景真正用得上的东西，并指出他还缺什么。
+
+约束：
+1. **必须用常识判断「这个东西在这个情景下用不用得上」**，不要只看字面是否沾边。
+   例：问「出国旅游要带什么」，剃须刀用得上；螺丝刀用不上。
+2. 只能挑清单里**真实存在**的条目，id 必须原样照抄，**不得编造 id**。
+3. 拿不准的一律放进 maybe，并在 why 里说清**取决于什么**。
+   不要为了干净而误删，也不要为了齐全而全留 —— 两种都是失职。
+4. 与情景无关的条目不要出现在任何一档里（包括 maybe）。
+5. missing 写清单里**没有**、但这个情景确实需要的东西（如「转换插头」）。没有就返回空数组。
+6. answer 面向用户，口语化，不超过 120 字：先给结论，再一句提示。不要在 answer 里罗列不相关的条目。
+7. 只输出一个 JSON 对象，不要解释，不要 markdown 代码块。`;
+
+export const P4_SCHEMA = `{
+  "picks": [{"id": "清单里的 id", "why": "为什么必需，一句话"}],
+  "maybe": [{"id": "清单里的 id", "why": "取决于什么，一句话"}],
+  "missing": ["清单里没有但确实需要的东西，纯文本"],
+  "answer": "面向用户的口语化回答，不超过 120 字"
+}`;
+
+export const P4_INPUT_TEMPLATE = `用户的问题：{{query}}
+
+需要判断的情景：{{scenario}}
+
+记忆库条目（共 {{total}} 条，格式：序号 | id | 实体 | 分类 | 位置 | 简述）：
+{{inventory}}`;

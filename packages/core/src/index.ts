@@ -25,6 +25,8 @@ export * from './prompts/render';
 export * from './search/builder';
 export * from './search/service';
 export * from './search/answer';
+export * from './search/inventory';
+export * from './search/advise';
 export * from './media/paths';
 export * from './pipeline/capture';
 export * from './pipeline/ingest';

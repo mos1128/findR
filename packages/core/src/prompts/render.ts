@@ -15,6 +15,9 @@ import {
   P3_INPUT_TEMPLATE,
   P3_SCHEMA,
   P3_SYSTEM,
+  P4_INPUT_TEMPLATE,
+  P4_SCHEMA,
+  P4_SYSTEM,
 } from './templates';
 
 export function render(template: string, vars: Record<string, string>): string {
@@ -84,6 +87,19 @@ export function buildP3System(): string {
 
 export function buildP3Input(query: string, snippets: string): string {
   return render(P3_INPUT_TEMPLATE, { query, snippets });
+}
+
+export function buildP4System(): string {
+  return P4_SYSTEM + '\n\n输出 schema：\n' + P4_SCHEMA;
+}
+
+export function buildP4Input(query: string, scenario: string, total: number, inventory: string): string {
+  return render(P4_INPUT_TEMPLATE, {
+    query,
+    scenario,
+    total: String(total),
+    inventory,
+  });
 }
 
 export function formatCategoriesForPrompt(categories: Category[]): string {

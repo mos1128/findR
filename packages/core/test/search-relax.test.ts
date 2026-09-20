@@ -30,6 +30,7 @@ const PASSPORT = makeCard({
 
 function p2(over: Partial<P2Output>): P2Output {
   return {
+    mode: 'locate',
     intent: 'find_item',
     keywords: [],
     synonyms: [],
@@ -37,6 +38,8 @@ function p2(over: Partial<P2Output>): P2Output {
     path_prefix: null,
     time_hint: null,
     match_mode: 'any',
+    scenario: null,
+    aspects: [],
     normalized_query: null,
     ...over,
   };

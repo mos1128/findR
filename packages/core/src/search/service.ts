@@ -14,7 +14,9 @@ import {
 } from '../prompts/render';
 import type { LLMProviderAdapter, ProviderConfig } from '../providers/types';
 import type { MemoryCard } from '../types';
+import { adviseFromInventory, type AdviceResult } from './advise';
 import { buildRawSearch, buildSearch, relaxations } from './builder';
+import { buildInventory } from './inventory';
 
 export interface SearchDeps {
   db: SqliteDriver;
@@ -41,6 +43,11 @@ export interface SearchResult {
    * UI 必须说明：这批结果比用户原话宽，不说明就会被误当成「严格匹配」。
    */
   relaxed?: boolean;
+  /**
+   * 推理题（advise）的裁决结果。有值时 `cards` 是**裁决后**的清单
+   * （必需在前、看情况在后），不再是字面命中 —— UI 必须据此换一套呈现。
+   */
+  advice?: AdviceResult;
 }
 
 export async function searchCards(deps: SearchDeps, query: string): Promise<SearchResult> {
@@ -65,6 +72,11 @@ export async function searchCards(deps: SearchDeps, query: string): Promise<Sear
       p2 = null;
     }
   }
+
+  // 推理题：答案不在库里，字面检索对这类问题**必然 0 条**，改走「整库清单 → 模型裁决」。
+  // 必须放在下面的关键词检查**之前** —— advise 模式下 keywords 恒为空，
+  // 否则会被当成「模型没听懂」而退化，正是要修的那个毛病。
+  if (p2 && p2.mode === 'advise') return adviseSearch(deps, query, p2);
 
   if (p2 && p2.intent !== 'unknown' && p2.keywords.length > 0) {
     const expanded = expandTermsByAliases(deps.db, [...p2.keywords, ...p2.synonyms]);
@@ -101,4 +113,76 @@ export async function searchCards(deps: SearchDeps, query: string): Promise<Sear
     unclear: p2 !== null,
     p2,
   };
+}
+
+/**
+ * 推理题（advise）的执行：整库清单 → 模型逐条裁决。
+ *
+ * 与定位题的差别不只在 prompt，还在**返回的 cards 从何而来**：
+ * 定位题的 cards 是本地 SQL 命中的；这里的 cards 是模型挑出来的
+ * （必需在前、看情况在后），**可能一条都没有**——那也是一种正确答案
+ * （「你库里没有适合这次出行的东西，你还缺转换插头」）。
+ */
+async function adviseSearch(
+  deps: SearchDeps,
+  query: string,
+  p2: P2Output,
+): Promise<SearchResult> {
+  const { llm, cfg } = deps;
+  // 调用方已用 `deps.llm && deps.cfg` 保证非空，这里只是把类型收窄
+  if (!llm || !cfg) {
+    return { cards: [], usedFallback: true, unclear: false, p2 };
+  }
+
+  const inventory = buildInventory(deps.db);
+  // 空库没必要花一次调用：没有任何库存，「你需要什么」无从谈起
+  if (inventory.cards.length === 0) {
+    return {
+      cards: [],
+      usedFallback: false,
+      unclear: false,
+      p2,
+      advice: {
+        ok: true,
+        picks: [],
+        maybe: [],
+        missing: [],
+        answer: '记忆库还是空的，先记一条再问我。',
+      },
+    };
+  }
+
+  const res = await adviseFromInventory({ llm, cfg }, query, p2.scenario?.trim() || query, inventory);
+  if (!res.ok) {
+    // 裁决失败 ⇒ 退到字面兜底，与「模型不可达」同一条路，并让 UI 说明走的是哪条
+    return {
+      cards: executeSearch(deps.db, buildRawSearch(query)),
+      usedFallback: true,
+      unclear: false,
+      p2,
+    };
+  }
+
+  const picked = [...res.picks, ...res.maybe];
+  if (picked.length > 0) {
+    return {
+      cards: picked.map((item) => item.card),
+      usedFallback: false,
+      unclear: false,
+      p2,
+      advice: res,
+    };
+  }
+
+  // 裁决一条都没挑中。这可能是真的（库里确实没有适合这次出行的东西），
+  // 也可能是 P2 把一道定位题误判成了推理题。
+  // 本地字面检索是**零成本、零延迟**的，顺手跑一次：它若命中了东西，就把这批结果
+  // 一并给出（advice 仍然保留，答案与 missing 照常显示），
+  // 别让一个模型判断变成一次静默的空结果 —— 与「模型不可达必退字面兜底」是同一条原则。
+  const literal = executeSearch(deps.db, buildRawSearch(query));
+  if (literal.length > 0) {
+    return { cards: literal, usedFallback: true, unclear: false, p2, advice: res };
+  }
+
+  return { cards: [], usedFallback: false, unclear: false, p2, advice: res };
 }

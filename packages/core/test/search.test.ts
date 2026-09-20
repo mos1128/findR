@@ -29,6 +29,7 @@ test('quoteFts / escapeLike 转义', () => {
 
 test('buildSearch：unknown 或空关键词返回 null（不盲查）', () => {
   const base: P2Output = {
+    mode: 'locate',
     intent: 'unknown',
     keywords: [],
     synonyms: [],
@@ -36,6 +37,8 @@ test('buildSearch：unknown 或空关键词返回 null（不盲查）', () => {
     path_prefix: null,
     time_hint: null,
     match_mode: 'any',
+    scenario: null,
+    aspects: [],
     normalized_query: null,
   };
   expect(buildSearch({ p2: base, resolveCategoryId: () => null })).toBeNull();

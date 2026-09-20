@@ -76,6 +76,7 @@ export function CardRow({
   categoryName,
   categoryEmoji,
   highlight,
+  note,
   onPress,
 }: {
   card: MemoryCard;
@@ -85,6 +86,11 @@ export function CardRow({
   categoryEmoji?: string | null;
   /** L2 答案依据的卡片，在结果里加一圈强调色（需求六「答案卡片置顶高亮」） */
   highlight?: boolean;
+  /**
+   * 「这条为什么出现在这里」—— 只有建议型结果（advise）会传。
+   * 建议结果里的卡片不是字面命中，是模型挑出来的；不给理由，用户无从判断要不要信它。
+   */
+  note?: string;
   onPress?: () => void;
 }) {
   const theme = useTheme();
@@ -148,6 +154,13 @@ export function CardRow({
             想确认：{card.ask}
           </Text>
         ) : null}
+
+        {/* 建议型结果的入选理由 —— 放在最后，不抢标题与副标题的位置 */}
+        {note ? (
+          <Text style={[styles.note, { color: theme.record }]} numberOfLines={2}>
+            {note}
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -175,4 +188,5 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 12, lineHeight: 17 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 2 },
   ask: { fontSize: 12, marginTop: 2 },
+  note: { fontSize: 12, lineHeight: 17, marginTop: 2 },
 });

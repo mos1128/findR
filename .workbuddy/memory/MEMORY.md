@@ -20,6 +20,7 @@
 3. 出包前本地冒烟：`cd apps/mobile && npx expo export --platform android --output-dir ../../.workbuddy/tmp/dist-smokeN`
    （输出目录**别落在 apps/mobile 下**，那里不在 gitignore 里）
 4. 出包链路：提交 → push main → `git tag apk-m1-fixN` → push tag → CI `android` 约 20 分钟
+   **（push / 打 tag 前必须先经用户确认 —— 见铁律 8）**
 5. 取包：`gh release download dev-latest --pattern '*.apk'` → 校验结构 + sha256 → 复制到桌面
 
 ## 铁律（都踩过，代价很大）
@@ -34,6 +35,10 @@
 7. **探测项只许覆盖真正在用、且能改变行为的能力** —— 加之前先问：
    **它不通过时，系统会因此少做什么？** 答不上来就别加（第十三版的「音频输入」探测是反例：
    规格里有、代码里没有、不控制任何行为，只让用户看到一句误导性的「不支持」）
+8. **推送 / 打包前必须停下来，等用户明确确认「没有要改的了」**
+   —— 2026-09-20 用户明确要求。一次 CI 要等 20+ 分钟，用户在手上有后续改动时
+   被已触发的构建白白占掉一轮等待。**改完 → 汇报 → 等确认 → 才 push/tag。**
+   这条同时适用于「改完顺手就 push」的肌肉记忆，以及把 tag 当自动收尾动作的做法。
 
 ## 环境坑
 - bash 里先 `export PATH="/usr/bin:/bin:$PATH"`，否则 `ls`/`find`/`head` 会 command not found
