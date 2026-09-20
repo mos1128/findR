@@ -52,6 +52,8 @@ export default function MemoryStreamScreen() {
   const queueRunning = useRef(false);
   /** 有可用的主模型配置（模型名 + 可选地址；API Key 不参与判定）—— 决定检索走哪条路 */
   const llmReady = llmConfigured(rt?.llm ?? null);
+  /** 每次搜索都自动组织答案（设置页开关，默认关）。开了也**不阻塞列表** —— 见 onSearch */
+  const autoAnswer = rt?.search.autoAnswer ?? false;
 
   const reload = useCallback(() => {
     if (!rt) return;
@@ -113,7 +115,10 @@ export default function MemoryStreamScreen() {
         setSearchNote(null);
       }
       // 需求 5.3：本地无结果时自动组织一次答案。没有模型就别触发 —— 那必然是一次失败请求。
-      if (res.cards.length === 0 && llmReady) void requestAnswer(q, []);
+      // 第十四版：开了「每次搜索都自动组织答案」时，有结果也自动跑。
+      // 这里**刻意不 await** —— 列表上面已经 setResults 了，答案回来再追加到列表下方，
+      // 所以多出来的那一次调用不会让列表晚出现一毫秒（渐进式）。
+      if (llmReady && (res.cards.length === 0 || autoAnswer)) void requestAnswer(q, res.cards);
     } catch (e) {
       setResults([]);
       setSearchNote(e instanceof Error ? e.message : '检索失败');
@@ -262,13 +267,14 @@ export default function MemoryStreamScreen() {
               检索结果 {results.length} 条
             </Text>
             <View style={styles.headerActions}>
-              {/* 没有模型时不给「AI 总结」入口 —— 点了必然失败 */}
-              {results.length > 0 && !answer && llmReady ? (
+              {/* 没有模型时不给「AI 总结」入口 —— 点了必然失败。
+                  组织过程中收起按钮，改由列表下方那行「正在组织答案…」提示，
+                  否则同屏会出现两个指示器（按钮转圈 + 底部一行字） */}
+              {results.length > 0 && !answer && !answering && llmReady ? (
                 <Button
                   title="AI 总结"
                   variant="ghost"
                   compact
-                  loading={answering}
                   onPress={() => void requestAnswer(query.trim(), results)}
                 />
               ) : null}
@@ -293,24 +299,6 @@ export default function MemoryStreamScreen() {
           </View>
         ) : null}
 
-        {/* 需求六：搜索时 AI 答案卡片置顶高亮 */}
-        {answer ? (
-          <View style={[styles.answerCard, { backgroundColor: theme.surface, borderColor: theme.record }]}>
-            <Text style={[styles.answerTag, { color: theme.record }]}>AI 答案</Text>
-            <Text style={{ color: theme.text, fontSize: 15, lineHeight: 22 }}>{answer.answer}</Text>
-            {answer.suggest ? (
-              <Text style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 17 }}>
-                {answer.suggest}
-              </Text>
-            ) : null}
-            {answer.hitIds.length > 0 ? (
-              <Text style={{ color: theme.textMuted, fontSize: 11 }}>
-                依据 {answer.hitIds.length} 张卡片，已在下面高亮
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-
         <View style={styles.cards}>
           {(results ?? cards).map((card) => (
             <CardRow
@@ -325,7 +313,35 @@ export default function MemoryStreamScreen() {
           ))}
         </View>
 
-        {!searching && (results ?? cards).length === 0 ? (
+        {/* 第十四版：AI 答案**追加在列表下方**，不再置顶（原「需求六 · 置顶高亮」据此改）。
+            理由是渐进式：答案要晚一两秒才回来，置顶会把已经读着的列表整块推下去，形成跳动；
+            追加在下方则列表纹丝不动，答案自己在下面长出来。 */}
+        {answer ? (
+          <View style={[styles.answerCard, { backgroundColor: theme.surface, borderColor: theme.record }]}>
+            <Text style={[styles.answerTag, { color: theme.record }]}>AI 答案</Text>
+            <Text style={{ color: theme.text, fontSize: 15, lineHeight: 22 }}>{answer.answer}</Text>
+            {answer.suggest ? (
+              <Text style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 17 }}>
+                {answer.suggest}
+              </Text>
+            ) : null}
+            {answer.hitIds.length > 0 ? (
+              <Text style={{ color: theme.textMuted, fontSize: 11 }}>
+                依据 {answer.hitIds.length} 张卡片，已在上方高亮
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* 渐进式的唯一指示器：列表已经能用，答案还在路上。刻意放在答案即将出现的位置 */}
+        {answering && !answer && results ? (
+          <View style={[styles.notice, { backgroundColor: theme.surfaceAlt }]}>
+            <Text style={[styles.noticeText, { color: theme.textSecondary }]}>正在组织答案…</Text>
+          </View>
+        ) : null}
+
+        {/* 空态。正在组织答案时先不喊「没找到」—— 否则会先闪一句空话，再被答案推翻 */}
+        {!searching && !answer && !answering && (results ?? cards).length === 0 ? (
           <EmptyState
             title={results ? '没找到相关记忆' : '还没有记忆'}
             hint={

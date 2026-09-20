@@ -7,6 +7,7 @@ import {
   retryAllTranscriptions,
   writeCaptureSettings,
   writePipelineSettings,
+  writeSearchSettings,
 } from '@findr/core';
 
 import { Spacing } from '@/constants/theme';
@@ -117,6 +118,28 @@ export default function SettingsScreen() {
             void refresh();
           }}
         />
+      </Panel>
+
+      <Panel>
+        <SectionTitle hint="每次搜索要不要顺手让模型写一段答案">检索</SectionTitle>
+        <ListRow
+          title="每次搜索都自动组织答案"
+          subtitle="关：只在搜不到、或你点「AI 总结」时才跑。开：搜到也自动跑，答案追加在列表下方"
+          right={
+            <Switch
+              value={rt.search.autoAnswer}
+              onValueChange={(v) => {
+                writeSearchSettings(rt.driver, { ...rt.search, autoAnswer: v });
+                void refresh();
+              }}
+              trackColor={{ true: theme.record, false: theme.surfaceAlt }}
+            />
+          }
+        />
+        <Text style={{ color: theme.textMuted, fontSize: 11, lineHeight: 16 }}>
+          打开后每次搜索都会把最多 8 条命中片段发给模型（单次多花约 0.2 分，可忽略）；
+          真正的代价是——关着的时候你不点按钮就不外发任何记忆内容，开着则每次搜索都会。
+        </Text>
       </Panel>
 
       <Panel>

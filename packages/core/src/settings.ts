@@ -11,6 +11,7 @@ export const SETTINGS_KEYS = {
   asr: 'asr',
   capture: 'capture',
   pipeline: 'pipeline',
+  search: 'search',
 } as const;
 
 export type LlmProviderType = 'anthropic' | 'openai-compat';
@@ -69,6 +70,33 @@ export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
 export const DEFAULT_PIPELINE_SETTINGS: PipelineSettings = {
   confirmThreshold: 0.6,
 };
+
+/**
+ * 检索行为开关（第十四版新增）。
+ *
+ * `autoAnswer` 是把 L2 从「手动点」改成「自动补」的开关，默认**关**。
+ * 关的理由不是省钱（单次多花的 token 换算下来约 0.17 分，可忽略），而是两条：
+ * 1. **隐私**：L2 会把最多 8 条命中片段发给模型。关着的时候，用户不点按钮就**不外发任何记忆内容**；
+ *    开着等于每次搜索都外发。对一个「本地记忆库」来说这是性质变化，必须由用户自己选。
+ * 2. **冗余**：有结果时 L1 的卡片列表往往已经够用，一段总结常常只是把可扫的列表复述成要读的文字。
+ *
+ * 开启后答案**追加在列表下方**（不是置顶）—— 渐进式返回时置顶会把列表推下去，形成跳动。
+ */
+export interface SearchSettings {
+  autoAnswer: boolean;
+}
+
+export const DEFAULT_SEARCH_SETTINGS: SearchSettings = {
+  autoAnswer: false,
+};
+
+export function readSearchSettings(db: SqliteDriver): SearchSettings {
+  return { ...DEFAULT_SEARCH_SETTINGS, ...(getSetting<SearchSettings>(db, SETTINGS_KEYS.search) ?? {}) };
+}
+
+export function writeSearchSettings(db: SqliteDriver, value: SearchSettings): void {
+  setSetting(db, SETTINGS_KEYS.search, value);
+}
 
 export function readLlmSettings(db: SqliteDriver): LlmSettings | null {
   return getSetting<LlmSettings>(db, SETTINGS_KEYS.llm);

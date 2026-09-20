@@ -11,6 +11,7 @@ import {
   readCaptureSettings,
   readLlmSettings,
   readPipelineSettings,
+  readSearchSettings,
   runQueue,
   searchCards,
   toAsrProviderConfig,
@@ -23,6 +24,7 @@ import {
   type MemoryCard,
   type PipelineSettings,
   type QueueRunResult,
+  type SearchSettings,
   type SqliteDriver,
 } from '@findr/core';
 
@@ -37,6 +39,7 @@ export interface RuntimeState {
   asr: AsrSettings | null;
   capture: CaptureSettings;
   pipeline: PipelineSettings;
+  search: SearchSettings;
   llmKey: string | null;
   asrKey: string | null;
 }
@@ -63,6 +66,7 @@ export async function openRuntime(): Promise<RuntimeState> {
     asr: readAsrSettings(driver),
     capture: readCaptureSettings(driver),
     pipeline: readPipelineSettings(driver),
+    search: readSearchSettings(driver),
     llmKey,
     asrKey,
   };
