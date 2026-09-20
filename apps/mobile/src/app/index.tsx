@@ -50,6 +50,13 @@ export default function MemoryStreamScreen() {
   const [results, setResults] = useState<MemoryCard[] | null>(null);
   const [answer, setAnswer] = useState<AnswerResult | null>(null);
   /**
+   * 答案没生成出来时的原因。**刻意与 `answer` 分开**：
+   * 以前是把错误文本塞进 `answer.answer`，于是界面用同样的「AI 答案」样式把一句
+   * 报错当答案读给用户听；而且 `answer` 一旦非空，「AI 总结」按钮就消失了 ——
+   * 失败之后连重试都没得点。分开之后：失败不占答案位、按钮还在、提示语也说得清。
+   */
+  const [answerError, setAnswerError] = useState<string | null>(null);
+  /**
    * 推理题（advise）的裁决结果。与 `answer` 是两条互斥的路：
    * 定位题的答案是「复述已找到的片段」，推理题的答案本身就是「挑哪些、还缺什么」，
    * 两者的呈现方式不同，所以不共用一个 state。
@@ -111,6 +118,7 @@ export default function MemoryStreamScreen() {
     const q = query.trim();
     setSearching(true);
     setAnswer(null);
+    setAnswerError(null);
     setAdvice(null);
     try {
       const res = await runSearch(rt, q);
@@ -167,9 +175,18 @@ export default function MemoryStreamScreen() {
   const requestAnswer = async (q: string, cards: MemoryCard[]) => {
     if (!rt) return;
     setAnswering(true);
+    setAnswerError(null);
     try {
       const res = await runAnswer(rt, q, cards);
-      setAnswer(res.ok ? res : { ...res, answer: res.error ?? '总结失败' });
+      if (res.ok) {
+        setAnswer(res);
+      } else {
+        // 真的没总结出内容 ≠ 总结失败：报错不占答案位，按钮留着让人重试
+        setAnswerError(res.error ?? '模型没有返回可用的内容。');
+      }
+    } catch (e) {
+      // 未配模型时 requireDeps 会抛 —— 这里必须接住，否则是一次未处理的 Promise 拒绝
+      setAnswerError(e instanceof Error ? e.message : String(e));
     } finally {
       setAnswering(false);
     }
@@ -247,6 +264,7 @@ export default function MemoryStreamScreen() {
                 setQuery('');
                 setResults(null);
                 setAnswer(null);
+                setAnswerError(null);
                 setAdvice(null);
               }}>
               <Text style={{ color: theme.textMuted, fontSize: 14 }}>✕</Text>
@@ -338,6 +356,7 @@ export default function MemoryStreamScreen() {
                 onPress={() => {
                   setResults(null);
                   setAnswer(null);
+                  setAnswerError(null);
                   setAdvice(null);
                 }}
               />
@@ -410,6 +429,22 @@ export default function MemoryStreamScreen() {
         {answering && !answer && results ? (
           <View style={[styles.notice, { backgroundColor: theme.surfaceAlt }]}>
             <Text style={[styles.noticeText, { color: theme.textSecondary }]}>正在组织答案…</Text>
+          </View>
+        ) : null}
+
+        {/* 答案没生成出来。刻意**不占「AI 答案」那个位置**、也不盖掉空态：
+            列表本身是好的，这只是一次附加调用没跑成 —— 说清原因、把按钮留着让人重试就够。
+            以前这里是把错误文本当答案显示，读起来像模型在胡说。 */}
+        {answerError && !answering ? (
+          <View style={[styles.notice, { backgroundColor: theme.surfaceAlt }]}>
+            <Text style={[styles.noticeText, { color: theme.textSecondary }]}>
+              没能组织答案：{answerError}
+            </Text>
+            <Text style={{ color: theme.textMuted, fontSize: 11, lineHeight: 16, marginTop: 4 }}>
+              {results && results.length > 0
+                ? '卡片列表不受影响，可以点「AI 总结」重试。'
+                : '可以点「AI 总结」重试，或换个说法再搜一次。'}
+            </Text>
           </View>
         ) : null}
 

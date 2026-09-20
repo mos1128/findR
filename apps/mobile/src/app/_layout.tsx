@@ -30,6 +30,7 @@ export default function RootLayout() {
         <Stack.Screen name="settings/provider" options={{ title: '模型配置' }} />
         <Stack.Screen name="settings/locations" options={{ title: '位置树' }} />
         <Stack.Screen name="settings/categories" options={{ title: '分类' }} />
+        <Stack.Screen name="settings/backup" options={{ title: '备份与恢复' }} />
         <Stack.Screen name="selfcheck" options={{ title: '自检' }} />
       </Stack>
       <StatusBar style="auto" />

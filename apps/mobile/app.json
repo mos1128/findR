@@ -54,7 +54,8 @@
         {
           "photosPermission": "Findr 需要访问相册，以便把截图和已有照片存成记忆卡片。"
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true,

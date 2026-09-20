@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   exportBackup,
   importBackup,
-  open,
   readZip,
+  unpackContainer,
   utf8Decode,
+  utf8Encode,
   validateManifest,
   HEADER_LEN,
-  SALT_LEN,
-  NONCE_BASE_LEN,
+  MAGIC,
   type BackupDeps,
   type BackupManifest,
 } from '../src';
@@ -16,9 +16,8 @@ import { getCard, insertCard, listCards, upsertLocation } from '../src/db/reposi
 import { setSetting } from '../src/db/settings';
 import { audioRelPath, imageRelPath } from '../src/media/paths';
 import { makeCard, makeDb } from './helpers';
-import { memoryMedia, nodeCrypto, type MemoryMedia } from './node-crypto';
+import { memoryMedia, type MemoryMedia } from './memory-media';
 
-const PASS = 'correct horse battery staple';
 const AT = new Date('2026-09-18T04:00:00.000Z');
 
 const IMG = imageRelPath(AT, 'c1', 0);
@@ -72,45 +71,53 @@ function sourceSide(): Side {
     'c1',
   );
 
-  return { deps: { db, crypto: nodeCrypto(), media }, media };
+  return { deps: { db, media }, media };
 }
 
 function targetSide(): Side {
   const db = makeDb();
   const media = memoryMedia();
-  return { deps: { db, crypto: nodeCrypto(), media }, media };
+  return { deps: { db, media }, media };
 }
 
 async function exportFrom(side: Side) {
-  return await exportBackup(side.deps, { passphrase: PASS, now: AT });
+  return await exportBackup(side.deps, { now: AT });
 }
 
 /** 解出包里的 manifest，用来检查「不该出现的东西有没有出现」 */
-async function manifestOf(bytes: Uint8Array, passphrase = PASS): Promise<BackupManifest> {
-  const zip = await open(sideCrypto(), passphrase, bytes);
-  const entry = readZip(zip).find((e) => e.path === 'manifest.json');
+function manifestOf(bytes: Uint8Array): BackupManifest {
+  const entry = readZip(unpackContainer(bytes)).find((e) => e.path === 'manifest.json');
   if (!entry) throw new Error('测试前提不成立：包里没有 manifest.json');
   return JSON.parse(utf8Decode(entry.data)) as BackupManifest;
 }
 
-function sideCrypto() {
-  return nodeCrypto();
+/** 在整包字节里找一段字节序列（用于证明「内容就是明文」） */
+function contains(haystack: Uint8Array, needle: Uint8Array): boolean {
+  return Buffer.from(haystack).indexOf(Buffer.from(needle)) >= 0;
 }
 
-describe('备份格式：容器头', () => {
-  it('头部长度与布局符合技术设计七（magic 5 + u16 + salt 16 + nonce_base 12）', async () => {
+describe('备份格式：明文容器', () => {
+  it('头部是 magic + 版本，载荷是标准 ZIP', async () => {
     const { bytes } = await exportFrom(sourceSide());
-    expect(HEADER_LEN).toBe(5 + 2 + SALT_LEN + NONCE_BASE_LEN);
+    expect(HEADER_LEN).toBe(MAGIC.length + 2);
     expect(String.fromCharCode(...bytes.slice(0, 5))).toBe('FINDR');
     expect(new DataView(bytes.buffer, bytes.byteOffset).getUint16(5, true)).toBe(1);
     expect(bytes.length).toBeGreaterThan(HEADER_LEN);
+
+    // 载荷第一个本地头就是 ZIP 的签名 "PK\x03\x04"
+    const payload = unpackContainer(bytes);
+    expect(Array.from(payload.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04]);
+  });
+
+  it('载荷是明文：中文原文能直接在整包字节里搜到（当前版本不加密）', async () => {
+    const { bytes } = await exportFrom(sourceSide());
+    expect(contains(bytes, utf8Encode('手电筒'))).toBe(true);
+    expect(contains(bytes, utf8Encode('备用手电筒放在主卧衣柜顶层'))).toBe(true);
   });
 
   it('非本格式的文件会被明确拒绝', async () => {
     const side = targetSide();
-    await expect(
-      importBackup(side.deps, new Uint8Array(64), { passphrase: PASS }),
-    ).rejects.toThrow(/不是 \.findrpack/);
+    await expect(importBackup(side.deps, new Uint8Array(64))).rejects.toThrow(/不是 \.findrpack/);
   });
 });
 
@@ -125,9 +132,7 @@ describe('备份：round-trip', () => {
     expect(report.mediaMissing).toEqual([]);
 
     const dst = targetSide();
-    const { report: ir, manifestInfo } = await importBackup(dst.deps, bytes, {
-      passphrase: PASS,
-    });
+    const { report: ir, manifestInfo } = await importBackup(dst.deps, bytes);
 
     expect(ir.cardsInserted).toBe(2);
     expect(manifestInfo.cards).toBe(2);
@@ -161,8 +166,8 @@ describe('备份：round-trip', () => {
   it('同一份包导入两次是幂等的，第二次不动任何数据', async () => {
     const { bytes } = await exportFrom(sourceSide());
     const dst = targetSide();
-    await importBackup(dst.deps, bytes, { passphrase: PASS });
-    const second = await importBackup(dst.deps, bytes, { passphrase: PASS });
+    await importBackup(dst.deps, bytes);
+    const second = await importBackup(dst.deps, bytes);
 
     expect(second.report.cardsInserted).toBe(0);
     expect(second.report.cardsUpdated).toBe(0);
@@ -171,30 +176,27 @@ describe('备份：round-trip', () => {
   });
 });
 
-describe('备份：安全边界', () => {
-  it('口令错误必须失败，且不落任何数据', async () => {
+describe('备份：完整性与边界', () => {
+  /**
+   * 明文方案没有 GCM tag 兜底，完整性全靠 ZIP 每个成员的 CRC32。
+   * 这两条钉住那个兜底真的在工作 —— 它是这个版本唯一能抓损坏的机制。
+   */
+  it('载荷被改一位：CRC 校验必须拦住，且不落任何数据', async () => {
     const { bytes } = await exportFrom(sourceSide());
+    const tampered = bytes.slice();
+    tampered[HEADER_LEN + 60] ^= 0x01; // 落在第一个成员（manifest.json）的数据里
     const dst = targetSide();
-    await expect(importBackup(dst.deps, bytes, { passphrase: '错的' })).rejects.toThrow();
+    await expect(importBackup(dst.deps, tampered)).rejects.toThrow(/校验和不符/);
     expect(listCards(dst.deps.db)).toHaveLength(0);
     expect(dst.media.files.size).toBe(0);
   });
 
-  it('密文被篡改必须失败（GCM tag 校验）', async () => {
+  it('文件被截断必须失败，且不落任何数据', async () => {
     const { bytes } = await exportFrom(sourceSide());
-    const tampered = bytes.slice();
-    tampered[tampered.length - 1] ^= 0x01;
     const dst = targetSide();
-    await expect(importBackup(dst.deps, tampered, { passphrase: PASS })).rejects.toThrow();
+    await expect(importBackup(dst.deps, bytes.slice(0, bytes.length - 5))).rejects.toThrow();
     expect(listCards(dst.deps.db)).toHaveLength(0);
-  });
-
-  it('文件被截断必须失败', async () => {
-    const { bytes } = await exportFrom(sourceSide());
-    const dst = targetSide();
-    await expect(
-      importBackup(dst.deps, bytes.slice(0, bytes.length - 5), { passphrase: PASS }),
-    ).rejects.toThrow();
+    expect(dst.media.files.size).toBe(0);
   });
 
   it('导出产物里绝不出现 API Key 或白名单外的设置项', async () => {
@@ -207,13 +209,15 @@ describe('备份：安全边界', () => {
     setSetting(src.deps.db, 'tracking_id', { installId: 'CANARY-TRACKING' });
 
     const { bytes } = await exportFrom(src);
-    const manifest = await manifestOf(bytes);
+    const manifest = manifestOf(bytes);
     const dump = JSON.stringify(manifest);
 
     expect(dump).not.toContain('sk-LEAK-CANARY-1234567890');
     expect(dump).not.toContain('CANARY-TRACKING');
     expect(manifest.settings).toHaveProperty('llm');
     expect(manifest.settings).not.toHaveProperty('tracking_id');
+    // 这条断言现在比加密时代更重要：文件是明文的，白名单一旦漏了就是直接泄露
+    expect(contains(bytes, utf8Encode('sk-LEAK-CANARY-1234567890'))).toBe(false);
   });
 
   it('库里引用了但磁盘上已不存在的媒体：不阻断导出，但要如实报告', async () => {
@@ -234,7 +238,7 @@ describe('备份：导入合并策略', () => {
       makeCard({ id: 'local-only', entity: '只有本机有', updatedAt: '2026-09-10T00:00:00.000Z' }),
     );
 
-    await importBackup(dst.deps, bytes, { passphrase: PASS });
+    await importBackup(dst.deps, bytes);
 
     const ids = listCards(dst.deps.db).map((c) => c.id);
     expect(ids).toContain('local-only');
@@ -250,7 +254,7 @@ describe('备份：导入合并策略', () => {
       dst.deps.db,
       makeCard({ id: 'c1', entity: '本机的旧版本', updatedAt: '2026-08-01T00:00:00.000Z' }),
     );
-    const { report } = await importBackup(dst.deps, bytes, { passphrase: PASS });
+    const { report } = await importBackup(dst.deps, bytes);
 
     expect(report.cardsUpdated).toBe(1);
     expect(getCard(dst.deps.db, 'c1')?.entity).toBe('手电筒');
@@ -265,7 +269,7 @@ describe('备份：导入合并策略', () => {
       dst.deps.db,
       makeCard({ id: 'c1', entity: '本机的新版本', updatedAt: '2026-12-31T00:00:00.000Z' }),
     );
-    const { report } = await importBackup(dst.deps, bytes, { passphrase: PASS });
+    const { report } = await importBackup(dst.deps, bytes);
 
     expect(report.cardsKeptLocal).toBe(1);
     expect(getCard(dst.deps.db, 'c1')?.entity).toBe('本机的新版本');
@@ -287,7 +291,7 @@ describe('备份：导入合并策略', () => {
     );
     const { bytes } = await exportFrom(src);
 
-    const { report } = await importBackup(dst.deps, bytes, { passphrase: PASS });
+    const { report } = await importBackup(dst.deps, bytes);
 
     expect(report.conflicts.some((c) => c.kind === 'category' && c.name === '物品存取')).toBe(true);
     expect(getCard(dst.deps.db, 'c3')?.categoryId).toBe('local_item');
@@ -305,7 +309,7 @@ describe('备份：导入合并策略', () => {
     const dst = targetSide();
     upsertLocation(dst.deps.db, { id: 'local_wz', parentId: null, name: '主卧', sort: 0 });
 
-    const { report } = await importBackup(dst.deps, bytes, { passphrase: PASS });
+    const { report } = await importBackup(dst.deps, bytes);
 
     expect(report.conflicts.some((c) => c.kind === 'location' && c.name === '主卧')).toBe(true);
     const card = getCard(dst.deps.db, 'c1');
@@ -326,7 +330,7 @@ describe('备份：导入合并策略', () => {
     const dst = targetSide();
     setSetting(dst.deps.db, 'pipeline', { confirmThreshold: 0.1 });
 
-    const { report } = await importBackup(dst.deps, bytes, { passphrase: PASS });
+    const { report } = await importBackup(dst.deps, bytes);
 
     expect(report.settingsKeptLocal).toBe(1);
     expect(report.settingsWritten).toBe(1);

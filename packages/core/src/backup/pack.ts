@@ -1,11 +1,10 @@
 import type { SqliteDriver } from '../db/driver';
 import { currentSchemaVersion, SCHEMA_VERSION } from '../db/migrate';
 import { crc32 } from './crc32';
-import { open, seal } from './format';
+import { packContainer, unpackContainer } from './format';
 import { buildManifest, mergeManifest } from './manifest';
 import type {
   BackupManifest,
-  CryptoPort,
   ExportReport,
   ImportReport,
   MediaEntryMeta,
@@ -18,7 +17,9 @@ import { utf8Decode, utf8Encode } from '../util/utf8';
  * 备份打包 / 解包（技术设计第七节）。
  *
  * 层次从里到外：
- *   manifest.json + media/*  →  ZIP（STORE）  →  分块 AES-256-GCM  →  .findrpack
+ *   manifest.json + media/*  →  ZIP（STORE）  →  容器头  →  .findrpack
+ *
+ * **中间没有加密**：`.findrpack` 就是一个前面挂了 7 字节头的 ZIP（决策见 format.ts）。
  *
  * 顺序很重要：**先写媒体、再合并 DB**。媒体写失败时 DB 一个字都没动，
  * 不会留下「卡片在、图片没了」的半吊子状态；反过来则会出现指向空文件的卡片。
@@ -28,7 +29,6 @@ const MANIFEST_NAME = 'manifest.json';
 
 export interface BackupDeps {
   db: SqliteDriver;
-  crypto: CryptoPort;
   media: MediaStorePort;
   /** 不传则读库里的 schema_version */
   schemaVersion?: number;
@@ -36,7 +36,6 @@ export interface BackupDeps {
 }
 
 export interface ExportOptions {
-  passphrase: string;
   now?: Date;
 }
 
@@ -86,7 +85,7 @@ export async function exportBackup(
     return data;
   }, now);
 
-  const bytes = await seal(deps.crypto, opts.passphrase, zip);
+  const bytes = packContainer(zip);
 
   return {
     bytes,
@@ -101,10 +100,6 @@ export async function exportBackup(
       bytes: bytes.length,
     },
   };
-}
-
-export interface ImportOptions {
-  passphrase: string;
 }
 
 export interface ImportResult {
@@ -129,13 +124,9 @@ export function validateManifest(value: unknown): BackupManifest {
   return value as BackupManifest;
 }
 
-export async function importBackup(
-  deps: BackupDeps,
-  bytes: Uint8Array,
-  opts: ImportOptions,
-): Promise<ImportResult> {
-  // 口令错 / 文件被改过，都会在这里就炸掉，绝不会走到写库那一步
-  const zipBytes = await open(deps.crypto, opts.passphrase, bytes);
+export async function importBackup(deps: BackupDeps, bytes: Uint8Array): Promise<ImportResult> {
+  // 标识不符 / 版本不认 / 文件被截断，都会在这里就炸掉，绝不会走到写库那一步
+  const zipBytes = unpackContainer(bytes);
   const entries = readZip(zipBytes);
 
   const manifestEntry = entries.find((e) => e.path === MANIFEST_NAME);

@@ -159,6 +159,16 @@ export default function SettingsScreen() {
       </Panel>
 
       <Panel>
+        <SectionTitle hint="换机、重装靠它把记忆搬回去">数据</SectionTitle>
+        <ListRow
+          title="备份与恢复"
+          subtitle="导出一个加密文件（不含 API Key），也能从备份文件合并回来"
+          onPress={() => router.push('/settings/backup')}
+          right={<Text style={{ color: theme.textMuted }}>›</Text>}
+        />
+      </Panel>
+
+      <Panel>
         <SectionTitle hint="配置好 ASR 后用它把积压的语音一次补完">维护</SectionTitle>
         <Button
           title="批量补转写"

@@ -1,5 +1,5 @@
 import { Directory, File, Paths } from 'expo-file-system';
-import type { MediaIO } from '@findr/core';
+import type { MediaIO, MediaStorePort } from '@findr/core';
 
 /** 媒体相对路径（如 files/cards/202603/<id>/01.webp）→ 文档目录下的绝对 File */
 function absFile(rel: string): File {
@@ -83,5 +83,30 @@ export const deviceMediaIO: MediaIO = {
         // 单个文件删不掉不该阻塞其余回收
       }
     }
+  },
+};
+
+/**
+ * core 的 MediaStorePort 在设备端的实现（备份用）：相对路径 ↔ 文档目录下的真实文件。
+ *
+ * 与上面的 MediaIO 分开是有意的 —— MediaIO 面向「送模型」的读法（base64 / FormData），
+ * 这里面向「字节进字节出」，接口形状不一样，混在一起会让两边都别扭。
+ *
+ * 不实现 `removeCardMedia`：备份只读不删，导入也不删本地多余媒体（设计约定「不删除本地任何数据」）。
+ */
+export const deviceMediaStore: MediaStorePort = {
+  async read(rel) {
+    const file = absFile(rel);
+    // 文件不存在返回 null 而不是抛错：DB 可能引用已被回收或拍完没保存的路径
+    if (!file.exists) return null;
+    return await file.bytes();
+  },
+
+  write(rel, data) {
+    writeMediaFile(rel, data);
+  },
+
+  exists(rel) {
+    return mediaExists(rel);
   },
 };

@@ -6,29 +6,16 @@ import type { MemoryCard } from '../types';
  * 两条硬约束来自《技术设计.md》第七节，改动前先读那一节：
  *   1. **永不包含 API Key 与生物锁设置** —— 导出侧走 settings_public 白名单（见 manifest.ts），
  *      不是「过滤掉看起来像密钥的」，而是「只放白名单里的」，方向反过来才对。
- *   2. **core 不直接依赖任何 crypto / 文件实现** —— RN 侧与 node 测试侧各自注入。
+ *   2. **core 不直接依赖任何文件实现** —— RN 侧与 node 测试侧各自注入（见 MediaStorePort）。
+ *
+ * ⚠️ **当前不做加密**（2026-09-20 决策）：备份文件是明文 ZIP，谁拿到谁能读。
+ * 这里已经没有 CryptoPort 了；加密回归时按 `format.ts` 里写的那套（提 FORMAT_VERSION）
+ * 再加端口。**别提前把端口加回来放着** —— 没有调用方的接口只会腐烂。
  */
 
-/** 平台实现可能是同步的（node:crypto）也可能是异步的（WebCrypto / react-native-quick-crypto） */
+/** 平台实现可能是同步的（测试里的内存实现）也可能是异步的（设备端真实文件系统） */
 export type MaybePromise<T> = T | Promise<T>;
 
-export interface CryptoPort {
-  randomBytes(length: number): MaybePromise<Uint8Array>;
-  pbkdf2Sha256(
-    passphrase: string,
-    salt: Uint8Array,
-    iterations: number,
-    keyBytes: number,
-  ): MaybePromise<Uint8Array>;
-  /** 返回 ciphertext ‖ tag(16B)；tag 由实现追加到密文尾 */
-  aesGcmEncrypt(
-    key: Uint8Array,
-    nonce: Uint8Array,
-    plaintext: Uint8Array,
-  ): MaybePromise<Uint8Array>;
-  /** 入参是 ciphertext ‖ tag(16B)；tag 不匹配必须抛错，不允许返回部分明文 */
-  aesGcmDecrypt(key: Uint8Array, nonce: Uint8Array, sealed: Uint8Array): MaybePromise<Uint8Array>;
-}
 
 /**
  * 媒体文件读写端口。相对路径就是 DB 里存的相对路径（`files/cards/202609/<cardId>/01.webp`），
@@ -98,7 +85,7 @@ export interface ExportReport {
   mediaWritten: number;
   /** DB 里引用了但磁盘上已不存在的媒体（不阻断导出，列出来让人知道） */
   mediaMissing: string[];
-  /** 整包字节数（含头与 tag） */
+  /** 整包字节数（含 7 字节容器头） */
   bytes: number;
 }
 

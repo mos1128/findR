@@ -131,8 +131,10 @@ jobs:
           body: |
             自动构建的开发版 APK，用于真机验收。
 
-            - 当前沿用 **debug 签名**；将来换正式 keystore 必须卸载重装、本地记忆库会清空，
-              所以那一步会和 M4 的导出备份同批做。
+            - 当前沿用 **debug 签名**（可覆盖安装、数据保留）。换正式 keystore 必须卸载重装、
+              本地记忆库会清空，所以那一步推迟到 UI 重构之后的正式版 —— 届时先用
+              「设置 → 数据 → 备份与恢复」把数据导出即可（该功能已落地）。
+            - 备份文件（`.findrpack`）**当前是明文 ZIP**，谁拿到谁能读；界面有两道提示。
             - `make install` 不适用，直接在手机浏览器点资源下载安装即可。
           prerelease: true
           files: apps/mobile/android/app/build/outputs/apk/release/*.apk
