@@ -103,8 +103,15 @@ export default function MemoryStreamScreen() {
       setResults(res.cards);
       // 没配模型时检索**照样能用**（字面兜底），但结果比有模型时弱，
       // 空结果尤其容易被误读成「卡片丢了」—— 所以必须说清走的是哪条路。
-      if (res.unclear) {
-        setSearchNote('模型没听懂这句话，换个说法试试。');
+      if (res.relaxed) {
+        // 靠放宽条件才拿到的结果必须说清 —— 否则用户会把这批宽结果当成严格匹配
+        setSearchNote('模型给的条件太严（分类 / 时间 / 位置，或要求全词命中），已放宽后匹配到以下结果。');
+      } else if (res.unclear) {
+        setSearchNote(
+          res.cards.length > 0
+            ? '模型没听懂这句话，已退化为按关键词字面检索，结果可能不全。'
+            : '模型没听懂这句话，换个说法试试。',
+        );
       } else if (res.usedFallback) {
         setSearchNote(
           llmReady

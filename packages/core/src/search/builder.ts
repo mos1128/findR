@@ -66,6 +66,40 @@ export function buildSearch(input: {
 }
 
 /**
+ * 严格条件 0 命中时，按「这个约束有多容易误伤」的顺序逐级放宽，返回累积的候选条件。
+ *
+ * 为什么必须有这一层：这些约束是 P2 **顺手加上**的（`P2_RULES` 甚至鼓励它依意图推断分类），
+ * 一旦猜错就把正确答案整批剔掉，而且是**静默**的 —— 用户只看到「0 条」，无从判断是说法问题还是卡片丢了。
+ * 实测「国外出行需要准备哪些证件」这种问法，模型很容易判成「待买补货」（「需要准备」读着像待办），
+ * 于是 `category` 过滤把「物品存取」里的护照卡排除掉 —— 而卡片标签里明明就写着「证件」。
+ *
+ * 放宽顺序：
+ * 1. 去掉 `category` —— 最容易被意图误推的分类，误伤面最大；
+ * 2. 去掉 `path_prefix` 与 `time_hint` —— 同样是模型顺手加的硬过滤；
+ * 3. `all` → `any` —— AND 变 OR（`all` 只在用户原话确实并列多个条件时才该用，猜错就全灭）。
+ *
+ * **只放宽过滤条件与连接方式，绝不动 `ftsExpr` / `likeTerms` 本身** —— 那是检索的语义核心，
+ * 动了就变成「另一个查询」了，结果不再能说成是在回答用户那句话。
+ */
+export function relaxations(s: BuiltSearch): BuiltSearch[] {
+  const out: BuiltSearch[] = [];
+  let cur = s;
+  if (cur.categoryId !== null) {
+    cur = { ...cur, categoryId: null };
+    out.push(cur);
+  }
+  if (cur.pathPrefixLike !== null || cur.sinceIso !== null) {
+    cur = { ...cur, pathPrefixLike: null, sinceIso: null };
+    out.push(cur);
+  }
+  if (cur.matchMode === 'all') {
+    cur = { ...cur, matchMode: 'any' };
+    out.push(cur);
+  }
+  return out;
+}
+
+/**
  * 兜底检索要丢弃的虚词 / 疑问词。
  *
  * 中文没有词边界，只按标点切分的话整句会被当成一个长短语：「我的护照在哪」变成
