@@ -16,6 +16,15 @@
 先把 bundle 抽出来：
   unzip -p findr-apk-<tag>.apk assets/index.android.bundle > hbc.bin
 
+探针前面加 `!` 表示**反证**：期望它**不在**包里。这一半比正向更重要 ——
+只搜到新文案，也可能是「新代码进包了但旧代码没被删掉」；
+配上反证（旧文案必须消失）才是双向闭环。凡本轮**删掉/改掉**的文案，都该配一条 `!` 探针。
+例（第 18 版删掉 authStyle 那一轮的真实用法）：
+  ... probe-hbc-strings.py hbc.bin \
+      "导出明文文件（不加密、不含 API Key）" \
+      "!导出一个加密文件（不含 API Key）" \
+      "!所属结构类型"
+
 选探针的三条铁律（踩过）：
   * 必须是**源码里字面写出的一段**。模板字符串按 `${}` 切成多段存，插值处必然断开：
     源码 `（全库共 ${total} 条，此处只列出${a ? '与本次问题最相关的' : '最近的'} ${n} 条`
@@ -136,15 +145,25 @@ def main(argv):
              hbc.overflow_table, hbc.string_storage, hbc.string_storage_size))
     print()
 
-    bad = 0
+    ok = miss = 0
     for p in argv[2:]:
-        kind, detail = hbc.probe(p)
-        mark = {"table": "✓ 在包里", "inside": "✓ 在包里", "raw": "~ 字节里有", "missing": "✗ 没有"}[kind]
-        bad += kind == "missing"
-        print("  %s  %-26s %s" % (mark, p, detail))
+        expect_absent = p.startswith("!") and len(p) > 1
+        needle = p[1:] if expect_absent else p
+        kind, detail = hbc.probe(needle)
+        present = kind != "missing"
+        good = (not present) if expect_absent else present
+        ok += good
+        miss += not good
+        if expect_absent:
+            mark = "✓ 已消失" if good else "✗ 还在包里"
+            note = "← 本轮该删掉，却没删掉"
+        else:
+            mark = "✓ 在包里" if good else "✗ 没有"
+            note = "← 新文案没进包"
+        print("  %s  %-28s %s" % (mark, needle, detail if good else note))
     print()
-    print("结论：%d/%d 命中" % (len(argv) - 2 - bad, len(argv) - 2))
-    return 0
+    print("结论：%d/%d 符合预期" % (ok, ok + miss))
+    return 0 if miss == 0 else 1
 
 
 if __name__ == "__main__":
