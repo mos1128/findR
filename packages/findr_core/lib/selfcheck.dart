@@ -85,6 +85,9 @@ SelfCheckReport runCoreSelfCheck([SqliteDriver? db]) {
     // ── 3. trigram 分词器创建得起来（它随 FTS5 一起来，SQLite >= 3.34）──
     var created = false;
     try {
+      // 先 DROP：这一屏是**可以反复重跑**的，上一轮中途崩掉就会留下同名表，
+      // 那时 `CREATE VIRTUAL TABLE` 会报「table already exists」—— 那会是个假失败。
+      conn.exec('DROP TABLE IF EXISTS _selfcheck_fts');
       conn.exec("CREATE VIRTUAL TABLE _selfcheck_fts USING fts5(body, tokenize='trigram')");
       conn.exec("INSERT INTO _selfcheck_fts(body) VALUES ('蓝色的圆珠笔放在书桌抽屉里')");
       created = true;
@@ -145,13 +148,20 @@ SelfCheckReport runCoreSelfCheck([SqliteDriver? db]) {
     // ── 6. 真的跑一次迁移：DDL 在这份 SQLite 上能不能执行（含 FTS5 虚表与触发器）──
     try {
       migrate(conn);
-      final cats = conn.prepare('SELECT COUNT(*) AS n FROM categories').get()!['n'];
+      // ⚠️ 只数**预设**分类，不能数 `COUNT(*)`：自检会跑在**用户用过的真实库**上，
+      // 那里用户自己加过分类（需求允许自由增删改，预设也可能被删）。
+      // 数全部就会必然报错 —— 那是最糟的一种失败：**假阳性**，会把人往错方向带。
+      // 判据「至少有一条预设」与 RN 版 `platform/selfcheck.ts` 同口径。
+      final presets = conn
+          .prepare('SELECT COUNT(*) AS n FROM categories WHERE is_preset = 1')
+          .get()!['n'];
       final sv = currentSchemaVersion(conn);
+      final presetCount = presets is int ? presets : -1;
       items.add(
         SelfCheckItem(
           name: '迁移 + 种子数据',
-          ok: cats == 3 && sv == schemaVersion,
-          detail: 'categories=$cats（期望 3）、schema_version=$sv（期望 $schemaVersion）',
+          ok: presetCount >= 1 && sv == schemaVersion,
+          detail: '预设分类 $presetCount 条（≥1）、schema_version=$sv（期望 $schemaVersion）',
         ),
       );
     } catch (e) {

@@ -28,7 +28,16 @@ void main() {
     expect(report.passed, isTrue, reason: report.verdict);
   });
 
-  testWidgets('自检屏能起来，并且七项自检全绿', (WidgetTester tester) async {
+  testWidgets('自检屏能起来，并且七项自检全绿（设备层显式说明「未运行」而非报错）', (
+    WidgetTester tester,
+  ) async {
+    // 默认 800×600 的测试窗口装不下这么多项，而 ListView 只会构建可见的那部分 ——
+    // 屏幕外的项压根不在 widget 树里，find 自然找不到。给一个够高的窗口，
+    // 这样断言的是「项在不在」，而不是「窗口够不够大」。
+    tester.view.physicalSize = const Size(1000, 3000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
     await tester.pumpWidget(const MaterialApp(home: SelfCheckScreen()));
     await tester.pumpAndSettle();
 
@@ -50,5 +59,12 @@ void main() {
     ]) {
       expect(find.text(name), findsOneWidget, reason: '缺少自检项：$name');
     }
+
+    // 测试环境里没有平台通道 ⇒ 沙盒目录取不到 ⇒ 设备层应当**显式说明未运行**，
+    // 而不是塞一条红项。这条断言守的就是那个设计（否则这一屏在 CI 里永远是红的，没人会看）。
+    expect(find.textContaining('未运行（不算失败）'), findsOneWidget);
+    expect(find.textContaining('沙盒目录尚未初始化'), findsOneWidget);
+    // 设备层这时候不该冒出任何绿/红项
+    expect(find.text('外键真的会拦人'), findsNothing);
   });
 }

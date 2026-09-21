@@ -43,4 +43,40 @@ void main() {
     expect(report.passed, isTrue, reason: report.verdict);
     expect(db.prepare('SELECT 1 AS one').get()!['one'], 1);
   });
+
+  test('在「用户用过的库」上仍然全绿 —— 自检不能数全部分类', () {
+    // 回归守卫：自检会跑在**真机上的真实库文件**里，那里用户自己加过分类
+    // （需求允许自由增删改，预设也可能被删）。
+    // 早先的实现数的是 `COUNT(*) FROM categories` 并硬比 3 ——
+    // 在真机上必然报错，而且是**假阳性**：会让人以为库坏了，往完全错误的方向排查。
+    final db = Sqlite3Driver.openInMemory();
+    addTearDown(db.close);
+    migrate(db);
+    upsertCategory(
+      db,
+      const Category(
+        id: 'cat_user_1',
+        name: '自检用的用户分类',
+        emoji: '🧪',
+        description: null,
+        sort: 9,
+        isPreset: false,
+      ),
+    );
+
+    final report = runCoreSelfCheck(db);
+    for (final item in report.items) {
+      print(item);
+    }
+    expect(report.passed, isTrue, reason: report.verdict);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM categories').get()!['n'], 4);
+  });
+
+  test('可以反复重跑（上一轮留下的临时表不会让这一轮假失败）', () {
+    final db = Sqlite3Driver.openInMemory();
+    addTearDown(db.close);
+    expect(runCoreSelfCheck(db).passed, isTrue);
+    // 第二遍：若没先 DROP，CREATE VIRTUAL TABLE 会报「table already exists」
+    expect(runCoreSelfCheck(db).passed, isTrue);
+  });
 }

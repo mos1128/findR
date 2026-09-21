@@ -1,18 +1,28 @@
-/// 命门自检屏（**第 2 层：Flutter / 真机**）—— `Flutter迁移交接.md` §6.1。
+/// 自检屏 —— 真机上跑的两组检查，**命门（FTS5 + trigram）的第二层载体**。
+/// 依据：`Flutter迁移交接.md` §6.1。
 ///
-/// 它跑的是 `findr_core` 里那份**同一份** `runCoreSelfCheck()`，但执行环境完全不同：
-/// 这里的 SQLite 是 `package:sqlite3` 的 **Dart build hooks 编出来、随 APK 一起发布的那一份**。
-/// 第 1 层（`dart test`）跑在 Dart VM 上，验不了这件事。
+/// 两组的分工（**别把两组合并成一组**）：
 ///
-/// ⚠️ **判断标准**：屏幕上所有项都 ✅ ⇒ 第 2 层通过。
+/// | 组 | 验什么 | 跑在哪 |
+/// |---|---|---|
+/// | 核心 | FTS5 编译选项 / trigram / 3 字中文 `MATCH` / 迁移建表（`runCoreSelfCheck`）| **优先跑在真实库文件上**；拿不到沙盒目录（`flutter test`）就退回内存库 |
+/// | 设备 | PRAGMA / 外键 / 嵌套事务 / 媒体文件往返 / 整库打包往返 | 只有真机能跑；跑不了时显式说明「不算失败」，不留红项 |
+///
+/// ⚠️ **判断标准**：两组都全绿 ⇒ 命门与设备层都过。
 /// 只要「FTS5 编译选项」或「3 字中文 MATCH」有一个 ❌，**整套检索方案就得重新评估**
 /// （那两条正是我们押的全部赌注）。
 ///
-/// 这一屏是**临时的入口**：真正的界面还没做（见交接 §1「UI 直接在 Flutter 里重构」）。
+/// 这一屏是**临时入口**：真正的界面还没做（见交接 §1「UI 直接在 Flutter 里重构」）。
 library;
+
+import 'dart:async';
 
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter/material.dart';
+
+import '../platform/app_paths.dart';
+import '../platform/db.dart';
+import '../platform/device_selfcheck.dart';
 
 final class SelfCheckScreen extends StatefulWidget {
   const SelfCheckScreen({super.key});
@@ -22,35 +32,67 @@ final class SelfCheckScreen extends StatefulWidget {
 }
 
 class _SelfCheckScreenState extends State<SelfCheckScreen> {
-  SelfCheckReport? _report;
+  SelfCheckReport? _coreReport;
+  String _coreTarget = '内存库';
+  DeviceSelfCheckOutcome? _device;
   Object? _error;
+  bool _running = false;
 
   @override
   void initState() {
     super.initState();
-    _run();
+    unawaited(_run());
   }
 
-  void _run() {
+  Future<void> _run() async {
+    if (_running) return;
+    _running = true;
+    if (mounted) setState(() => _error = null);
+
+    Sqlite3Driver? db;
+    SelfCheckReport? core;
+    DeviceSelfCheckOutcome? device;
+    Object? error;
+    var target = '内存库';
     try {
-      // 内存库：自检不该依赖文件系统权限 —— 那会引入与被测问题无关的失败源。
-      // 「文件路径 + 文件 IO」的验证属于第一版真实界面那一步（届时接 path_provider）。
-      setState(() {
-        _report = runCoreSelfCheck();
-        _error = null;
-      });
+      // 能拿到沙盒目录就**在真实库文件上跑** —— 那才是真机上真正会被用的那个库，
+      // 与内存库在 SQLite 里走的是不同代码路径（WAL / 文件锁）。
+      if (AppPaths.ready) {
+        try {
+          db = openFindrDb();
+          target = '真实库文件';
+        } catch (e) {
+          db = null;
+          device = DeviceSelfCheckUnavailable('打开库文件失败，已退回内存库：$e');
+        }
+      }
+      device ??= await runDeviceSelfCheck(db: db);
+      core = runCoreSelfCheck(db);
     } catch (e) {
-      setState(() {
-        _report = null;
-        _error = e;
-      });
+      error = e;
+    } finally {
+      // 自检不该长期占着库文件。真实界面起来之后这里改成复用常驻连接。
+      db?.close();
     }
+
+    if (!mounted) {
+      _running = false;
+      return;
+    }
+    setState(() {
+      _coreReport = core;
+      _coreTarget = target;
+      _device = device;
+      _error = error;
+      _running = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final report = _report;
     final theme = Theme.of(context);
+    final core = _coreReport;
+    final device = _device;
 
     return Scaffold(
       appBar: AppBar(
@@ -58,7 +100,7 @@ class _SelfCheckScreenState extends State<SelfCheckScreen> {
         actions: <Widget>[
           IconButton(
             tooltip: '重跑',
-            onPressed: _run,
+            onPressed: _running ? null : _run,
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -68,8 +110,9 @@ class _SelfCheckScreenState extends State<SelfCheckScreen> {
           padding: const EdgeInsets.all(16),
           children: <Widget>[
             const Text(
-              '这一屏验的是「打进 APK 的那份 SQLite 带不带 FTS5 + trigram」。\n'
-              '全部 ✅ 才算第 2 层通过；本地 dart test 通过不等于这里通过。',
+              '这一屏验的是「打进 APK 的那份 SQLite 带不带 FTS5 + trigram」，'
+              '外加只有真机才成立的那几件事。\n'
+              '全部 ✅ 才算通过；本地 dart test 通过不等于这里通过。',
             ),
             const SizedBox(height: 12),
             if (_error != null)
@@ -80,10 +123,30 @@ class _SelfCheckScreenState extends State<SelfCheckScreen> {
                   child: Text('自检本身抛异常（这本身就是失败）：\n$_error'),
                 ),
               ),
-            if (report != null) ...<Widget>[
-              _VerdictBanner(report: report),
-              const SizedBox(height: 12),
-              for (final item in report.items) _ItemTile(item: item),
+            if (core != null) ...<Widget>[
+              _SectionTitle('核心 · FTS5 + trigram（跑在$_coreTarget上）'),
+              _VerdictBanner(ok: core.passed, text: core.verdict),
+              for (final item in core.items) _ItemTile(item: item),
+            ],
+            if (device != null) ...<Widget>[
+              const SizedBox(height: 20),
+              const _SectionTitle('设备层 · 只有真机才成立的几件事'),
+              switch (device) {
+                DeviceSelfCheckDone(:final items, :final verdict, :final passed) => Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _VerdictBanner(ok: passed, text: verdict),
+                    for (final item in items) _ItemTile(item: item),
+                  ],
+                ),
+                DeviceSelfCheckUnavailable(:final reason) => Card(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text('未运行（不算失败）：\n$reason'),
+                  ),
+                ),
+              },
             ],
           ],
         ),
@@ -92,14 +155,26 @@ class _SelfCheckScreenState extends State<SelfCheckScreen> {
   }
 }
 
-class _VerdictBanner extends StatelessWidget {
-  const _VerdictBanner({required this.report});
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
 
-  final SelfCheckReport report;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Text(text, style: Theme.of(context).textTheme.titleMedium),
+  );
+}
+
+class _VerdictBanner extends StatelessWidget {
+  const _VerdictBanner({required this.ok, required this.text});
+
+  final bool ok;
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    final ok = report.passed;
     final scheme = Theme.of(context).colorScheme;
     return Card(
       color: ok ? const Color(0xFFE6F4EA) : scheme.errorContainer,
@@ -113,10 +188,7 @@ class _VerdictBanner extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(
-                report.verdict,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              child: Text(text, style: Theme.of(context).textTheme.titleMedium),
             ),
           ],
         ),
@@ -139,6 +211,7 @@ class _ItemTile extends StatelessWidget {
         color: item.ok ? const Color(0xFF1E8E3E) : Theme.of(context).colorScheme.error,
       ),
       title: Text(item.name),
+      // 可选中：真机上要能把实际观测值复制出来发我
       subtitle: SelectableText(item.detail),
     );
   }

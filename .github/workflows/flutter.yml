@@ -149,14 +149,18 @@ jobs:
         run: |
           # 只编 arm64-v8a：现代手机全是 arm64。Flutter 这边的开关是 --target-platform
           # （RN 那边是 -PreactNativeArchitectures，名字不同、作用一样）。
+          # 注意产物名是 `app-release.apk` —— **带 ABI 后缀的 `app-<abi>-release.apk`
+          # 只在 `--split-per-abi` 下才有**，别去赌名字（第一次就是栽在这上面）。
           flutter build apk --release --target-platform android-arm64
 
       - name: 断言 APK 里那份 SQLite 带 FTS5 + trigram（命门的产物级证据）
         working-directory: apps/flutter
         run: |
           set -euo pipefail
-          apk="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
-          ls -l "$apk"
+          echo "=== 产物目录 ==="
+          ls -l build/app/outputs/flutter-apk/
+          apk="$(ls build/app/outputs/flutter-apk/*.apk | head -1)"
+          echo "取用：$apk"
 
           echo "=== APK 里的原生库 ==="
           unzip -Z1 "$apk" | grep -i '\.so$' | sort -u || true
