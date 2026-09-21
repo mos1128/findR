@@ -1,21 +1,25 @@
-/// findR（Flutter 版）的临时入口。
+/// findR（Flutter 版）的入口。
 ///
-/// 目前只挂 [SelfCheckScreen] —— 用来在**真机**上验证命门第 2 层
-/// （打出 APK 的那份 SQLite 是否真的带 FTS5 + trigram）与设备层的几件事。
-/// 真正的界面还没开始写（见 `Flutter迁移交接.md` §1「UI 直接在 Flutter 里重构」）。
+/// 现在挂的是真正的首页 [MemoryStreamScreen]（上「查」下「记」），
+/// 自检屏已挪进「设置 → 维护 → 打开自检」——它在真机上仍然是验证命门第 2 层的载体。
+///
+/// 启动顺序只有一件必须先做的事：**取沙盒目录**。它要走平台通道，
+/// 所以 `main()` 要 `await` 一次；之后 core 的同步端口（如 `MediaIo.fileUri`）才能拿到绝对根目录。
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'platform/app_paths.dart';
-import 'selfcheck/self_check_screen.dart';
+import 'screens/memory_stream_screen.dart';
+import 'theme/tokens.dart';
 
 Future<void> main() async {
   // 取沙盒目录要走平台通道，必须先确保绑定就绪。
   WidgetsFlutterBinding.ensureInitialized();
-  // 只在这里等一次；之后 core 的同步端口（如 fileUri）才能拿到绝对根目录。
+  // 只在这里等一次；之后一切路径都走同步的 AppPaths。
   await AppPaths.init();
-  runApp(const FindrApp());
+  runApp(const ProviderScope(child: FindrApp()));
 }
 
 class FindrApp extends StatelessWidget {
@@ -26,11 +30,11 @@ class FindrApp extends StatelessWidget {
     return MaterialApp(
       title: 'findR',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3B6EA5)),
-        useMaterial3: true,
-      ),
-      home: const SelfCheckScreen(),
+      theme: buildFindrTheme(Brightness.light),
+      darkTheme: buildFindrTheme(Brightness.dark),
+      // 跟系统走。暗色下那套令牌是配好对儿的，不存在「深底深字」。
+      themeMode: ThemeMode.system,
+      home: const MemoryStreamScreen(),
     );
   }
 }

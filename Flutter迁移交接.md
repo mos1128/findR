@@ -25,12 +25,13 @@
 | 骨架 | ✅ `apps/flutter/`（applicationId `com.findr.app.dev`）+ `packages/findr_core/` |
 | **命门（FTS5 + trigram）** | ✅ 第 1 层（`dart test`）· ✅ **中间层（`flutter test`，Flutter 工具链下 native assets 真编出了 SQLite）**；⬜ **第 2 层（真机）未做** —— 见 §6.1 |
 | **core 翻译** | ✅ **约 5,394 / 5,429 行 ≈ 99.4%**（全局 39%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · `providers/`+`settings`+`util/` ✅ · `pipeline/`+`cards/`+`media/` ✅ · **`backup/` ✅**；**剩下的 35 行只是 TS 的 `src/index.ts` 桶文件**（Dart 用一个 `findr_core.dart` 代替）⇒ **core 实质译完** |
-| **应用层接线** | ✅ `apps/flutter/lib/platform/`：`app_paths`（沙盒绝对路径唯一来源）· `db`（真机库文件）· `media`（两个文件端口）· `device_selfcheck`（设备层 5 项）—— 见 §6.3 |
-| 自检屏（真机载体） | ✅ 分两组：**核心**（FTS5 命门，优先跑在真实库文件上）+ **设备层**（PRAGMA / 外键 / 嵌套事务 / 媒体往返 / 打包往返）。`main.dart` 已指向它 ⇒ **APK 装好就能验** |
-| 验收网 | `dart test` **291 通过** · `flutter test` **8 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| **应用层接线** | ✅ **7 个模块全写完**（约 1,000 行）：`app_paths` · `db` · `media` · `device_selfcheck` · `secure` · `backup` · `runtime` —— 见 §6.3。**UI 之前再无接线欠账** |
+| 自检屏（真机载体） | ✅ 分两组：**核心**（FTS5 命门，优先跑在真实库文件上）+ **设备层**（PRAGMA / 外键 / 嵌套事务 / 媒体往返 / 打包往返）。**入口已从 `main.dart` 挪到「设置 → 维护」**（`main.dart` 的 `home` 现在是记忆流主页）⇒ **APK 装好，进设置点「自检」即可验命门第 2 层** |
+| 验收网 | `dart test` **291 通过** · `flutter test` **37 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
-| app 依赖 | `findr_core` + `path_provider` · `flutter_riverpod` · `http` · `http_parser`（后两个是 `MediaIo.audioPart` 的签名里就有 `http.MultipartFile`）|
-| CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）—— `checks` 已实测两次全绿；`apk` 已能出包（18.2MB），**断言 SQLite `.so` 那一步待下一次出包复核** |
+| app 依赖 | `findr_core` · `path_provider` · `flutter_riverpod` · `http` · `http_parser` · `flutter_secure_storage` · `share_plus` · `file_picker` · `package_info_plus` |
+| CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）。`checks` 已实测全绿；`apk` **已出包 18.2MB 并发布 `flutter-dev-latest`**，且**已断言过** APK 里 `lib/arm64-v8a/libsqlite3.so` 含 `fts5`/`trigram` |
+| **界面本身** | ✅ **已按新设计写完**（14 个新文件 + `main.dart` 重写）：`theme/tokens` · `ui/{kit,media_view,card_row}` · `state/memory_stream` · `capture/{text_file,composer}` · `screens/{memory_stream,card_detail}` + `screens/settings/`（5 屏）。**没照抄 RN**（§6.3）。⬜ **还欠两块**：录入坞的**相机/相册/长按录音**、卡片详情的**音频播放**（写录入的同一轮一起接）|
 
 **几条 git 现状（2026-09-21 实测，别重复排查）**：
 
@@ -340,7 +341,7 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 | 4 | `providers/` 联网层 + `settings` + `util/` | ✅ **全部译完**（2026-09-22，明细见下）|
 | 5 | `pipeline/` 录入编排 + `cards/` + `media/` | ✅ **全部译完**（2026-09-22，明细见下）|
 | 6 | `backup/` `.findrpack` 导出导入 | ✅ **全部译完**（2026-09-22，明细见下）—— **core 到此实质译完** |
-| 7 | UI | ⬜ **下一块**（在 `apps/flutter/`，**按新设计写**，别照抄 RN 界面）|
+| 7 | UI | ✅ **已写完**（2026-09-22，**按新设计写、没照抄 RN**）：`theme/` `ui/` `state/` `capture/`（文字那一半）`screens/` —— 见 §6.3。⬜ **尾部两块**：媒体录入（相机/相册/录音）+ 音频播放 |
 
 **第 2 项明细（✅ 2026-09-21，合计 1,476 行 TS）**：
 
@@ -521,8 +522,11 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
      最后发到 `flutter-dev-latest`（**刻意与 RN 的 `dev-latest` 分开**，两个包能并排装）。
    版本号**写死 `flutter-version: '3.47.5'`，绝不写 `channel: stable`**（本机 `scoop hold` 那层
    只保住了开发机）。tag 前缀用 `fapk-*` 而不是 `apk-*`：**免得一个 tag 同时引爆 RN 与 Flutter 两条流水线**。
-2. ✅ 然后才是**命门第 2 层**的载体：自检屏 + `main.dart` 已就位、CI 能出包 ⇒
-   **拿 APK 装上手机、看自检屏七项是否全绿** —— 这一步本身仍然 ⬜ 未做。
+2. ✅ 然后才是**命门第 2 层**的载体：自检屏已就位、CI 能出包 ⇒
+   **拿 APK 装上手机（`flutter-dev-latest`）→ 打开 App → 设置 → 维护 → 自检，
+   看两组是否全绿** —— 这一步本身仍然 ⬜ 未做。
+   ⚠️ **自检入口随界面落地挪了位置**：`main.dart` 的 `home` 现在是**记忆流主页**，
+   自检屏改从**设置 → 维护**进（原先是启动即自检屏）。**别照着旧口径去启动页找。**
 
 ⚠️ **本机没装 Android SDK，出包只能走 CI** —— 这才是「必须先补 CI、再验第 2 层」的真实原因。
 
@@ -557,12 +561,52 @@ Flutter 这边**从 `platform/` 开始接**，因为那部分是**与界面设�
 | —— | `platform/db.dart`（**新增**）| ✅ 库名与 RN 同名 `findr.sqlite`；`openFindrDb()` / `openAndMigrateDb()` |
 | `platform/media.ts` | `platform/media.dart` | ✅ `MediaIo` + `MediaStorePort` 两个端口的设备实现 |
 | `platform/selfcheck.ts` | `platform/device_selfcheck.dart` | ✅ 设备层 5 项（**不重复** core 已验的 FTS5/trigram/迁移）|
-| `platform/secure.ts` | ⬜ `platform/secure.dart` | 等加 `flutter_secure_storage`（KeySlot 仍是 `llm`/`asr`，键名 `findr.<slot>.apiKey`）|
-| `platform/backup.ts` | ⬜ `platform/backup.dart` | 等加 `share_plus` + 文件选择器（导出/导入的文件那一半）|
-| `platform/runtime.tsx` | ⬜ `platform/runtime.dart` | 等上面两件齐了再定（Riverpod 已装）|
-| `app/*.tsx` · `ui/` · `capture/` | ⬜ 整个界面 | **按新设计写，别照抄 RN**（见 §1）|
+| `platform/secure.ts` | `platform/secure.dart` | ✅ `flutter_secure_storage`。槽位 **`findr.llm.apiKey` / `findr.asr.apiKey` 与 RN 逐字相同**（升级用户不必重填）。读不到 Key 吞成 `null` = 「没配」，不是错误 |
+| `platform/backup.ts` | `platform/backup.dart` | ✅ `share_plus` + `file_picker`。挑文件**用 `FileType.any`**（限定 `.findrpack` 会让 Android 选择器把它置灰）；把关交给 core 的 magic 校验 |
+| `platform/runtime.tsx` | `platform/runtime.dart` | ✅ Riverpod。`RuntimeState` 快照 + `dbProvider`（**全生命周期只开一次库**）+ `runtimeProvider.refresh()`（保存设置后重读）。**不做业务判断** |
+| `ui/`（RN 设计系统）| `theme/tokens.dart`（**新增**）| ✅ **全新设计令牌**：`FindrColors extends ThemeExtension`（light/dark 两套、`lerp` 可插值）+ `Spacing` / `Radii` / `maxContentWidth` + `buildFindrTheme(Brightness)`。**类名是 `Radii` 不是 `Radius`**（后者与 `dart:ui` 的 `Radius` 撞名）|
+| `ui/*`（RN 组件）| `ui/kit.dart`（**新增**）| ✅ 组件箱：`ScreenBody`（CustomScrollView + 居中 + 限宽 800）/ `Panel` / `FindrButton`（4 变体）/ `FindrChip` / `FindrBadge` / `Notice`（**恒在文档流里，绝不浮层**）/ `EmptyState` / `FindrField` / `ListRow` / `FindrTopBar` |
+| —— | `ui/media_view.dart`（**新增**）| ✅ `mediaFileOf` / `MediaThumb` / `MediaFull`。**`AppPaths.ready == false` 时返回 null 而不是抛**（缩略图退化成带来源图标的占位块，不留白框）|
+| `ui/` 卡片行 | `ui/card_row.dart`（**新增**）| ✅ 角标**只画不算** —— 判定全部走 core 的 `cardBadges` / `badgeLabel` / `BadgeContext`（单一真相源）|
+| `state/`（RN Zustand）| `state/memory_stream.dart`（**新增**）| ✅ **Riverpod AsyncNotifier**：记忆流 + 检索视图（流/结果/答案三态）+ 分类筛选 + `drainQueue`。`search()` 特意不叫 `runSearch`（避开与 runtime 同名）|
+| `capture/`（RN 文件录入）| `capture/text_file.dart`（**新增**）| ✅ 文本文件摄取。**超限不静默截断**（8,000 字上限，超了连实际字数一起退回）；BOM 剥掉；扩展名白名单 |
+| `capture/`（RN 录入坞）| `capture/composer.dart`（**新增**）| ✅ 底部录入坞：文字 + 文本文件。⚠️ **相机 / 相册 / 长按录音尚未接**（见下）|
+| `app/index.tsx`（记忆流主页）| `screens/memory_stream_screen.dart`（**新增**）| ✅ 新首页：搜索框 + 分类 Chip 条 + 结果头 + **AI 答案卡（挂在列表下方，不盖列表）**；回前台自动 `drainQueue` |
+| `app/card/[id].tsx`| `screens/card_detail_screen.dart`（**新增**）| ✅ 实体字段编辑、位置选择、重排/重析/重生成/推进、删除。⚠️ **音频播放入口只占位未接线**（见下）|
+| `app/settings/*`（5 屏）| `screens/settings/*`（**5 个新文件**）| ✅ `provider`（双槽位 llm/asr + 探测，**区分「不支持」与「没测出来」**）· `settings`（7 面板）· `categories`（增删改排序）· `locations`（**改名必调 `refreshPathNames`**）· `backup`（**红条「当前版本不加密」+ 导出确认框两道闸**）|
+| `main.tsx` | `main.dart`（**重写**）| ✅ `await AppPaths.init()` 后 `runApp(ProviderScope(...))`；`home` 从自检屏**换成记忆流主页**；`themeMode: system` |
+| —— | `test/text_file_test.dart` · `test/memory_stream_test.dart`（**新增 29 用例**）| ✅ 文本摄取边界 21 条 + 界面行为 8 条（空态/打字落库/空白不落库/字面兜底/搜不到/回流体/分类筛选/可滚动）|
 
-**应用层的三条关键口径（都在代码注释里）**：
+**界面已按新设计写完（14 个新文件 + `main.dart` 重写）**，`flutter test` 从 8 涨到 **37**。
+**没照抄 RN 的界面**（§1 那条「换栈白拿的好处」兑现了）。
+
+**本轮两个被测试抓出来的真 bug（都属「看着正常但其实坏的」）**：
+1. **录入坞「存」按钮永远点不亮** —— 原先 `if (has != _canSubmit) setState(...)` 里
+   `_canSubmit` 每次重读 `_controller.text`，值恒等 ⇒ `setState` 从不触发，按钮一直是禁用态。
+   改用 `_hadText` 字段记录上一次的值才修好。**这类「读同一个源的 getter 拿去和自己比」是个通用陷阱。**
+2. **`runtimeProvider` 在测试里卡在 `AsyncLoading`** —— `build()` 里 `await appVersion()`
+   （`package_info_plus`）在测试宿主里**永远不返回**，整个界面停在转圈。
+   改成 `build()` 直接返回 `openRuntime(...)`、用 `unawaited(_fillVersion(rt))` 后补版本号。
+   ⇒ 通用口径：**`package_info_plus` 这类平台插件别放在首帧的关键路径上 `await`。**
+   （顺带把 `appVersion()` 的 `.timeout()` 也去了 —— 挂着的 timer 会让 widget test 报未完成计时器。）
+
+⬜ **界面还没接的两块**（都已在代码里明确标注，不是遗漏）：
+- **录入坞的相机 / 相册 / 长按录音 + 图片 WebP 压缩 + 录音** —— `capture/composer.dart` 文件头写着「pending」
+- **卡片详情的音频播放** —— 目前显示「播放功能随录入一起接上」
+
+⬜ **`capture/` 与 `platform/media.dart` 之间还有一段没走通**：`media.dart` 已有两个文件端口，
+但**录入侧还没产出文件**，所以上述两块要一起做（**先做录入、再做播放**才有的放矢）。
+
+**平台层至此写完（7 个模块，约 1,000 行）** ⇒ UI 之前再无「接线要补」的欠账。
+三条容易写错的语义，写在代码注释里，这里再点一遍：
+
+- `platform/backup.dart` 的挑文件**必须** `FileType.any`；导出只留最近 3 个、落在临时目录。
+- `platform/runtime.dart` 的 `runSearch` 在**没配模型时不抛错**，把 `llm`/`cfg` 传 `null`
+  让 core 走字面兜底 —— 抛了连兜底都没了，而兜底正是没配模型时唯一能用的东西。
+- `visionSupported` 只在「探测过 · 明确不支持 · 模型名没变」三件同时成立时才锁死；
+  **没探测过一律按可用**（需求 3.3 是「能力缺失时降级」，不是「未探测时禁用」）。
+
+**媒体与自检这三条关键口径（都在代码注释里）**：
 
 1. ⚠️ **`MediaIo.audioPart` 必须走 `MultipartFile.fromPath`**（文件流），
    **别把 m4a 整个读进内存** —— 这是 TS 原注释明确要保住的性质。
@@ -621,7 +665,7 @@ Flutter 这边**从 `platform/` 开始接**，因为那部分是**与界面设�
 | 层 | 做法 | 状态 |
 |---|---|---|
 | **本机** | **`scoop hold flutter`** ⇒ 冻结在 **3.47.5**，连 `scoop update *` 都不动它 | ✅ 已执行 |
-| **CI** | workflow 里**写死 `flutter-version: 3.47.5`**，**绝不写 `channel: stable`** | ⬜ 加 flutter job 时一起做 |
+| **CI** | workflow 里**写死 `flutter-version: 3.47.5`**，**绝不写 `channel: stable`** | ✅ **已执行**（`.github/workflows/flutter.yml`）|
 | **仓库** | 版本号记在本文件；**先不引 FVM** | ✅ 本条即为记录 |
 
 - **为什么 CI 那层比本机那层重要**：本机漂版本顶多是个别 API 报错、当场看得见；

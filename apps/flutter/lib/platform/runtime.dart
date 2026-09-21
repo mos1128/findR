@@ -9,6 +9,8 @@
 /// **这里不做业务判断** —— 检索怎么放宽、答案怎么组织，全在 core 里。
 library;
 
+import 'dart:async';
+
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -50,6 +52,20 @@ final class RuntimeState {
 
   /// App 版本号，写进备份 manifest。
   final String? version;
+
+  /// 只覆盖版本号。**刻意只开这一个口子**：别让它长成通用的 `copyWith`，
+  /// 那样每加一个字段就要多一处「哪些能改」的判断，而这些字段本来都是设置页的职责。
+  RuntimeState withVersion(String? value) => RuntimeState(
+    driver: driver,
+    dbPath: dbPath,
+    llm: llm,
+    asr: asr,
+    capture: capture,
+    search: search,
+    llmKey: llmKey,
+    asrKey: asrKey,
+    version: value,
+  );
 }
 
 /// 读一遍设置 + Key。库连接由调用方给（**整个会话只该开一次**）。
@@ -202,13 +218,27 @@ final runtimeProvider = AsyncNotifierProvider<RuntimeNotifier, RuntimeState>(Run
 final class RuntimeNotifier extends AsyncNotifier<RuntimeState> {
   @override
   Future<RuntimeState> build() async {
-    // 取版本号只为了写进备份 manifest，失败不算错。
-    final version = await appVersion();
-    return openRuntime(
+    final rt = await openRuntime(
       db: ref.watch(dbProvider),
       keys: ref.watch(apiKeyStoreProvider),
-      version: version,
     );
+    // ⚠️ **版本号不参与「能不能用」，所以不许它拖住快照。**
+    // `package_info_plus` 走平台通道；在没有注册插件的环境（widget 测试、某些定制 ROM）里
+    // 那个调用可能**永远不回包**，于是 `await` 一下的代价是整个界面永远停在转圈 ——
+    // 用户看到的是「App 坏了」，而其实只是拿不到一个版本字符串。
+    unawaited(_fillVersion(rt));
+    return rt;
+  }
+
+  /// 拿到版本号再补一次快照。拿不到就一直空着（`appVersion()` 自己有超时兜底）。
+  Future<void> _fillVersion(RuntimeState snapshot) async {
+    final v = await appVersion();
+    if (v == null) return;
+    final current = state.value;
+    // 期间若已经 refresh 过，state 里是另一份快照，别把新快照盖回旧的
+    if (current != null && identical(current, snapshot)) {
+      state = AsyncData(snapshot.withVersion(v));
+    }
   }
 
   /// 重读设置与 Key。保存设置、导入备份之后调它。
@@ -218,13 +248,14 @@ final class RuntimeNotifier extends AsyncNotifier<RuntimeState> {
       // 同时 `copyWithPrevious` 被标成包内 API，别用 —— 这里不需要它，
       // 因为刷新过程中界面读的是旧的 `AsyncData`（我们不主动切到 loading，
       // 免得保存一下设置整页就闪成转圈）。
-      final version = state.value?.version ?? await appVersion();
+      final prev = state.value;
       final next = await openRuntime(
         db: ref.read(dbProvider),
         keys: ref.read(apiKeyStoreProvider),
-        version: version,
+        version: prev?.version,
       );
       state = AsyncData(next);
+      if (next.version == null) unawaited(_fillVersion(next));
       return next;
     } catch (e, st) {
       state = AsyncError<RuntimeState>(e, st);

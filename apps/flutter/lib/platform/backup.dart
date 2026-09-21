@@ -77,6 +77,16 @@ final class ExportOutcome {
 /// 界面靠秒表交代「还在动」，不靠进度条。
 enum ExportPhase { packing, writing }
 
+/// 取 App 版本号（写进备份 manifest 的 `appVersion`）。
+///
+/// ⚠️ **这个 Future 有可能永远不完成** —— 它走平台通道，在少数环境（没注册插件的
+/// 测试宿主、个别定制 ROM）里那个调用可能迟迟不回包。
+/// 所以：**调用方绝不能在关键路径上 await 它**。目前唯一的调用点是
+/// `platform/runtime.dart` 的 `_fillVersion`，它是 `unawaited` 的 ——
+/// 拿不到就一直空着，界面照常可用。
+///
+/// （这里刻意**不加 `timeout`**：`timeout` 会挂一个定时器，在 widget 测试里
+/// 那个定时器必然「测试结束时仍 pending」而让用例失败。不阻塞比设超时更根本。）
 Future<String?> appVersion() async {
   try {
     return (await PackageInfo.fromPlatform()).version;
