@@ -25,10 +25,12 @@
 | 骨架 | ✅ `apps/flutter/`（applicationId `com.findr.app.dev`）+ `packages/findr_core/` |
 | **命门（FTS5 + trigram）** | ✅ 第 1 层（`dart test`）· ✅ **中间层（`flutter test`，Flutter 工具链下 native assets 真编出了 SQLite）**；⬜ **第 2 层（真机）未做** —— 见 §6.1 |
 | **core 翻译** | ✅ **约 5,394 / 5,429 行 ≈ 99.4%**（全局 39%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · `providers/`+`settings`+`util/` ✅ · `pipeline/`+`cards/`+`media/` ✅ · **`backup/` ✅**；**剩下的 35 行只是 TS 的 `src/index.ts` 桶文件**（Dart 用一个 `findr_core.dart` 代替）⇒ **core 实质译完** |
-| 自检屏（真机载体） | ✅ `packages/findr_core/lib/selfcheck.dart`（两层共用）+ `apps/flutter/lib/selfcheck/self_check_screen.dart`；`apps/flutter/lib/main.dart` 已指向它 ⇒ **APK 装好就能验命门** |
-| 验收网 | `dart test` **289 通过** · `flutter test` **2 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| **应用层接线** | ✅ `apps/flutter/lib/platform/`：`app_paths`（沙盒绝对路径唯一来源）· `db`（真机库文件）· `media`（两个文件端口）· `device_selfcheck`（设备层 5 项）—— 见 §6.3 |
+| 自检屏（真机载体） | ✅ 分两组：**核心**（FTS5 命门，优先跑在真实库文件上）+ **设备层**（PRAGMA / 外键 / 嵌套事务 / 媒体往返 / 打包往返）。`main.dart` 已指向它 ⇒ **APK 装好就能验** |
+| 验收网 | `dart test` **291 通过** · `flutter test` **8 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
-| CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）—— 出包链路补齐 |
+| app 依赖 | `findr_core` + `path_provider` · `flutter_riverpod` · `http` · `http_parser`（后两个是 `MediaIo.audioPart` 的签名里就有 `http.MultipartFile`）|
+| CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）—— `checks` 已实测两次全绿；`apk` 已能出包（18.2MB），**断言 SQLite `.so` 那一步待下一次出包复核** |
 
 **几条 git 现状（2026-09-21 实测，别重复排查）**：
 
@@ -321,8 +323,8 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 | 需要的东西 | 状态 |
 |---|---|
 | 真机上跑的自检屏 | ✅ `apps/flutter/lib/selfcheck/self_check_screen.dart`，且 `main.dart` 已指向它（临时入口，UI 做起来就换掉）|
-| 能装到真机的 APK | ✅ CI `.github/workflows/flutter.yml` 的 `apk` 作业会出包并发到 `flutter-dev-latest`（本机没装 Android SDK，出包只能走 CI）|
-| 产物级断言（前置筛子）| ✅ 该作业会从 APK 里抽出 SQLite 的 `.so`，断言二进制里**含 `fts5` 与 `trigram` 字符串**（模块按名注册，名字串会留在二进制里）。这能在上真机前就挡掉「native assets 没打进包」|
+| 能装到真机的 APK | ✅ CI `.github/workflows/flutter.yml` 的 `apk` 作业已**实测出包成功**（`app-release.apk`，**18.2MB**）。本机没装 Android SDK，出包只能走 CI |
+| 产物级断言（前置筛子）| ✅ 该作业会从 APK 里抽出 SQLite 的 `.so`，断言二进制里**含 `fts5` 与 `trigram` 字符串**（模块按名注册，名字串会留在二进制里）。这能在上真机前就挡掉「native assets 没打进包」；⚠️ **这一步本轮因文件名写错而没跑到，待下一次出包复核** |
 
 ⚠️ **仍然别只做第 1 层就宣布命门通过**，也**别拿中间层冒充第 2 层**：前两层跑的都是桌面上的产物，
 只有第 2 层验的是**真正随 APK 发到手机上的那份二进制**。
@@ -543,6 +545,43 @@ UI 侧待办的口径（都写在 §5 与需求里，别漏）：
 `needs_confirm = 1` —— 那些列已从仓储的列清单里摘掉，手写 SQL 正是被测的事实本身。
 其余造数据与断言都已走仓储，与 TS 同源。）
 
+### 6.3 应用层（`apps/flutter/`）进度
+
+RN 那边应用层是 `apps/mobile/src/`：`platform/`（接线）+ `app/`（路由与页面）+ `ui/` + `capture/`。
+Flutter 这边**从 `platform/` 开始接**，因为那部分是**与界面设计无关**的 —— 任何界面都得有它。
+
+| RN 源 | Dart | 状态 |
+|---|---|---|
+| `platform/db.ts`（op-sqlite 适配）| `packages/findr_core/lib/db/driver_sqlite3.dart` | ✅ 适配与 PRAGMA 已在 core 里，app 侧只剩路径 |
+| —— | `platform/app_paths.dart`（**新增**）| ✅ 沙盒绝对路径唯一来源；`main()` await 一次后全程同步（`MediaIo.fileUri` 是同步的）|
+| —— | `platform/db.dart`（**新增**）| ✅ 库名与 RN 同名 `findr.sqlite`；`openFindrDb()` / `openAndMigrateDb()` |
+| `platform/media.ts` | `platform/media.dart` | ✅ `MediaIo` + `MediaStorePort` 两个端口的设备实现 |
+| `platform/selfcheck.ts` | `platform/device_selfcheck.dart` | ✅ 设备层 5 项（**不重复** core 已验的 FTS5/trigram/迁移）|
+| `platform/secure.ts` | ⬜ `platform/secure.dart` | 等加 `flutter_secure_storage`（KeySlot 仍是 `llm`/`asr`，键名 `findr.<slot>.apiKey`）|
+| `platform/backup.ts` | ⬜ `platform/backup.dart` | 等加 `share_plus` + 文件选择器（导出/导入的文件那一半）|
+| `platform/runtime.tsx` | ⬜ `platform/runtime.dart` | 等上面两件齐了再定（Riverpod 已装）|
+| `app/*.tsx` · `ui/` · `capture/` | ⬜ 整个界面 | **按新设计写，别照抄 RN**（见 §1）|
+
+**应用层的三条关键口径（都在代码注释里）**：
+
+1. ⚠️ **`MediaIo.audioPart` 必须走 `MultipartFile.fromPath`**（文件流），
+   **别把 m4a 整个读进内存** —— 这是 TS 原注释明确要保住的性质。
+   且要**尊重调用方给的 `filename`**：RN 那边被 FormData 吃掉了这个名字，
+   而服务端常靠后缀嗅探格式。
+2. ⚠️ **设备层自检「跑不了」要单独成态**（`DeviceSelfCheckUnavailable`），
+   **不能塞一条红项**。否则这一屏在 `flutter test` / CI 里永远是红的，久而久之没人看。
+   同一个道理：`AppPaths.ready == false` 时核心组退回内存库，并在标题里**写明跑在哪**。
+3. ⚠️ **自检要能被反复点击**：临时表先 `DROP ... IF EXISTS`、探针文件跑完即删、
+   跑完把库里的 `__findr_*` 清干净。它是个「随时可以点开看看」的屏，不是一次性脚本。
+
+**设备层已从「只能上真机才知道」变成有自动化覆盖**：`apps/flutter/test/device_selfcheck_test.dart`
+（6 个用例）把沙盒根目录钉到临时目录上（`AppPaths.initWith`），于是真实库文件、媒体往返、
+整库打包往返都在 `flutter test` 里跑。其中一条专门验「检查不是空转」：
+内存库上 PRAGMA 那一项**必须**报错（journal_mode 是 memory 而非 wal）。
+
+⚠️ **但它仍不能替代真机**：Android 的文件系统语义、以及随 APK 发布的那份 SQLite，
+只有真机上才算验过。
+
 ---
 
 ## 7. 环境现状（本机实测，2026-09-21）
@@ -679,6 +718,14 @@ UI 侧待办的口径（都写在 §5 与需求里，别漏）：
   在根目录层次改 core 之后，`apps/flutter` 侧也要跟着验一遍，别只看 `packages/findr_core`。
 - 📌 **`enable-native-assets` 不用管**：`flutter config --list` 显示 `(Not set)`，
   但 3.47.5 下**默认就是开的**（实测 `build/native_assets/` 有产物，见 §6.1）。
+- ⚠️ **`flutter build apk --target-platform android-arm64` 产出的是 `app-release.apk`**，
+  **不带 ABI 后缀**！`app-arm64-v8a-release.apk` 那种名字**只在 `--split-per-abi` 下才有**。
+  第一次做 CI 出包就栽在这上面：`flutter build` 明明成功了（`✓ Built … app-release.apk (18.2MB)`），
+  下一步断言却报 `No such file or directory` —— **看着像构建没产出，其实只是名字猜错了**。
+  ⇒ CI 里一律用 glob 取，别赌名字。
+- 📌 要**核对 CI 真的跑了**：`gh run list --workflow=flutter.yml`；
+  失败看 `gh run view <id> --log-failed`。工作流**刻意不挂 push 触发 `apk`**（额度有限），
+  要出包用 `gh workflow run flutter.yml` 或打 `fapk-*` tag。
 
 ---
 
