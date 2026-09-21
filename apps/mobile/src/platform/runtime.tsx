@@ -10,7 +10,6 @@ import {
   readAsrSettings,
   readCaptureSettings,
   readLlmSettings,
-  readPipelineSettings,
   readSearchSettings,
   runQueue,
   searchCards,
@@ -22,7 +21,6 @@ import {
   type CaptureSettings,
   type LlmSettings,
   type MemoryCard,
-  type PipelineSettings,
   type QueueRunResult,
   type SearchSettings,
   type SqliteDriver,
@@ -38,7 +36,6 @@ export interface RuntimeState {
   llm: LlmSettings | null;
   asr: AsrSettings | null;
   capture: CaptureSettings;
-  pipeline: PipelineSettings;
   search: SearchSettings;
   llmKey: string | null;
   asrKey: string | null;
@@ -65,7 +62,6 @@ export async function openRuntime(): Promise<RuntimeState> {
     llm: readLlmSettings(driver),
     asr: readAsrSettings(driver),
     capture: readCaptureSettings(driver),
-    pipeline: readPipelineSettings(driver),
     search: readSearchSettings(driver),
     llmKey,
     asrKey,
@@ -101,7 +97,6 @@ export function buildAdvanceDeps(rt: RuntimeState): BuiltDeps {
       asr: rt.asr ? makeAsrAdapter(rt.asr, deviceMediaIO) : null,
       asrCfg: rt.asr ? toAsrProviderConfig(rt.asr, rt.asrKey) : null,
       visionSupported: visionSupported(llm),
-      confirmThreshold: rt.pipeline.confirmThreshold,
       maxAnalyzeImages: rt.capture.maxAnalyzeImages,
     },
   };

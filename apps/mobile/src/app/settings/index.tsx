@@ -3,16 +3,14 @@ import { Alert, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   DEFAULT_CAPTURE_SETTINGS,
-  DEFAULT_PIPELINE_SETTINGS,
   retryAllTranscriptions,
   writeCaptureSettings,
-  writePipelineSettings,
   writeSearchSettings,
 } from '@findr/core';
 
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { Button, Chip, Field, ListRow, Panel, Screen, SectionTitle } from '@/ui/kit';
+import { Button, Chip, ListRow, Panel, Screen, SectionTitle } from '@/ui/kit';
 import { maskApiKey } from '@/platform/secure';
 import { requireDeps, runQueueNow, useRuntime } from '@/platform/runtime';
 
@@ -21,7 +19,6 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { state: rt, refresh } = useRuntime();
   const [busy, setBusy] = useState(false);
-  const [threshold, setThreshold] = useState(String(rt?.pipeline.confirmThreshold ?? 0.6));
 
   if (!rt) return <Screen />;
 
@@ -93,31 +90,6 @@ export default function SettingsScreen() {
         <Text style={{ color: theme.textMuted, fontSize: 11 }}>
           单卡最多送模型分析 {rt.capture.maxAnalyzeImages} 张图（固定护栏，超出的图片仍会保存）
         </Text>
-      </Panel>
-
-      <Panel>
-        <SectionTitle hint="低于该置信度会强制你确认">解析</SectionTitle>
-        <Field
-          label="低置信确认阈值"
-          value={threshold}
-          onChangeText={setThreshold}
-          keyboardType="decimal-pad"
-          hint={`当前 ${rt.pipeline.confirmThreshold}；默认 ${DEFAULT_PIPELINE_SETTINGS.confirmThreshold}`}
-        />
-        <Button
-          title="保存阈值"
-          variant="secondary"
-          compact
-          onPress={() => {
-            const v = Number(threshold);
-            if (!Number.isFinite(v) || v < 0 || v > 1) {
-              Alert.alert('阈值要在 0 到 1 之间');
-              return;
-            }
-            writePipelineSettings(rt.driver, { confirmThreshold: v });
-            void refresh();
-          }}
-        />
       </Panel>
 
       <Panel>

@@ -323,12 +323,17 @@ describe('备份：导入合并策略', () => {
 
   it('本地已有设置不被外来包冲掉，缺失的设置才会补上', async () => {
     const src = sourceSide();
-    setSetting(src.deps.db, 'pipeline', { confirmThreshold: 0.9 });
+    setSetting(src.deps.db, 'search', { autoAnswer: true });
     setSetting(src.deps.db, 'capture', { visionDefault: false, visionLast: false, maxAnalyzeImages: 6 });
+    // 第十九版前的残留：老安装的 settings 表里还留着一行没人读的 pipeline
+    setSetting(src.deps.db, 'pipeline', { confirmThreshold: 0.9 });
     const { bytes } = await exportFrom(src);
 
+    // 它已从 SETTINGS_KEYS 里删掉 ⇒ 掉出白名单，老残留不会被带到别人的机器上
+    expect(Object.keys(manifestOf(bytes).settings).sort()).toEqual(['capture', 'search']);
+
     const dst = targetSide();
-    setSetting(dst.deps.db, 'pipeline', { confirmThreshold: 0.1 });
+    setSetting(dst.deps.db, 'search', { autoAnswer: false });
 
     const { report } = await importBackup(dst.deps, bytes);
 
@@ -336,11 +341,11 @@ describe('备份：导入合并策略', () => {
     expect(report.settingsWritten).toBe(1);
     expect(
       JSON.parse(
-        (dst.deps.db.prepare("SELECT value FROM settings WHERE key = 'pipeline'").get() as {
+        (dst.deps.db.prepare("SELECT value FROM settings WHERE key = 'search'").get() as {
           value: string;
         }).value,
       ),
-    ).toEqual({ confirmThreshold: 0.1 });
+    ).toEqual({ autoAnswer: false });
     expect(
       JSON.parse(
         (dst.deps.db.prepare("SELECT value FROM settings WHERE key = 'capture'").get() as {

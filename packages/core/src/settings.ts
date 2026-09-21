@@ -5,12 +5,16 @@ import type { CapabilityStatus } from './providers/capabilities';
 /**
  * 设置项的唯一权威定义。DB 的 settings 表只存这里列出的非机密项；
  * API Key 只进 SecureStore（键 llm / asr），导出备份永不包含（技术设计四）。
+ *
+ * 第十九版删掉了 `pipeline` 键（它只装「低置信确认阈值」这一个值，而那个值已改为
+ * `pipeline/capture.ts` 里的常量 `CONFIRM_THRESHOLD`）。老安装的 settings 表里会残留
+ * 一行没人读的 `pipeline` JSON —— **无害，不做迁移**；它也不再进备份包（白名单里没有了），
+ * 老备份包里带来的那一行导入时照旧插进表，同样没人读。
  */
 export const SETTINGS_KEYS = {
   llm: 'llm',
   asr: 'asr',
   capture: 'capture',
-  pipeline: 'pipeline',
   search: 'search',
 } as const;
 
@@ -60,19 +64,10 @@ export interface CaptureSettings {
   maxAnalyzeImages: number;
 }
 
-export interface PipelineSettings {
-  /** 低于该置信度强制用户确认（需求 3.4） */
-  confirmThreshold: number;
-}
-
 export const DEFAULT_CAPTURE_SETTINGS: CaptureSettings = {
   visionDefault: true,
   visionLast: null,
   maxAnalyzeImages: 6,
-};
-
-export const DEFAULT_PIPELINE_SETTINGS: PipelineSettings = {
-  confirmThreshold: 0.6,
 };
 
 /**
@@ -124,17 +119,6 @@ export function readCaptureSettings(db: SqliteDriver): CaptureSettings {
 
 export function writeCaptureSettings(db: SqliteDriver, value: CaptureSettings): void {
   setSetting(db, SETTINGS_KEYS.capture, value);
-}
-
-export function readPipelineSettings(db: SqliteDriver): PipelineSettings {
-  return {
-    ...DEFAULT_PIPELINE_SETTINGS,
-    ...(getSetting<PipelineSettings>(db, SETTINGS_KEYS.pipeline) ?? {}),
-  };
-}
-
-export function writePipelineSettings(db: SqliteDriver, value: PipelineSettings): void {
-  setSetting(db, SETTINGS_KEYS.pipeline, value);
 }
 
 /**
