@@ -13,10 +13,11 @@
 2. 读 `需求.md` —— **产品规格，最高权威**
 3. 读 `技术设计.md` —— 数据模型、算法、判定标准
 4. 按需读 `packages/core/src/` 的 TS 实现 —— **它就是规格说明书，是"要翻译的东西"**
-5. **先做完第 4 节「未决问题」的 5 个决策**（用户拍板后才动手）
+5. 核对第 4 节的 5 个决策 —— **已于 2026-09-21 全部定案，直接照做即可**（别再重新讨论）
 6. 再按第 6 节的 V1 路线开工
 
-⚠️ **动手前先做第 8 节那件事**（推送 RN 版终态）。
+✅ **第 8 节那件事已完成**（RN 版终态已于 2026-09-21 push 到远端 `ceaa4f4`）。
+⬜ **本机 Flutter SDK 待装**（必装，见第 7 节；装法已在本机核实）。
 
 ---
 
@@ -103,25 +104,68 @@
 
 ---
 
-## 4. 未决问题 —— 新会话的**第一件事**
+## 4. 开工前的 5 个决策 —— ✅ **已于 2026-09-21 全部定案**
 
-**这 5 个要先定下来再动手。** 前两个影响仓库结构，**建议先问用户一句**；后三个是技术选型，
-已给出推荐，用户不反对就照做。
+**这 5 个已经定了，别再重新讨论。** 4.1 / 4.2 由用户拍板，4.3 / 4.4 / 4.5 按推荐执行。
 
-### 4.1 Flutter 工程放哪？
+### 4.1 ✅ Flutter 工程放哪？—— **同仓 `apps/flutter/`**（用户 2026-09-21 定）
 
-- **建议（推荐）：同一个仓库加 `apps/flutter/`，与 `packages/core` 并存**
-  - 迁移期最大的需求是**随时对照 TS 源码** —— 同仓最方便，改一行 TS 就能旁边看 Dart
-  - **旧 RN 版还能继续出货**（万一 Flutter 卡住，有退路）
-  - `.github/workflows/` 里**加一个 flutter job，老的 android job 先留着**（别急着删）
-- 备选：新开仓库 —— 干净，但要复制规格文档过去，**两边容易漂移**
+- 迁移期最大的需求是**随时对照 TS 源码** —— 同仓最方便，改一行 TS 就能旁边看 Dart
+- **旧 RN 版还能继续出货**（万一 Flutter 卡住，有退路）
+- `.github/workflows/` 里**加一个 flutter job，老的 android job 先留着**（别急着删）
 
-### 4.2 旧 RN 项目怎么处理？
+**推荐目录结构（用户 2026-09-21：「按最佳实践来」）**：
 
-- **建议：保留，不删。** 它是迁移期的**参照实现**，也是回滚路。
-- 等 **V1（安卓）在真机上跑通并验收过**，再考虑归档。
+```
+findR/
+├─ apps/
+│  ├─ mobile/                    ← 旧 RN 版【保留，只读对照，不再改】
+│  └─ flutter/                   ← V1 主工程（含 android/ windows/ macos/ ios/ 子目录）
+│     ├─ lib/
+│     │  ├─ ui/                  ← 新设计，**不照抄 RN 界面**
+│     │  └─ platform/            ← 相机 / 录音 / 安全存储 / 文件 / 分享（Flutter 插件实现）
+│     ├─ test/                   ← widget 测试
+│     └─ pubspec.yaml            ← 用 path 依赖引用 packages/findr_core
+├─ packages/
+│  ├─ core/                      ← 旧 TS core【保留，它就是要翻译的规格说明书】
+│  └─ findr_core/                ← 新 Dart core（**纯 Dart，零 Flutter 依赖**）
+│     ├─ lib/
+│     │  ├─ db/                  ← schema + 迁移 + repository
+│     │  ├─ search/              ← FTS5 检索 + 打分
+│     │  ├─ providers/           ← 模型 HTTP 调用
+│     │  ├─ parse/               ← 手写校验（替代 zod）
+│     │  ├─ pipeline/            ← 录入流程编排
+│     │  ├─ backup/              ← .findrpack 导出/导入
+│     │  ├─ prompts/             ← templates 逐字搬过来
+│     │  └─ settings.dart
+│     ├─ test/                   ← 181 个用例译到这里
+│     └─ pubspec.yaml
+└─ .github/workflows/            ← flutter.yml（新增）+ android.yml（老 job，先留着）
+```
 
-### 4.3 core 怎么处理？（唯一没有捷径的一件）
+**三条关键设计点（别改）：**
+
+1. **Dart core 做成独立 package，不要塞进 app 的 `lib/` 下** —— 它是纯 Dart，
+   可以用 `dart test` 直接跑，不必起 Flutter 环境、不被 widget 测试拖慢；
+   **V2/V3 桌面版复用同一个 core**，不用复制；也与现有 `apps/` + `packages/` 结构对称。
+2. **依赖倒置**：`findr_core` 只依赖 **`sqlite3`**（纯 Dart FFI 包），
+   **不依赖 `sqlite3_flutter_libs`**；`sqlite3_flutter_libs` 由 `apps/flutter` 依赖，
+   它唯一的职责是「**把带 FTS5 的 native sqlite 打进各平台**」。
+   （这是 drift 官方推荐的分层法，也让 core 的可测试性最大化 —— 纯 Dart 测试能直接验库行为。）
+3. **名字用 `findr_core` 而不是 `core_dart`** —— Dart 包名必须 snake_case，
+   且这样能与 `packages/core`（TS 老版）一眼区分。
+
+**另外两条工程约定**：
+- `.gitignore` 用 Flutter 工程自带的（`flutter create` 会生成），**别把 `build/`、`.dart_tool/` 提交进来**；
+- CI 里的 Flutter 版本号**写死成与本地相同的具体版本**（不要写 `channel: stable`）——
+  否则将来 stable 前进会造成「本地过、CI 挂」这种最难查的差异。
+
+### 4.2 ✅ 旧 RN 项目怎么处理？—— **保留，不删**（用户 2026-09-21 定）
+
+- 它是迁移期的**参照实现**，也是回滚路。
+- 用户原话：「旧版保留方便对照」。等 **V1（安卓）在真机上跑通并验收过**，再考虑归档。
+
+### 4.3 ✅ core 怎么处理？（唯一没有捷径的一件）
 
 **没有成熟方案让 Dart 调用 TS core**（Dart 调 JS 要么嵌引擎、要么 core 编 WASM，都不成熟且更重）。
 所以 **core 必须用 Dart 重写**。但**按块译、每块用对应测试验收**，别一口气译完。
@@ -139,19 +183,29 @@
 ⚠️ **`zod` 在 Dart 没有等价物**：建议手写校验函数，或 `json_serializable` + 手写约束。
 **不要为了"对齐 zod"引入一个重 ORM/校验框架。**
 
-### 4.4 状态管理选型
+### 4.4 ✅ 状态管理选型 —— **Riverpod**
 
-- **建议 Riverpod**：当前 Flutter 主流，编译期安全、好测、不依赖 BuildContext
+- 当前 Flutter 主流，编译期安全、好测、不依赖 `BuildContext`
 - 备选：Bloc（更结构化、更重）、Provider（更旧）
 
-### 4.5 数据库方案
+### 4.5 ✅ 数据库方案（2026-09-21 修订，**取代此前「倾向 drift」的写法**）
 
-- **`sqlite3_flutter_libs`** —— 负责把**带 FTS5 的 SQLite** 打包进各平台（必装）
-- **`drift`** —— 底层就是 sqlite3，**能写原生 SQL**，且自带 `MigrationStrategy`（对应我们现在的
-  `user_version` 迁移）
-- 或 **`sqlite3` 包** 直接用（更轻，但迁移要自己写）
+**必装（app 侧）**：`sqlite3_flutter_libs` —— 把**带 FTS5 的 native SQLite** 打包进各平台。
+（按 4.1 的分层，它只归 `apps/flutter`，**不进 `findr_core`**。）
 
-👉 **倾向 `drift`**（迁移框架能省事），但**第一件事必须是验证 FTS5 + trigram 真可用**（见第 6 节）。
+**core 侧**：`sqlite3`（纯 Dart FFI 包），**直接写 SQL**。
+
+**`drift` 先不引。** 理由：
+
+1. 我们有一整套**现成的 SQL 要逐字搬**（见第 3 节）—— drift 的 DSL / codegen 反而多一层翻译，
+   正好把我们最省事的那条路堵上；
+2. 迁移逻辑我们本来就是手写的（`user_version` 分步推进），drift 的 `MigrationStrategy` 省不了多少；
+3. 少一层 codegen ⇒ 少一个 CI 步骤、少一类「生成物没同步」的故障。
+
+**留后门**：drift 底层就是 `sqlite3`，若将来迁移或查询复杂度涨上来，随时能在其上加一层，
+不影响已译好的代码结构。
+
+⚠️ 但**第一件事仍然是验证 FTS5 + trigram 真可用**（见第 6 节，可在本地 30 秒验完）。
 
 ---
 
@@ -211,9 +265,23 @@
 
 **这一条不通 ⇒ 整个方案要重新评估。** 先做它，别先写别的。
 
+**验法分两层，两层都绿才算过**（2026-09-21 补充）：
+
+1. **本地（约 30 秒）** —— 在 `packages/findr_core` 里写一个**纯 Dart 测试**：用 `sqlite3` 包打开本机
+   的 SQLite（Windows 上放一个 SQLite 官方 `sqlite3.dll`，**官方 Windows 发行包已含 FTS5**），
+   建 `USING fts5(..., tokenize='trigram')` 表、插中文、做 3 字以上 `MATCH` 查询。
+   绿了 ⇒ 说明**我们写的 SQL 与 trigram 语法本身没问题**。
+2. **安卓侧（真机）** —— 把同一段检查放进 App 的**自检屏**（RN 版本来就有这个习惯），
+   在真机上跑一次 ⇒ 确认 `sqlite3_flutter_libs` 打进 APK 的那份 SQLite，
+   在 **Android 的编译配置下**同样带 FTS5。
+
+⚠️ **别只做第一层就宣布通过** —— 第一层验的是 SQL 语法，第二层验的才是**真正要发布的那份二进制**
+（这正是铁律 5「调用失败与能力不支持必须分开判」的同类问题：得在真实的那一层上看）。
+
 ### 6.1 然后按这个顺序
 
-1. `flutter create` + 定状态管理 + 配 `sqlite3_flutter_libs`（+ drift 或 sqlite3）
+1. `flutter create`（在 `apps/flutter/`）+ 定状态管理（Riverpod）+ 建 `packages/findr_core`
+   + app 配 `sqlite3_flutter_libs`、core 配 `sqlite3`（**不引 drift**，见 4.5）
 2. **译 `db/` 那一层**（schema + 迁移 + repository），**同步把对应的 Dart 测试写出来**
 3. **译 `search/`** —— 重点验证：中文检索能命中、**排序打分结果与 TS 版一致**
 4. 译 `providers/` + `parse/` + `pipeline/`，跑通「拍照/打字 → 入库 → 检索」最小闭环
@@ -224,14 +292,48 @@
 
 ---
 
-## 7. 环境现状（本机实测，2026-09-21）
+## 7. 环境现状与「SDK 要不要装本地」（本机实测，2026-09-21）
 
 | 项 | 状态 |
 |---|---|
-| **Flutter / Dart SDK** | ❌ **本机未安装**（PATH 里没有，scoop 里也没有）⇒ **开工第一件事是装 Flutter SDK** |
-| **Android SDK** | ❌ **本机没有**（`ANDROID_HOME` 为空；`%LOCALAPPDATA%\Android` 只有 platform-tools）|
-| **出包方式** | ⇒ **仍走 CI**（`mos1128/findR` 的 GitHub Actions）|
-| 本机已有 | Node 22 / pnpm / Python 3.13 / `gh` CLI（**已登录**）/ `adb`（见下，不在 PATH）|
+| **Flutter SDK** | ⬜ **未装 —— 但必须装**（理由见 7.1）。**订正**：scoop 的 `extras` 桶里其实有 flutter 清单，此前「scoop 里也没有」的说法不准 |
+| **Android SDK** | ⬜ **未装，可以先不装**（`ANDROID_HOME` 为空；`%LOCALAPPDATA%\Android` 只有 platform-tools）|
+| **出包方式** | ✅ **仍走 CI**（`mos1128/findR` 的 GitHub Actions，加一个 flutter job）|
+| 本机已有 | Node 22 / pnpm / Python 3.13 / `gh` CLI（**已登录**）/ `adb`（见下，不在 PATH）/ **scoop** |
+
+### 7.1 为什么 Flutter SDK 必须装（2026-09-21 用户提问后定案）
+
+**「出包」这一半确实可以继续全交 CI，但「验收」这一半不行。**
+
+- **可以交给 CI 的**：`flutter build apk` 跑在 GitHub Actions 上（用 `subosito/flutter-action`），
+  本机不需要 Android SDK。这一点和 RN 时代一样，**不变**。
+- **不能交给 CI 的**：本次迁移的核心手段是「**逐块翻译 + 181 个用例当验收网**」，
+  也就是 **改一行 → 立刻 `flutter test` 看有没有译错**。这件事必须在本机秒级完成。
+  没有本地 SDK ⇒ 每轮「改一行」都要 push → 等 20+ 分钟 CI → 翻日志；181 个用例走一遍，
+  时间全消耗在等构建上。
+- **命门本身也要本地验**：第 6.0 节那条 FTS5 + trigram 是一次**约 30 秒的本地实验**，
+  放 CI 里就是 20 分钟一轮。
+- 第 9 节末尾那条「**别在没有设备反馈的情况下假定 UI 是好的**」—— 这次 UI 是重写，更需要本机跑。
+
+**结论：Flutter SDK 必装；Android SDK 可以等 V1 要上真机时再装。**
+
+| 想做的事 | 要装什么 | 大概体积 |
+|---|---|---|
+| 写 Dart、跑 181 个测试、验 FTS5/trigram | **只要 Flutter SDK**（自带 Dart + analyzer + test runner）| ~1GB，约 10 分钟 |
+| 本机出 APK / 连真机 `flutter run` | 再加 Android SDK + JDK | ~5GB |
+| 只想看 UI 效果、又不想装 Android SDK | `flutter run -d chrome`（纯 UI 可用；**相机 / 录音 / 钥匙串等插件在 web 上不可用**）| 0 |
+
+**装法（本机已核实）** —— scoop 的 `extras` 桶里就有，一条命令：
+
+```
+scoop install flutter        # extras 桶，当前清单是 Flutter 3.47.4 stable
+```
+
+- 想要「把 SDK 版本钉进仓库、与 CI 严格对齐」再考虑 `scoop install fvm` + `fvm use <版本>`；
+  现阶不必，FVM 随时可加。
+- ⚠️ **`scoop update` 会推进 Flutter 版本** ⇒ CI 里务必写死具体版本号（见 4.1 末条）。
+
+### 7.2 其余环境要点
 
 - `adb` 绝对路径：`C:\Users\mos\AppData\Local\Android\platform-tools\adb.exe`
 - **bash 里先 `export PATH="/usr/bin:/bin:$PATH"`**，否则 `ls` / `find` / `head` 会 command not found
@@ -240,23 +342,16 @@
 
 ---
 
-## 8. ⚠️ 迁移前必须先做的一件事（RN 版终态还没保住）
+## 8. ✅ 迁移前那件事：RN 版终态已 push（2026-09-21 完成）
 
-**RN 版本还有一批提交没 push** —— **远端 `origin/main` 停在 `3aead1d`**，它之后的所有本地提交都没推。
-自查命令：`git log --oneline 3aead1d..HEAD`。
-
-截至 2026-09-21 收盘是这些（**此数会随提交增长，以命令输出为准**）：
+**已办完，不用再做。** 用户 2026-09-21 明确同意后执行：
 
 ```
-d0e099b docs: 核准迁移交接里的 git 现状（sandbox 建不了 refs/remotes，但 tags/heads 可写）
-6a3ccbf docs: 方向变更 —— 迁移 Flutter（新建 Flutter迁移交接.md + 统一十二条铁律 + 四处作废标记）
-e5cc959 memory: 第二十版落地记录 + 桌面两条路口径更正 + 全平台技术栈结论
-2eec47f 第二十版：删掉「待确认」整条功能
-3ab65b4 第十九版：删掉「低置信确认阈值」这个可配项（阈值改为 core 常量）
+3aead1d..ceaa4f4  main -> main        ← 6 个提交，已推到 origin/main
 ```
 
-**先把这些 push 掉**，把 RN 版终态固定到远端 —— 它是迁移期的**参照实现**，也是**回滚路**。
-⚠️ **push 前按铁律 8 先问用户"还有没有要改的"**，别自动推。
+远端与本地 HEAD 均停在 **`ceaa4f4`**（已用 `git ls-remote origin main` 核对一致）。
+RN 版终态已固定到远端 —— 它是迁移期的**参照实现**，也是**回滚路**。
 
 **几条 git 现状（2026-09-21 实测，别重复排查）**：
 
@@ -268,7 +363,8 @@ e5cc959 memory: 第二十版落地记录 + 桌面两条路口径更正 + 全平�
   `new branch main -> origin/main`、`FETCH_HEAD` 也确实写了，可 `.git/refs/remotes/origin/main`
   就是不落盘；连 `git update-ref` 都返回 0 却无效，手动 `mkdir` 出的目录会被回滚。
   **要修就在用户自己的终端里跑一次 `git fetch origin`**，一条命令的事。
-- 远端仓库 `mos1128/findR` **仍在、可达**（`git ls-remote` 通）；**tag 共 17 个**，最新到 `apk-m1-fix12`。
+  **核对远端可以直接用 `git ls-remote origin main`，不需要那个引用。**
+- 远端仓库 `mos1128/findR` **仍在、可达**；**tag 共 17 个**，最新到 `apk-m1-fix12`。
 - 桌面 APK：`findr-apk-m1-fix12.apk`（**桌面上还有 fix11，建议删掉免得装错**）
 
 ---
@@ -321,9 +417,21 @@ Flutter 版也一样，用户的数据在库里）。
 
 ---
 
-## 11. 一句话总结这一轮
+## 11. 一句话总结这一轮（2026-09-21 收盘）
 
-**方向已定：RN → Flutter，一版一版出（安卓 → Windows → macOS/iOS）。
-当前第一个障碍是「本机没装 Flutter SDK」，第一个技术风险是「FTS5 + trigram 在 Flutter 里能不能用」，
-第一件该做的事是「先把 RN 版那批未推的提交 push 掉，保住参照实现」。**
+**方向已定：RN → Flutter，一版一版出（安卓 → Windows → macOS/iOS）。**
+
+- **5 个决策全部定案**：同仓 `apps/flutter/` + 独立 Dart core 包 `packages/findr_core`；
+  旧 RN 保留对照；core 用 Dart 重写（按 7 步从底层往上）；Riverpod；
+  `sqlite3` + `sqlite3_flutter_libs`，**不引 drift**。**别再重开讨论。**
+- **RN 版终态已 push 到远端**（`ceaa4f4`），参照实现与回滚路都保住了。
+
+**现在只剩两个动作就能开工：**
+
+1. **装 Flutter SDK** —— `scoop install flutter`（**必装**；Android SDK 可延后，出包仍走 CI。
+   理由见 7.1：出包能给 CI，但「改一行 → 跑 181 个测试」的验收必须在本机）
+2. **验命门** —— FTS5 + trigram，**本地 30 秒 + 真机各一次**（见 6.0）
+
+之后按 6.1 节顺序走：`flutter create` → 译 `db/`（同步写 Dart 测试）→ 译 `search/` →
+译 `providers/ + parse/ + pipeline/` 跑通最小闭环 → **最后才动 UI，而且按新设计写**。
 
