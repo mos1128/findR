@@ -177,7 +177,7 @@ test('ASR 热词取一二级位置名 + 高频实体', () => {
 
 test('settings 读写为 JSON，坏值不炸', () => {
   const db = makeDb();
-  setSetting(db, 'llm', { model: 'claude-opus-5', authStyle: 'bearer' });
+  setSetting(db, 'llm', { model: 'claude-opus-5' });
   expect(getSetting<{ model: string }>(db, 'llm')?.model).toBe('claude-opus-5');
   expect(getSetting(db, 'missing')).toBeNull();
 

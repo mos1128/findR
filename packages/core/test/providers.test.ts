@@ -157,7 +157,7 @@ test('openai-compat LLM：baseUrl 已带 /v1 时不重复拼接', async () => {
   expect(calls[0].url).toBe('http://host/v1/chat/completions');
 });
 
-test('anthropic LLM：图片走 source base64 块，请求头按 authStyle 切换', async () => {
+test('anthropic LLM：图片走 source base64 块，认证头默认发 Bearer', async () => {
   const { fn, calls } = fakeFetch([{ json: { content: [{ type: 'text', text: '{"ok":1}' }] } }]);
   const res = await new AnthropicAdapter({ fetchFn: fn }).chat(
     {
@@ -172,16 +172,16 @@ test('anthropic LLM：图片走 source base64 块，请求头按 authStyle 切�
       baseUrl: 'http://192.168.1.9:7788',
       model: 'claude-sonnet-4',
       apiKey: 'sk-test',
-      authStyle: 'x-api-key',
     },
   );
 
   expect(res.text).toBe('{"ok":1}');
+  expect(calls).toHaveLength(1);
   expect(calls[0].url).toBe('http://192.168.1.9:7788/v1/messages');
 
   const headers = calls[0].init.headers as Record<string, string>;
-  expect(headers['x-api-key']).toBe('sk-test');
-  expect(headers.authorization).toBeUndefined();
+  expect(headers.authorization).toBe('Bearer sk-test');
+  expect(headers['x-api-key']).toBeUndefined();
   expect(headers['anthropic-version']).toBe('2023-06-01');
 
   const body = JSON.parse(String(calls[0].init.body)) as {
@@ -194,6 +194,61 @@ test('anthropic LLM：图片走 source base64 块，请求头按 authStyle 切�
     type: 'image',
     source: { type: 'base64', media_type: 'image/webp', data: 'QUJD' },
   });
+});
+
+const ANTHROPIC_CFG: ProviderConfig = {
+  providerType: 'anthropic',
+  baseUrl: 'http://192.168.1.9:7788',
+  model: 'claude-sonnet-4',
+  apiKey: 'sk-test',
+};
+
+test('anthropic LLM：只在 401/403 时改用 legacy 的 x-api-key 重试一次', async () => {
+  const { fn, calls } = fakeFetch([
+    { text: '{"error":{"type":"authentication_error"}}', status: 401 },
+    { json: { content: [{ type: 'text', text: 'ok' }] } },
+  ]);
+  const res = await new AnthropicAdapter({ fetchFn: fn }).chat(
+    { system: 's', parts: [{ type: 'text', text: 't' }] },
+    ANTHROPIC_CFG,
+  );
+
+  expect(res.text).toBe('ok');
+  expect(calls).toHaveLength(2);
+
+  const first = calls[0].init.headers as Record<string, string>;
+  const second = calls[1].init.headers as Record<string, string>;
+  expect(first.authorization).toBe('Bearer sk-test');
+  expect(second['x-api-key']).toBe('sk-test');
+  expect(second.authorization).toBeUndefined();
+  // 兜底那次仍要带上协议头，别把 anthropic-version 丢了
+  expect(second['anthropic-version']).toBe('2023-06-01');
+  expect(second['content-type']).toBe('application/json');
+});
+
+test('anthropic LLM：非认证类失败不重试（不拿兜底掩盖真实错误）', async () => {
+  const { fn, calls } = fakeFetch([{ text: 'boom', status: 500 }]);
+  await expect(
+    new AnthropicAdapter({ fetchFn: fn }).chat(
+      { system: 's', parts: [{ type: 'text', text: 't' }] },
+      ANTHROPIC_CFG,
+    ),
+  ).rejects.toThrow(/HTTP 500/);
+  expect(calls).toHaveLength(1);
+});
+
+test('anthropic LLM：兜底也失败时抛出状态码（重试了两次、不静默）', async () => {
+  const { fn, calls } = fakeFetch([
+    { text: 'no', status: 401 },
+    { text: 'still no', status: 401 },
+  ]);
+  await expect(
+    new AnthropicAdapter({ fetchFn: fn }).chat(
+      { system: 's', parts: [{ type: 'text', text: 't' }] },
+      ANTHROPIC_CFG,
+    ),
+  ).rejects.toThrow(/HTTP 401/);
+  expect(calls).toHaveLength(2);
 });
 
 test('openai-compat LLM：SSE 流式兜底解析 choices[0].delta.content', async () => {

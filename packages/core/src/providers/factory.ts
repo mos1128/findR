@@ -16,7 +16,6 @@ export function toProviderConfig(llm: LlmSettings, apiKey: string | null): Provi
     baseUrl: llm.baseUrl,
     model: llm.model,
     apiKey: apiKey ?? undefined,
-    authStyle: llm.authStyle,
     userAgent: llm.userAgent,
   };
 }

@@ -152,7 +152,7 @@ export default function SettingsScreen() {
         />
         <ListRow
           title="分类"
-          subtitle="名称、Emoji、识别描述、所属结构类型"
+          subtitle="名称、Emoji、给模型看的识别描述"
           onPress={() => router.push('/settings/categories')}
           right={<Text style={{ color: theme.textMuted }}>›</Text>}
         />
@@ -162,7 +162,7 @@ export default function SettingsScreen() {
         <SectionTitle hint="换机、重装靠它把记忆搬回去">数据</SectionTitle>
         <ListRow
           title="备份与恢复"
-          subtitle="导出一个加密文件（不含 API Key），也能从备份文件合并回来"
+          subtitle="导出明文文件（不加密、不含 API Key），也能从备份合并回来"
           onPress={() => router.push('/settings/backup')}
           right={<Text style={{ color: theme.textMuted }}>›</Text>}
         />

@@ -90,9 +90,6 @@ export default function ProviderScreen() {
   );
   const [baseUrl, setBaseUrl] = useState(rt?.llm?.baseUrl ?? rt?.asr?.baseUrl ?? '');
   const [model, setModel] = useState(rt?.llm?.model ?? rt?.asr?.model ?? '');
-  const [authStyle, setAuthStyle] = useState<'x-api-key' | 'bearer'>(
-    rt?.llm?.authStyle ?? 'bearer',
-  );
   const [userAgent, setUserAgent] = useState(rt?.llm?.userAgent ?? '');
   const [apiKey, setApiKeyValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -116,7 +113,6 @@ export default function ProviderScreen() {
           providerType,
           baseUrl: baseUrl.trim() || undefined,
           model: model.trim(),
-          authStyle,
           userAgent: userAgent.trim() || undefined,
           // 换了模型，旧的探测结果不再可信
           capabilities: known && 'capabilities' in known ? known.capabilities : undefined,
@@ -152,7 +148,6 @@ export default function ProviderScreen() {
           providerType,
           baseUrl: baseUrl.trim() || undefined,
           model: model.trim(),
-          authStyle,
           userAgent: userAgent.trim() || undefined,
         };
         const key = apiKey.trim() || rt.llmKey;
@@ -227,21 +222,10 @@ export default function ProviderScreen() {
               />
             </View>
             {providerType === 'anthropic' ? (
-              <>
-                <SectionTitle>认证方式</SectionTitle>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <Chip
-                    label="x-api-key（官方）"
-                    active={authStyle === 'x-api-key'}
-                    onPress={() => setAuthStyle('x-api-key')}
-                  />
-                  <Chip
-                    label="Bearer（网关）"
-                    active={authStyle === 'bearer'}
-                    onPress={() => setAuthStyle('bearer')}
-                  />
-                </View>
-              </>
+              <Text style={{ color: theme.textMuted, fontSize: 11, lineHeight: 16 }}>
+                认证头自动适配，不需要选：默认发 Bearer（官方文档现在的首选，网关也认）。
+                万一某个网关只认旧的 x-api-key，会自动改用它再试一次。
+              </Text>
             ) : null}
           </>
         ) : null}

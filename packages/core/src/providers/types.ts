@@ -61,13 +61,16 @@ export interface TranscribeRequest {
   timeoutMs?: number;
 }
 
+/**
+ * 认证头由适配器自动决定，**不再是可配项**（第十八版删掉了 `authStyle`）：
+ * openai-compat 恒发 `Authorization: Bearer`；anthropic 默认也发 Bearer，
+ * 仅在 401/403 时改用 legacy 的 `x-api-key` 重试一次。见 `anthropic.ts` 的类注释。
+ */
 export interface ProviderConfig {
   providerType: 'openai-compat' | 'anthropic' | 'gemini' | 'fake';
   baseUrl?: string;
   model: string;
   apiKey?: string;
-  /** 认证头风格：Anthropic 原生用 x-api-key；本地网关（如 ccg-gateway）用 bearer */
-  authStyle?: 'x-api-key' | 'bearer';
   /** 部分网关按 User-Agent 路由，需要伪装成已知客户端（如 claude-cli/…） */
   userAgent?: string;
 }

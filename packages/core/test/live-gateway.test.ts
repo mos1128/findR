@@ -19,7 +19,6 @@ const CFG: ProviderConfig = {
   baseUrl: BASE,
   model: MODEL ?? '',
   apiKey: KEY,
-  authStyle: 'bearer',
   userAgent: 'claude-cli/2.1.268 (external, cli)',
 };
 

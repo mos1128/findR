@@ -32,11 +32,15 @@ export interface CapabilityCache {
   probedModel: string;
 }
 
+/**
+ * 主 LLM 的配置。
+ * 第十八版删掉了 `authStyle` —— 认证头已改为适配器自动适配（见 `providers/types.ts`）。
+ * 老安装里存的 `authStyle` 键会留在 JSON 里但**被忽略**，无需迁移、不影响覆盖安装。
+ */
 export interface LlmSettings {
   providerType: LlmProviderType;
   baseUrl?: string;
   model: string;
-  authStyle?: 'x-api-key' | 'bearer';
   userAgent?: string;
   capabilities?: CapabilityCache;
 }
