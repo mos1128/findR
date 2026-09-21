@@ -31,6 +31,7 @@
 /// 调用方永远不需要写出它（要用的是「不传这个参数」）。
 library;
 
+export 'cards/badges.dart';
 export 'db/driver.dart';
 export 'db/driver_sqlite3.dart';
 export 'db/json.dart';
@@ -39,9 +40,14 @@ export 'db/repository.dart';
 export 'db/schema.dart';
 export 'db/settings.dart';
 export 'db/taxonomy.dart';
+export 'media/paths.dart';
 export 'parse/model_json.dart';
 export 'parse/outputs.dart';
 export 'parse/schema.dart';
+export 'pipeline/capture.dart';
+export 'pipeline/edit.dart';
+export 'pipeline/ingest.dart';
+export 'pipeline/queue.dart';
 export 'prompts/render.dart';
 export 'providers/anthropic.dart';
 export 'providers/capabilities.dart';

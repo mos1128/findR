@@ -24,8 +24,8 @@
 | Flutter SDK | ✅ 3.47.5 stable / Dart 3.13.4；本机已 `scoop hold` 冻结版本（§7）|
 | 骨架 | ✅ `apps/flutter/`（applicationId `com.findr.app.dev`）+ `packages/findr_core/` |
 | **命门（FTS5 + trigram）** | ✅ 第 1 层（本地）通过；⬜ **第 2 层（真机）未做** —— 见 §6.1 |
-| **core 翻译** | 🔄 **约 3,670 / 5,429 行 ≈ 68%**（全局 26%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · **`providers/`+`settings`+`util/` ✅**；**下一块 = `pipeline/`** |
-| 验收网 | `dart test` **226 通过**；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| **core 翻译** | 🔄 **约 4,398 / 5,429 行 ≈ 81%**（全局 32%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · `providers/`+`settings`+`util/` ✅ · **`pipeline/`+`cards/`+`media/` ✅**；**下一块 = `backup/`** |
+| 验收网 | `dart test` **272 通过**；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
 | CI flutter job | ⬜ 未加（**出包链路还缺这一环**）|
 
@@ -311,8 +311,8 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 | 2 | `db/` 那一层 | ✅ **全部译完**（2026-09-21 分两轮，明细见下）|
 | 3 | `search/` | ✅ **全部译完**（2026-09-22，含 `builder`）；顺带把它依赖的 `parse/` `prompts/` `providers/types` 一并译掉 |
 | 4 | `providers/` 联网层 + `settings` + `util/` | ✅ **全部译完**（2026-09-22，明细见下）|
-| 5 | `pipeline/` 录入编排 | ⬜ **下一块**（capture 326 · edit 156 · queue 119 · ingest 15 = 616 行）|
-| 6 | `backup/` + `cards/` + `media/` | ⬜（996 + 77 + 35 = 1,108 行）|
+| 5 | `pipeline/` 录入编排 + `cards/` + `media/` | ✅ **全部译完**（2026-09-22，明细见下）|
+| 6 | `backup/` | ⬜ **下一块**（996 行）|
 | 7 | UI | ⬜ **最后才动，且按新设计写**（别照抄 RN 界面）|
 
 **第 2 项明细（✅ 2026-09-21，合计 1,476 行 TS）**：
@@ -360,11 +360,40 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 | `providers/media.ts` | 14 | `providers/media.dart`（文件端口；`audioPart` 返回具体 `MultipartFile`，见下）|
 | ——（**新增**）| —— | `providers/transport.dart`（URL 归一化 / 超时 / 读体，把 TS 里写了两三遍的重复收拢）|
 
-**验收网**：`dart test` **226 通过**（原 148 + 本轮 78）、`dart analyze` 无问题；
+**第 5 项明细（✅ 2026-09-22，本轮合计 728 行 TS）**：
+
+| TS 源 | 行 | Dart |
+|---|---|---|
+| `pipeline/capture.ts` | 326 | `pipeline/capture.dart`（**core 里最绕的一件**：`AdvanceDeps` + 草稿 → 转写 → 理解 → 入库；`UnderstandingResult` / `AdvanceOutcome` 用 sealed class + enum）|
+| `pipeline/edit.ts` | 156 | `pipeline/edit.dart`（补文字 / 重新整理 / 补分析 / 重生成 desc，四个入口都建在 `runUnderstanding` 上）|
+| `pipeline/queue.ts` | 119 | `pipeline/queue.dart`（串行重试队列；模块级 `_running` 锁 + `resetQueueLockForTest`）|
+| `cards/badges.ts` | 77 | `cards/badges.dart`（角标判定 + 文案 + `canReanalyze`；`CardBadge` 枚举带 `wire`）|
+| `media/paths.ts` | 35 | `media/paths.dart`（媒体相对路径规则；**月份用本地时间**，与 `isoUtc` 那套时间戳不同源，见下）|
+| `pipeline/ingest.ts` | 15 | `pipeline/ingest.dart`（`ingestText` 薄封装）|
+
+验收网：`pipeline.test.ts` **31 个用例**（逐字译成 `test/pipeline/pipeline_test.dart`）+
+`badges.test.ts` 9 个（`test/cards/badges_test.dart`）+
+`samples.test.ts` 6 个（`test/pipeline/samples_test.dart`，**20 条手工样本集已搬成
+`test/fixtures/samples.dart`**）。合计 **46 个新用例**。
+
+**第 5 项的两处有意偏离**：
+
+1. ⚠️ **`queue.ts` 的 `QueueDeps extends AdvanceDeps` 译不过来**：Dart 没有结构化子类型，
+   硬造包装类会让每个调用点多一层解包。改成 `runQueue(AdvanceDeps deps, {bool? vision, int? max})`
+   —— 那个多出来的 `vision` 字段提成具名参数，语义相同；
+   `retryAllTranscriptions` 里 TS 的 `{...deps, hotwords}` 由 `AdvanceDeps.withHotwords(...)` 承担
+   （与 `P2Output.withSynonyms` 同一套路）。`__resetQueueLock` → `resetQueueLockForTest`。
+2. 📌 **`media/paths.dart` 的月份目录用本地时间，不是 `isoUtc()`** —— 与第 1 条口径**不冲突**：
+   那条管的是**写进数据库的列值/排序键/备份字段**；媒体目录名是**给人看的文件夹**，
+   TS 侧用的就是本地 `getMonth()`，改成 UTC 会让「1 月拍的照落到 12 月文件夹」。
+   代码里写了注释，别顺手「统一」掉。
+3. 📌 TS 的 `audioPart` 返回 `Blob`/`{uri,name,type}`，Dart 返回具体 `http.MultipartFile` ⇒
+   断言 `{kind:'file', rel, mime}` 改成 `isA<AudioFileRef>()` + 字段判等。
+
+**验收网**：`dart test` **272 通过**（226 + 本轮 46）、`dart analyze` 无问题；
 **RN 侧 `pnpm check` 仍 181 passed | 2 skipped**（基线未破）。
-**全局进度约 3,670 / 13,894 行 ≈ 26%**（按「需要动脑的行数」算比这个高 ——
-`templates.ts` 与全部 SQL 是逐字搬）。**core 内部已译 3,670 / 5,429 ≈ 68%**，
-剩 `pipeline/` `backup/` `cards/` `media/`。
+**全局进度约 4,398 / 13,894 行 ≈ 32%**（按「需要动脑的行数」算比这个高 ——
+`templates.ts` 与全部 SQL 是逐字搬）。**core 内部已译 4,398 / 5,429 ≈ 81%**，剩 `backup/`。
 
 **翻译时的三条口径（都是踩过才有的）**：
 
@@ -404,15 +433,17 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
    - `makeLlmAdapter` 遇到 `gemini`/`fake` 显式抛 `UnsupportedError`：
      TS 那边是 `switch` 漏空返回 `undefined`，然后在调用点崩成「undefined 不是函数」。
 
-**下一块（`pipeline/`）的要点**：这是把「一次录入」串起来的编排层，
-也是**第一个要跑真模型**的地方（前面全是纯逻辑或线格式）：
+**下一块（`backup/`）的要点**：996 行，**core 翻译的最后一块**（之后就是 UI）。
+它是唯一一个**会被用户当文件拿走又拿回来**的模块，所以容错要求比别处高一档：
 
-- `capture.ts`(326) 是**最大也最绕的一件**：图片分析 → P1 抽取 → 分类/位置匹配 → 入库 →
-  失败重试与错误落库。它依赖 `cards/` 的徽章判定与 `media/` 的路径规则（那两块 112 行，顺手译掉）。
-- `queue.ts`(119) 是**重试队列**（`nextRetryAt` / `retryCount` / `lastError` 三列，
-  schema 里已有）；`edit.ts`(156) 是手工改卡后的重跑；`ingest.ts`(15) 是把 capture 与 queue 接起来。
-- 验收网 = `pipeline.test.ts` **31 个用例**（是 core 里最大的一个测试文件）+
-  `samples.test.ts` 6 个（**20 条手工样本集**在 `test/fixtures/`，要一并搬成 Dart fixture）。
+- 格式已定死（§5）：`magic "FINDR"(5B) + 版本 u16(=1) + 标准 ZIP`，**明文不加密**。
+  **别动那 7 字节头、别提前把加密骨架加回来**（`CryptoPort` 已删）。
+- ⚠️ 它正是 `util/base64.dart` / `util/utf8.dart`「逐字搬」的**唯一理由**所在：
+  解析路上「崩掉」比「解出几个错字」难收拾得多。译的时候两处宽容语义**不能松**。
+- 验收网 = `backup.test.ts` **17 个用例**，另加 `db.test.ts` / `migrate.test.ts` 里
+  与 v1/v2 迁移相关的既有断言（**已译过**，别重复译）。
+- 两条底线（§5）：① 界面必须明说不加密（红条 + 导出前确认框）；
+  ② `settings_public` 白名单是机密性的唯一屏障 —— **导出时必须 grep 一遍白名单**。
 - ⚠️ 出网口径不变：**只往用户自填的 `baseUrl` 发请求**，别引入任何我们自己的后端。
 
 **验收方式**：把 TS 侧的用例逐一译成 Dart 测试，**绿了才算译对**。
