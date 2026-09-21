@@ -23,11 +23,12 @@
 | RN 版终态 | ✅ 已 push 到远端 `ceaa4f4`（参照实现 + 回滚路）|
 | Flutter SDK | ✅ 3.47.5 stable / Dart 3.13.4；本机已 `scoop hold` 冻结版本（§7）|
 | 骨架 | ✅ `apps/flutter/`（applicationId `com.findr.app.dev`）+ `packages/findr_core/` |
-| **命门（FTS5 + trigram）** | ✅ 第 1 层（本地）通过；⬜ **第 2 层（真机）未做** —— 见 §6.1 |
+| **命门（FTS5 + trigram）** | ✅ 第 1 层（`dart test`）· ✅ **中间层（`flutter test`，Flutter 工具链下 native assets 真编出了 SQLite）**；⬜ **第 2 层（真机）未做** —— 见 §6.1 |
 | **core 翻译** | ✅ **约 5,394 / 5,429 行 ≈ 99.4%**（全局 39%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · `providers/`+`settings`+`util/` ✅ · `pipeline/`+`cards/`+`media/` ✅ · **`backup/` ✅**；**剩下的 35 行只是 TS 的 `src/index.ts` 桶文件**（Dart 用一个 `findr_core.dart` 代替）⇒ **core 实质译完** |
-| 验收网 | `dart test` **289 通过**；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| 自检屏（真机载体） | ✅ `packages/findr_core/lib/selfcheck.dart`（两层共用）+ `apps/flutter/lib/selfcheck/self_check_screen.dart`；`apps/flutter/lib/main.dart` 已指向它 ⇒ **APK 装好就能验命门** |
+| 验收网 | `dart test` **289 通过** · `flutter test` **2 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
-| CI flutter job | ⬜ 未加（**出包链路还缺这一环**）|
+| CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）—— 出包链路补齐 |
 
 **几条 git 现状（2026-09-21 实测，别重复排查）**：
 
@@ -273,14 +274,17 @@ findR/
 
 ## 6. 进度与下一步
 
-### 6.1 命门（FTS5 + trigram）—— 第 1 层 ✅ / 第 2 层 ⬜
+### 6.1 命门（FTS5 + trigram）—— 第 1 层 ✅ / 中间层 ✅ / 第 2 层 ⬜
 
 > 建一张 FTS5 表 + **trigram 分词器**，插入中文内容，用 **3 个字以上**的词做 `MATCH`，**必须命中**。
 > 我们整套检索完全建立在这上面。**这一条不通 ⇒ 整个方案要重新评估。**
 
+自检逻辑收在 **`packages/findr_core/lib/selfcheck.dart`**（`runCoreSelfCheck()`，共 **7 项**），
+**三层共用同一份**，不会出现「自检屏写漏一项」这种不对称。
+
 **第 1 层 · 本地纯 Dart —— ✅ 已通过（2026-09-21）**
 
-押注落在 **`packages/findr_core/test/fts5_trigram_test.dart`**（跑 `dart test` 约 1 秒复现）：
+押注落在 **`packages/findr_core/test/selfcheck_test.dart`**（跑 `dart test` 约 1 秒复现）：
 
 | 项 | 实测值 |
 |---|---|
@@ -291,17 +295,38 @@ findR/
 **顺带确认了一件重要的事**：短查询是**返回空**而不是**报错** ⇒
 TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬即可**，不需要额外加 try/catch 兜底。
 
-**第 2 层 · 真机 —— ⬜ 还没做**
+**中间层 · Flutter 工具链 —— ✅ 已通过（2026-09-22，本轮新增）**
 
-在 App 的**自检屏**里放同一段检查（RN 版本来就有这个习惯），在真机上跑一次 ⇒
-确认**打进 APK 的那份 SQLite** 同样带 FTS5。
+`apps/flutter/test/self_check_smoke_test.dart`（`flutter test`）。它比第 1 层多验了**一件关键的事**：
+`package:sqlite3` 的 **Dart build hooks 真的在 Flutter 工具链下跑起来了**，产物是它自己那份
+预编译 SQLite，而不是退化去开系统库。实测证据（同一份自检，值也与第 1 层一致 ⇒ 同源）：
 
-⚠️ **别只做第 1 层就宣布命门通过。** 第 1 层验的是**我们写的 SQL 与 trigram 语法**，
-第 2 层验的才是**真正要发布的那份二进制**。
+```
+✅ SQLite 版本 — 3.53.4
+✅ FTS5 编译选项 — ENABLE_FTS5
+✅ trigram 分词器 — CREATE VIRTUAL TABLE ... tokenize=trigram 成功
+✅ 3 字中文 MATCH「圆珠笔」 — 命中 1 条（期望 1）
+✅ 短查询（2 字/1 字）返回空且不抛异常 — 「圆珠」⇒ 0 条；「笔」⇒ 0 条
+✅ 迁移 + 种子数据 — categories=3、schema_version=2
+✅ cards_fts 由迁移建出 — 现有 0 行
+```
+
+旁证（可复现）：`.dart_tool/hooks_runner/sqlite3/` 有 hook 的 `input.json`/`output.json`，
+`build/native_assets/windows/native_assets.json` 明确记着
+`package:sqlite3/src/ffi/libsqlite3.g.dart → …\native_assets\windows\sqlite3.dll`。
+⇒ **不需要 `flutter config --enable-native-assets`，3.47.5 下默认就是开的**（原本担心这点，现在不用管了）。
+
+**第 2 层 · 真机 —— ⬜ 还没做；但**载体与出包链路都已就绪**
+
+| 需要的东西 | 状态 |
+|---|---|
+| 真机上跑的自检屏 | ✅ `apps/flutter/lib/selfcheck/self_check_screen.dart`，且 `main.dart` 已指向它（临时入口，UI 做起来就换掉）|
+| 能装到真机的 APK | ✅ CI `.github/workflows/flutter.yml` 的 `apk` 作业会出包并发到 `flutter-dev-latest`（本机没装 Android SDK，出包只能走 CI）|
+| 产物级断言（前置筛子）| ✅ 该作业会从 APK 里抽出 SQLite 的 `.so`，断言二进制里**含 `fts5` 与 `trigram` 字符串**（模块按名注册，名字串会留在二进制里）。这能在上真机前就挡掉「native assets 没打进包」|
+
+⚠️ **仍然别只做第 1 层就宣布命门通过**，也**别拿中间层冒充第 2 层**：前两层跑的都是桌面上的产物，
+只有第 2 层验的是**真正随 APK 发到手机上的那份二进制**。
 （这正是铁律 5「调用失败与能力不支持必须分开判」的同类问题：得在真实的那一层上看。）
-
-📌 依据上第 2 层风险**已经不高**：`package:sqlite3` 3.x 是**全平台同一套预编译产物**，
-所以本地那份和 APK 里那份**理论上同源**。但「理论上」不算数 —— **第 2 层仍要实测**。
 
 ### 6.2 翻译进度（core 5,429 行口径）
 
@@ -438,6 +463,7 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 ⇒ **RN 版与 Flutter 版的备份包双向互认已实测通过**，用户的旧备份可以带过来。
 
 **验收网**：`dart test` **289 通过**（272 + 本轮 17）、`dart analyze` 无问题；
+`flutter test` **2 通过**（2026-09-22 补，含命门中间层）、`flutter analyze` 无问题；
 **RN 侧 `pnpm check` 仍 181 passed | 2 skipped**（基线未破）。
 **全局进度约 5,394 / 13,894 行 ≈ 39%**（按「需要动脑的行数」算比这个高 ——
 `templates.ts` 与全部 SQL 是逐字搬）。**core 实质译完（只剩一个 35 行的 TS 桶文件）。**
@@ -483,14 +509,20 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 **下一块（UI）的要点**：core 已译完，**只剩 UI 没动**。UI 在 `apps/flutter/`，
 **按新设计写，别照抄 RN 界面**（用户还没动手重构 UI —— 这是换栈白拿的好处，见 §1）。
 
-动手之前先办这两件事（顺序别反）：
+动手之前的两件前置，**都已在 2026-09-22 办完**：
 
-1. ⬜ **补上 CI 的 flutter job**（本机 `scoop hold` 那层只保住了开发机）：
-   **版本号写死 `flutter-version: 3.47.5`，绝不写 `channel: stable`** —— CI 漂版本 =
-   「昨天能出包今天不能」，比本机漂版本难查得多。本仓 `node-version: 22` 是同类先例。
-2. ⬜ 然后才是**命门第 2 层**：在 Flutter 版的自检屏里放同一段 FTS5+trigram 检查，
-   **在真机上跑一次**（验「打进 APK 的那份 SQLite」也带 FTS5）。第 1 层已通过，但它验的是
-   「我们写的 SQL 与 trigram 语法」，不是「真正要发布的那份二进制」。
+1. ✅ **CI 的 flutter job 已加**：`.github/workflows/flutter.yml`，两个作业 ——
+   - `checks`（push main / PR / 手动）：core 的 `dart analyze` + `dart test`，app 的
+     `flutter analyze` + `flutter test`。是迁移期的验收网。
+   - `apk`（**只有 tag `fapk-*` 或手动才跑**）：出 arm64 release APK，跑上面那套测试，
+     **再从 APK 里抽出 SQLite 的 `.so`，断言二进制里含 `fts5` / `trigram` 字符串**，
+     最后发到 `flutter-dev-latest`（**刻意与 RN 的 `dev-latest` 分开**，两个包能并排装）。
+   版本号**写死 `flutter-version: '3.47.5'`，绝不写 `channel: stable`**（本机 `scoop hold` 那层
+   只保住了开发机）。tag 前缀用 `fapk-*` 而不是 `apk-*`：**免得一个 tag 同时引爆 RN 与 Flutter 两条流水线**。
+2. ✅ 然后才是**命门第 2 层**的载体：自检屏 + `main.dart` 已就位、CI 能出包 ⇒
+   **拿 APK 装上手机、看自检屏七项是否全绿** —— 这一步本身仍然 ⬜ 未做。
+
+⚠️ **本机没装 Android SDK，出包只能走 CI** —— 这才是「必须先补 CI、再验第 2 层」的真实原因。
 
 UI 侧待办的口径（都写在 §5 与需求里，别漏）：
 
@@ -626,6 +658,27 @@ UI 侧待办的口径（都写在 §5 与需求里，别漏）：
 - 沙箱把 **`reg.exe` 与 `wmic.exe` 列进了程序黑名单** ⇒ `flutter doctor` 里有三项会报
   `the doctor check crashed`（Windows Version / Visual Studio / Connected device）。
   **那是沙箱限制，不是环境问题**。
+- ⚠️⚠️ **沙箱里跑 `flutter test` 之前必须摘掉代理环境变量**（2026-09-22 踩到，卡了一轮）：
+  沙箱里设着 `http_proxy=http://127.0.0.1:<port>`，而 **Dart 的 WebSocket 客户端也读这个变量**
+  ⇒ `flutter_tester` 与本机测试进程之间的回环连接被塞进代理，报
+  `Unable to connect to flutter_tester process: WebSocketException: Invalid WebSocket upgrade request`。
+  **这个报错看着像 Flutter 坏了，其实是代理**。修法：
+
+  ```
+  unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+  export NO_PROXY="127.0.0.1,localhost" no_proxy="127.0.0.1,localhost"
+  ```
+
+- ⚠️ **给 `findr_core` 加了新依赖后，`apps/flutter` 的锁是陈旧的**（2026-09-22 踩到）：
+  `apps/flutter/pubspec.lock` 与 `.dart_tool/package_config.json` 是 `flutter create` 那次留下的，
+  **path 依赖新增的传递依赖不会自动补进来** ⇒ `flutter test` 编译 `findr_core` 时报
+  `Method not found: 'Request'.` / `Undefined name 'MediaType'` 一大片（看着像 core 写错了）。
+  **`flutter pub get` 一次即可**。⚠️ 注意 **`flutter analyze` 当时是「No issues found」**，
+  所以**「analyze 过了」不代表依赖是对的** —— 改完 core 的 pubspec 一律补跑 `pub get`。
+- **`flutter analyze` / `flutter test` 会连带分析 path 依赖的整个 `findr_core`** ⇒
+  在根目录层次改 core 之后，`apps/flutter` 侧也要跟着验一遍，别只看 `packages/findr_core`。
+- 📌 **`enable-native-assets` 不用管**：`flutter config --list` 显示 `(Not set)`，
+  但 3.47.5 下**默认就是开的**（实测 `build/native_assets/` 有产物，见 §6.1）。
 
 ---
 

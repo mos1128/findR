@@ -25,7 +25,8 @@
 /// - **可逐字搬的两样别重写**：`prompts/templates.dart` 的字符串模板、以及所有 SQL 语句。
 ///
 /// 检索的地基已实测通过（SQLite 3.53.4 / `ENABLE_FTS5` / trigram 下 3 字以上中文可命中），
-/// 押注在 `test/fts5_trigram_test.dart`。
+/// 自检逻辑在 `selfcheck.dart`，第 1 层押注在 `test/selfcheck_test.dart`。
+/// ⚠️ 但**第 1 层不算命门通过** —— 还要在 App 的自检屏（Flutter/真机）上跑同一份检查。
 ///
 /// `unset` 是对外隐藏的：它只在 `CardPatch` / `copyWith` 的**形参默认值**里出现，
 /// 调用方永远不需要写出它（要用的是「不传这个参数」）。
@@ -69,6 +70,7 @@ export 'search/answer.dart';
 export 'search/builder.dart';
 export 'search/inventory.dart';
 export 'search/service.dart';
+export 'selfcheck.dart';
 export 'settings.dart';
 export 'types.dart' hide unset;
 export 'util/base64.dart';

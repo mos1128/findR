@@ -1,0 +1,216 @@
+name: flutter
+
+# 与 android.yml（RN 版）同一理由：私有仓库的 Actions 额度有限，而一次 APK 构建十几分钟。
+#   - checks 作业：push / PR 都跑，便宜，是迁移期的验收网。
+#   - apk    作业：只有 tag（fapk-*）或手动触发才跑，因为它要真出包。
+# RN 版用 apk-* 前缀，Flutter 版刻意用 **fapk-***，免得一个 tag 同时引爆两条流水线。
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - 'fapk-*'
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  # ── 验收网：core 的纯 Dart 测试 + app 的静态分析与界面冒烟 ────────────────────
+  # 它对「命门」的贡献是**负向**的：只证明工具链能把 SQLite 开起来；
+  # 「打进 APK 的那份」由 apk 作业与本机真机自检屏负责。
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # ⚠️ 版本号**写死**，绝不写 `channel: stable`。
+      # 一旦写 channel，CI 会在某天悄悄换一个 Flutter 版本，表现是「昨天能出包今天不能」，
+      # 且本地复现不了 —— 这是最难查的一类故障。本机那个 SDK 也已 `scoop hold` 冻在同一版本。
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          cache: true
+
+      - name: 核对工具链版本
+        run: |
+          flutter --version
+          dart --version
+          flutter --version 2>&1 | grep -q 'Flutter 3\.47\.5' \
+            || { echo "::error::Flutter 版本不是 3.47.5，请检查 flutter-version 是否被改动"; exit 1; }
+
+      - name: 依赖解析
+        run: |
+          ( cd packages/findr_core && dart pub get )
+          ( cd apps/flutter && flutter pub get )
+
+      - name: core 静态分析
+        working-directory: packages/findr_core
+        run: dart analyze
+
+      - name: core 测试（迁移的主验收网）
+        working-directory: packages/findr_core
+        run: dart test
+
+      - name: app 静态分析
+        working-directory: apps/flutter
+        run: flutter analyze
+
+      # 这一步会打印命门自检的七项明细，**日志本身就是证据**，出问题时直接看这里。
+      - name: app 冒烟测试（含命门自检）
+        working-directory: apps/flutter
+        run: flutter test --reporter expanded
+
+  # ── 出包：构建 release APK，并对着**产物本身**断言命门 ─────────────────────────
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/fapk-')
+    steps:
+      - uses: actions/checkout@v4
+
+      # ubuntu-latest 只有约 14GB 可用，Gradle 中间产物很容易撑爆（RN 那边实测过
+      # 「No space left on device」）。这里删掉构建用不到的大件。刻意不碰 NDK。
+      - name: Free disk space
+        run: |
+          echo "=== 清理前 ==="; df -h /
+          sudo rm -rf /usr/local/lib/android/sdk/system-images || true
+          sudo rm -rf /usr/local/lib/android/sdk/emulator || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc /usr/local/.ghcup || true
+          sudo rm -rf /usr/share/swift || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo apt-get clean
+          echo "=== 清理后 ==="; df -h /
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # 沿用 runner 镜像预装的 Android SDK（理由与 android.yml 同：setup-android 会认不出
+      # 镜像自带的 cmdline-tools 而自作主张再下一份，然后在 licenses 那步失败）。
+      - name: Check preinstalled Android SDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME:-<未设置>}"
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-<未设置>}"
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -z "$sdk" ] || [ ! -d "$sdk" ]; then
+            echo "::error::runner 上没有 Android SDK，需要另找安装方式"
+            exit 1
+          fi
+          echo "--- platforms ---"; ls "$sdk/platforms" || true
+          echo "--- build-tools ---"; ls "$sdk/build-tools" || true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.5'
+          cache: true
+
+      - name: 核对工具链版本
+        run: |
+          flutter --version
+          flutter --version 2>&1 | grep -q 'Flutter 3\.47\.5' \
+            || { echo "::error::Flutter 版本不是 3.47.5"; exit 1; }
+
+      - name: 依赖解析
+        run: |
+          ( cd packages/findr_core && dart pub get )
+          ( cd apps/flutter && flutter pub get )
+
+      # 先跑一遍验收网：包还没出就先挂了，省得白等十分钟构建。
+      - name: core 测试
+        working-directory: packages/findr_core
+        run: |
+          dart analyze
+          dart test
+
+      - name: app 冒烟测试（含命门自检）
+        working-directory: apps/flutter
+        run: |
+          flutter analyze
+          flutter test --reporter expanded
+
+      - name: Guard release signing config
+        working-directory: apps/flutter/android/app
+        run: |
+          # 目前刻意沿用 debug 签名（可覆盖安装、数据保留）。Flutter 模板一旦变更会静默
+          # 变成未签名，到真机上就是「解析包错误」，所以在这里挡住。
+          if ! grep -q 'signingConfig = signingConfigs.getByName("debug")' build.gradle.kts; then
+            echo "::error::release 未使用 debug 签名，请检查 Flutter Gradle 模板变化"
+            exit 1
+          fi
+
+      - name: Build release APK
+        working-directory: apps/flutter
+        run: |
+          # 只编 arm64-v8a：现代手机全是 arm64。Flutter 这边的开关是 --target-platform
+          # （RN 那边是 -PreactNativeArchitectures，名字不同、作用一样）。
+          flutter build apk --release --target-platform android-arm64
+
+      - name: 断言 APK 里那份 SQLite 带 FTS5 + trigram（命门的产物级证据）
+        working-directory: apps/flutter
+        run: |
+          set -euo pipefail
+          apk="build/app/outputs/flutter-apk/app-arm64-v8a-release.apk"
+          ls -l "$apk"
+
+          echo "=== APK 里的原生库 ==="
+          unzip -Z1 "$apk" | grep -i '\.so$' | sort -u || true
+
+          # package:sqlite3 3.x 走 Dart build hooks，自带预编译 SQLite（app 端没有任何
+          # native 依赖声明）。如果 native assets 没生效，这里就会找不到库 —— 那意味着
+          # FTS5 随包一起消失、整套检索方案作废，必须让构建期就失败。
+          entry="$(unzip -Z1 "$apk" | grep -i 'sqlite' | grep -i '\.so$' | head -1 || true)"
+          if [ -z "$entry" ]; then
+            echo "::error::APK 里找不到 SQLite 原生库 —— native assets 没打进包"
+            echo "（APK 完整清单如下，便于定位）"
+            unzip -Z1 "$apk" | head -200
+            exit 1
+          fi
+          echo "找到：$entry"
+
+          rm -rf /tmp/apk-sqlite && mkdir -p /tmp/apk-sqlite
+          unzip -o "$apk" "$entry" -d /tmp/apk-sqlite > /dev/null
+          so="/tmp/apk-sqlite/$entry"
+
+          # FTS5 / trigram 是**按名字注册**的模块，名字串会留在二进制里，可以直接查。
+          # ⚠️ 这只能证明「编进去了」，证明不了「运行时能跑」—— 后者由真机上的自检屏负责
+          #    （apps/flutter/lib/selfcheck/self_check_screen.dart）。
+          for s in fts5 trigram; do
+            n="$(grep -a -o -i "$s" "$so" | wc -l)"
+            echo "「$s」在 $so 中出现 $n 次"
+            if [ "$n" -eq 0 ]; then
+              echo "::error::随包发布的 SQLite 里没有 $s —— 命门不成立"
+              exit 1
+            fi
+          done
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: findr-flutter-apk
+          path: apps/flutter/build/app/outputs/flutter-apk/*.apk
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Publish rolling dev release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: flutter-dev-latest
+          name: Findr 开发版 · Flutter（最新）
+          body: |
+            Flutter 版（迁移中）的开发版 APK。**与 RN 版并排共存**：包名
+            `com.findr.app.dev`，碰不到 RN 版（`com.findr.app`）的数据。
+
+            - 当前沿用 **debug 签名**（可覆盖安装、数据保留）。换正式 keystore 必须卸载重装，
+              本地记忆库会清空 —— 那一步推迟到功能做完 + UI 重构之后的正式版。
+            - 装好后**第一件事**：在自检屏上确认七项全绿。那是在真机上验证
+              「打进 APK 的这份 SQLite 带 FTS5 + trigram」，是本方案的命门。
+              只要有 ❌，**先别往下用**，把截图发我。
+            - 备份文件（`.findrpack`）**当前是明文 ZIP**，谁拿到谁能读。
+          prerelease: true
+          files: apps/flutter/build/app/outputs/flutter-apk/*.apk

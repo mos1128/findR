@@ -98,7 +98,7 @@ Future<void> main(List<String> argv) async {
 
   stdout.writeln('写出：$outPath');
   stdout.writeln(
-    '字节数 ${result.bytes.length}（头 ${backupHeaderLen} + 载荷 ${result.bytes.length - backupHeaderLen}）',
+    '字节数 ${result.bytes.length}（头 $backupHeaderLen + 载荷 ${result.bytes.length - backupHeaderLen}）',
   );
   stdout.writeln('magic=${String.fromCharCodes(result.bytes.sublist(0, 5))}');
   stdout.writeln(
