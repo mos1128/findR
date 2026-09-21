@@ -17,7 +17,8 @@
 6. 再按第 6 节的 V1 路线开工
 
 ✅ **第 8 节那件事已完成**（RN 版终态已于 2026-09-21 push 到远端 `ceaa4f4`）。
-⬜ **本机 Flutter SDK 待装**（必装，见第 7 节；装法已在本机核实）。
+✅ **Flutter SDK 已装好**（2026-09-21）：**3.47.5 stable / Dart 3.13.4**，
+   `flutter --version` 与 `dart --version` 均实测通过。**Android SDK 仍未装**（可延后，见 7.1）。
 
 ---
 
@@ -296,7 +297,7 @@ findR/
 
 | 项 | 状态 |
 |---|---|
-| **Flutter SDK** | ⬜ **未装 —— 但必须装**（理由见 7.1）。**订正**：scoop 的 `extras` 桶里其实有 flutter 清单，此前「scoop 里也没有」的说法不准 |
+| **Flutter SDK** | ✅ **已装（2026-09-21）**：**3.47.5 stable · Dart 3.13.4**，实测通过。装法见 7.1 |
 | **Android SDK** | ⬜ **未装，可以先不装**（`ANDROID_HOME` 为空；`%LOCALAPPDATA%\Android` 只有 platform-tools）|
 | **出包方式** | ✅ **仍走 CI**（`mos1128/findR` 的 GitHub Actions，加一个 flutter job）|
 | 本机已有 | Node 22 / pnpm / Python 3.13 / `gh` CLI（**已登录**）/ `adb`（见下，不在 PATH）/ **scoop** |
@@ -333,7 +334,42 @@ scoop install flutter        # extras 桶，当前清单是 Flutter 3.47.4 stabl
   现阶不必，FVM 随时可加。
 - ⚠️ **`scoop update` 会推进 Flutter 版本** ⇒ CI 里务必写死具体版本号（见 4.1 末条）。
 
-### 7.2 其余环境要点
+### 7.2 装完之后的实测结果（2026-09-21，用户执行 `scoop install flutter` 后核实）
+
+**版本与体积：**
+
+- `flutter --version` ⇒ **Flutter 3.47.5 · channel stable** · framework revision `6a19cca564`(2026-09-17)
+- `dart --version` ⇒ **Dart SDK 3.13.4 (stable) · windows_x64**
+- **解压后 3.3 GB**（压缩包 1.9 GB 留在 `scoop\cache\` 里，可 `scoop cache rm flutter` 回收，
+  不回收也不影响使用 —— 累计约占 5.2 GB）
+
+**⚠️ 一个容易误判的点：没有 `scoop\shims\flutter`，这是对的，不是装坏了。**
+
+该清单用的是 `env_add_path: bin`（**不是**会生成 shim 的 `bin` 字段）⇒ scoop 把
+`<scoop>\apps\flutter\current\bin` **直接挂进用户 PATH**。
+**所以装完必须在「新开的终端」里用** —— 已经开着的终端读不到新 PATH。
+
+**`flutter doctor` 的真实结果（只看我这边能确定的部分）：**
+
+| 检查项 | 结果 |
+|---|---|
+| Flutter | ✅ 通过 |
+| Chrome（web 开发） | ✅ 通过 ⇒ **`flutter run -d chrome` 可用**，不装 Android SDK 也能看 UI |
+| Network resources | ✅ 通过 |
+| Android toolchain | ❌ `cmdline-tools component is missing` + `ANDROID_HOME` 未设 ⇒ **预期内，可延后** |
+| Proxy Configuration | ⚠️ `NO_PROXY is not set`（次要） |
+
+⚠️ **别被「the doctor check crashed」误导**：doctor 里有三项（`Windows Version` / `Visual Studio` /
+`Connected device`）在我这边报 **check crashed**，原因是**我这个沙箱把 `reg.exe` 与 `wmic.exe`
+列进了程序黑名单** —— 是**沙箱的限制，不是环境的问题**。
+**要那三项的真实结论，请在你自己的终端里跑一次 `flutter doctor`。**
+（这正是铁律 5 的同类问题：**「检查器跑不起来」≠「能力不支持」**，得在真实的那一层上看。）
+
+**一个小观察（不影响 V1，V2 再看）**：`flutter config --list` 里 **`enable-windowing` 报
+`(Unavailable)`** ⇒ 第 2 节第 3 条说的「Flutter 3.44 多窗口落地」在 Windows stable 上可能还没开，
+**到 V2 做 Windows 桌面时复核一遍**。
+
+### 7.3 其余环境要点
 
 - `adb` 绝对路径：`C:\Users\mos\AppData\Local\Android\platform-tools\adb.exe`
 - **bash 里先 `export PATH="/usr/bin:/bin:$PATH"`**，否则 `ls` / `find` / `head` 会 command not found
@@ -426,11 +462,10 @@ Flutter 版也一样，用户的数据在库里）。
   `sqlite3` + `sqlite3_flutter_libs`，**不引 drift**。**别再重开讨论。**
 - **RN 版终态已 push 到远端**（`ceaa4f4`），参照实现与回滚路都保住了。
 
-**现在只剩两个动作就能开工：**
+**现在只剩两件事就能开工**（Flutter SDK 已装好，见 7.2）：
 
-1. **装 Flutter SDK** —— `scoop install flutter`（**必装**；Android SDK 可延后，出包仍走 CI。
-   理由见 7.1：出包能给 CI，但「改一行 → 跑 181 个测试」的验收必须在本机）
-2. **验命门** —— FTS5 + trigram，**本地 30 秒 + 真机各一次**（见 6.0）
+1. ⬜ **建骨架** —— `apps/flutter/`（`flutter create`）+ `packages/findr_core/`（纯 Dart 包）
+2. ⬜ **验命门** —— FTS5 + trigram，**本地 30 秒 + 真机各一次**（见 6.0）
 
 之后按 6.1 节顺序走：`flutter create` → 译 `db/`（同步写 Dart 测试）→ 译 `search/` →
 译 `providers/ + parse/ + pipeline/` 跑通最小闭环 → **最后才动 UI，而且按新设计写**。

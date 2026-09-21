@@ -10,8 +10,17 @@
 - 迁移路线：**V1 Android → V2 Windows → V3 macOS + iOS**，一版一版出、每版能独立出包。
   **Linux 排最后**（没进这三版）；**鸿蒙靠卓易通装安卓包，不为它做任何改动**。
 - **UI 重构直接在 Flutter 里做** —— 别先照抄 RN 界面（用户还没动手重构，这是换栈白拿的好处）。
-- 第一个障碍：**本机没装 Flutter SDK** —— **必装**（出包仍走 CI，但「改一行 → 跑 181 个测试」
-  的验收必须在本机；Android SDK 可延后）。装法：`scoop install flutter`（extras 桶，3.47.4）。
+- ✅ **Flutter SDK 已装好**（2026-09-21，用户执行 `scoop install flutter`）：
+  **3.47.5 stable / Dart 3.13.4**，`flutter --version`、`dart --version` 实测通过。
+  - ⚠️ **没有 `scoop\shims\flutter` 是对的**：清单用 `env_add_path: bin` ⇒ 把 SDK 的 `bin`
+    **直接挂进用户 PATH**，不生成 shim ⇒ **必须在新开的终端里用**。
+  - 解压后 **3.3GB**；`scoop\cache\` 里还留着 **1.9GB** 的 zip（可 `scoop cache rm flutter` 回收）。
+  - `flutter doctor`：Flutter ✅ / Chrome ✅（⇒ `flutter run -d chrome` 可用）/ Network ✅ /
+    Android toolchain ❌（cmdline-tools 缺，**预期内可延后**）。
+    ⚠️ doctor 里三项「check crashed」（Windows Version / Visual Studio / Connected device）是
+    **我这边沙箱把 `reg.exe`、`wmic.exe` 拉黑**造成的，**不是环境问题**；
+    要真实结论得让用户在**自己的终端**跑 `flutter doctor`。（铁律 5：检查器跑不起来 ≠ 能力不支持）
+- **Android SDK 仍未装** —— 可延后到 V1 要上真机时再装（出包仍走 CI）。
 - 第一个技术命门：**FTS5 + trigram 分词器在 Flutter 里能不能用** —— 必须实测，不通则方案重估。
   **验两层**：① 本地纯 Dart 测试（约 30 秒，验 SQL 语法）② 真机自检屏（验 APK 里那份 SQLite）。
 - ✅ **迁移前那件事已办完**：RN 版终态已于 2026-09-21 push 到远端 **`ceaa4f4`**
