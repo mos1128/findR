@@ -19,6 +19,11 @@
 ✅ **第 8 节那件事已完成**（RN 版终态已于 2026-09-21 push 到远端 `ceaa4f4`）。
 ✅ **Flutter SDK 已装好**（2026-09-21）：**3.47.5 stable / Dart 3.13.4**，
    `flutter --version` 与 `dart --version` 均实测通过。**Android SDK 仍未装**（可延后，见 7.1）。
+✅ **骨架已建好**（2026-09-21）：`apps/flutter/`（Flutter app，applicationId `com.findr.app.dev`）
+   + `packages/findr_core/`（纯 Dart core 包）。两边 `flutter analyze` / `dart test` 均绿，
+   RN 侧 `pnpm check` **仍是 181 通过**（基线没被破坏）。
+✅ **命门第 1 层已通过**：本地 FTS5 + trigram 命中中文，押在
+   `packages/findr_core/test/fts5_trigram_test.dart`。**第 2 层（真机）还没做** —— 见 6.0。
 
 ---
 
@@ -48,8 +53,16 @@
 
 硬证据（本轮都已核实，完整出处见 `.workbuddy/memory/2026-09-21.md`）：
 
-1. **`sqlite3_flutter_libs` 默认带 FTS5**，覆盖 Android / iOS / macOS / Linux / Windows
-   ⇒ 我们整套搜索可以平移（**但 trigram 分词器必须实测，见第 6 节**）
+1. **`package:sqlite3` 3.x 自带预编译 SQLite**（改用 Dart **build hooks** 打包，不再走
+   `DynamicLibrary`，也不再需要任何 `*_flutter_libs` 包）—— **默认编译选项含 `SQLITE_ENABLE_FTS5`**，
+   覆盖 Android / iOS / macOS / Linux / Windows。
+   ⇒ 我们整套搜索可以平移，**而且各平台的 SQLite 编译选项是一致的** ——
+   上游明说这是它自带 SQLite 的理由（「系统自带的库编译选项不一致、版本常常太旧」），
+   正好对上我们最怕的「各平台能力不一致」。
+   ✅ **L1 已实测通过（2026-09-21）**：SQLite 3.53.4 / `ENABLE_FTS5` / trigram 下 3 字以上中文命中。
+   详见第 6.0 节。
+   ⚠️ **`sqlite3_flutter_libs` 已废弃（版本号 `0.6.0+eol`，README 明说「什么都不做」）—— 别再用它**。
+      网上大量教程还写着它，属于过时信息。
 2. **Canonical 于 Google I/O 2026 正式接管 Flutter 桌面**（Win/macOS/Linux 的 lead maintainer
    + strategic steward）。Canonical 自 2021 年把 Flutter 定为 Ubuntu 桌面应用默认选择，
    Ubuntu 应用中心 / 固件更新器都是 Flutter 写的 ⇒ **桌面有了专属资源方，是结构性信号**
@@ -149,10 +162,11 @@ findR/
 1. **Dart core 做成独立 package，不要塞进 app 的 `lib/` 下** —— 它是纯 Dart，
    可以用 `dart test` 直接跑，不必起 Flutter 环境、不被 widget 测试拖慢；
    **V2/V3 桌面版复用同一个 core**，不用复制；也与现有 `apps/` + `packages/` 结构对称。
-2. **依赖倒置**：`findr_core` 只依赖 **`sqlite3`**（纯 Dart FFI 包），
-   **不依赖 `sqlite3_flutter_libs`**；`sqlite3_flutter_libs` 由 `apps/flutter` 依赖，
-   它唯一的职责是「**把带 FTS5 的 native sqlite 打进各平台**」。
-   （这是 drift 官方推荐的分层法，也让 core 的可测试性最大化 —— 纯 Dart 测试能直接验库行为。）
+2. **数据库依赖只有一层**：`findr_core` 依赖 **`package:sqlite3` 3.x**，就这一条。
+   它**自带预编译 SQLite**，**app 端不用再补任何 native 库依赖**。
+   （此前设计的「core 用 sqlite3 + app 加 sqlite3_flutter_libs」**已作废** ——
+   `sqlite3_flutter_libs` 废弃了，见 4.5。）
+   好处：core 是纯 Dart ⇒ `dart test` 直接就能验库行为，**连本机的 sqlite3.dll 都不用准备**。
 3. **名字用 `findr_core` 而不是 `core_dart`** —— Dart 包名必须 snake_case，
    且这样能与 `packages/core`（TS 老版）一眼区分。
 
@@ -189,14 +203,24 @@ findR/
 - 当前 Flutter 主流，编译期安全、好测、不依赖 `BuildContext`
 - 备选：Bloc（更结构化、更重）、Provider（更旧）
 
-### 4.5 ✅ 数据库方案（2026-09-21 修订，**取代此前「倾向 drift」的写法**）
+### 4.5 ✅ 数据库方案（2026-09-21 两次修订，当前口径以下面为准）
 
-**必装（app 侧）**：`sqlite3_flutter_libs` —— 把**带 FTS5 的 native SQLite** 打包进各平台。
-（按 4.1 的分层，它只归 `apps/flutter`，**不进 `findr_core`**。）
+**只依赖 `package:sqlite3` 3.x（已实测：3.6.0），直接写 SQL。**
 
-**core 侧**：`sqlite3`（纯 Dart FFI 包），**直接写 SQL**。
+- 它用 **Dart build hooks** 把 **预编译 SQLite** 打包进应用 ——
+  **默认编译选项含 `SQLITE_ENABLE_FTS5`**（还会带上 `SQLITE_ENABLE_DBSTAT_VTAB`、
+  `SQLITE_ENABLE_RTREE`、`SQLITE_ENABLE_MATH_FUNCTIONS` 等）。
+- 预编译覆盖 **Android（armv7a / aarch64 / x86 / x64）**、iOS、macOS、Linux、Windows、Web
+  ⇒ 我们 arm64 单架构的 APK 在覆盖范围内。
+- **它默认优先用自带的这份，而不是系统的那份** ⇒ 各平台行为一致。
 
-**`drift` 先不引。** 理由：
+⚠️ **两条过时信息，别再照做：**
+
+1. **`sqlite3_flutter_libs` 已废弃**（`0.6.0+eol`，README 明说「什么都不做」）。
+   `package:sqlite3` 3.x 的升级说明里写着「升级后请把这个依赖删掉」。**app 端什么都不用加。**
+2. 本地验证 **不再需要手工准备 `sqlite3.dll`** —— `dart test` 会自己拉预编译库。
+
+**`drift` 仍不引**（沿用 2026-09-21 早先的判断，理由不变）：
 
 1. 我们有一整套**现成的 SQL 要逐字搬**（见第 3 节）—— drift 的 DSL / codegen 反而多一层翻译，
    正好把我们最省事的那条路堵上；
@@ -206,7 +230,8 @@ findR/
 **留后门**：drift 底层就是 `sqlite3`，若将来迁移或查询复杂度涨上来，随时能在其上加一层，
 不影响已译好的代码结构。
 
-⚠️ 但**第一件事仍然是验证 FTS5 + trigram 真可用**（见第 6 节，可在本地 30 秒验完）。
+⚠️ **唯一还没验的是「打包进 APK 之后」那一层**（见 6.0 的第 2 层）——
+本地纯 Dart 那层 2026-09-21 已实测通过。
 
 ---
 
@@ -255,34 +280,50 @@ findR/
 
 ## 6. V1（Android）的第一步 —— 具体做什么
 
-### ⚠️ 6.0 第一个必须验证的点（**整个迁移的命门**）
+### 6.0 第一个必须验证的点（**整个迁移的命门**）
 
-> 在 Flutter 里建一张 FTS5 表 + **trigram 分词器**，插入中文内容，
+> 建一张 FTS5 表 + **trigram 分词器**，插入中文内容，
 > 用 **3 个字以上**的词做 `MATCH` 查询，**必须命中**。
 
-我们整套检索完全建立在这上面。`sqlite3_flutter_libs` 官方说"默认带 FTS5"，
-**但 trigram 要实测确认**（trigram 分词器是 FTS5 内置的，SQLite 3.34+ 起有 —— 理论上跟着 FTS5 一起来，
-但**必须实测，不能假设**）。
+我们整套检索完全建立在这上面。**这一条不通 ⇒ 整个方案要重新评估。**
 
-**这一条不通 ⇒ 整个方案要重新评估。** 先做它，别先写别的。
+**验法分两层，两层都绿才算过。**
 
-**验法分两层，两层都绿才算过**（2026-09-21 补充）：
+#### 第 1 层 · 本地纯 Dart —— ✅ **已通过（2026-09-21）**
 
-1. **本地（约 30 秒）** —— 在 `packages/findr_core` 里写一个**纯 Dart 测试**：用 `sqlite3` 包打开本机
-   的 SQLite（Windows 上放一个 SQLite 官方 `sqlite3.dll`，**官方 Windows 发行包已含 FTS5**），
-   建 `USING fts5(..., tokenize='trigram')` 表、插中文、做 3 字以上 `MATCH` 查询。
-   绿了 ⇒ 说明**我们写的 SQL 与 trigram 语法本身没问题**。
-2. **安卓侧（真机）** —— 把同一段检查放进 App 的**自检屏**（RN 版本来就有这个习惯），
-   在真机上跑一次 ⇒ 确认 `sqlite3_flutter_libs` 打进 APK 的那份 SQLite，
-   在 **Android 的编译配置下**同样带 FTS5。
+押注落在 **`packages/findr_core/test/fts5_trigram_test.dart`**（跑 `dart test` 即可，约 1 秒）。
+实测结果：
 
-⚠️ **别只做第一层就宣布通过** —— 第一层验的是 SQL 语法，第二层验的才是**真正要发布的那份二进制**
-（这正是铁律 5「调用失败与能力不支持必须分开判」的同类问题：得在真实的那一层上看）。
+| 项 | 实测值 |
+|---|---|
+| SQLite 版本 | **3.53.4** |
+| FTS 编译选项 | **`[ENABLE_FTS5]`** |
+| 3 字中文 `MATCH '圆珠笔'`（库里是「蓝色的圆珠笔放在书桌抽屉里」）| **命中 1 条** |
+| 2 字 `MATCH '圆珠'` | 0 条，**不抛异常** |
+| 1 字 `MATCH '笔'` | 0 条，**不抛异常** |
+
+**顺带确认了一件重要的事**：短查询是**返回空**而不是**报错** ⇒
+TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬即可**，
+不需要额外加 try/catch 兜底。
+
+#### 第 2 层 · 真机 —— ⬜ **还没做**
+
+在 App 的**自检屏**里放同一段检查（RN 版本来就有这个习惯），在真机上跑一次 ⇒
+确认**打进 APK 的那份 SQLite** 同样带 FTS5。
+
+⚠️ **别只做第 1 层就宣布命门通过。** 第 1 层验的是**我们写的 SQL 与 trigram 语法**，
+第 2 层验的才是**真正要发布的那份二进制**。
+（这正是铁律 5「调用失败与能力不支持必须分开判」的同类问题：得在真实的那一层上看。）
+
+📌 依据上第 2 层风险**已经不高**：`package:sqlite3` 3.x 是**全平台同一套预编译产物**
+（上游自带 SQLite 的理由就是消灭各平台编译选项不一致），所以本地那份和 APK 里那份**理论上同源**。
+但「理论上」不算数 —— **第 2 层仍要实测**。
 
 ### 6.1 然后按这个顺序
 
-1. `flutter create`（在 `apps/flutter/`）+ 定状态管理（Riverpod）+ 建 `packages/findr_core`
-   + app 配 `sqlite3_flutter_libs`、core 配 `sqlite3`（**不引 drift**，见 4.5）
+1. ~~`flutter create` + 定状态管理 + 配 `sqlite3_flutter_libs`~~ ✅ **骨架已建**（2026-09-21）：
+   `apps/flutter/`（Flutter 3.47.5，`--platforms=android`，applicationId `com.findr.app.dev`）
+   + `packages/findr_core/`（纯 Dart 包，依赖 `sqlite3`）。`dart test` 与 `flutter analyze` 均绿。
 2. **译 `db/` 那一层**（schema + 迁移 + repository），**同步把对应的 Dart 测试写出来**
 3. **译 `search/`** —— 重点验证：中文检索能命中、**排序打分结果与 TS 版一致**
 4. 译 `providers/` + `parse/` + `pipeline/`，跑通「拍照/打字 → 入库 → 检索」最小闭环
@@ -376,6 +417,27 @@ scoop install flutter        # extras 桶，当前清单是 Flutter 3.47.4 stabl
 - **`git push` 超过 1 分钟毫无输出 ⇒ 凭据问题**，别干等。修法：`gh auth setup-git`（已配好过）
 - macOS / iOS 构建**需要 macOS 机器** ⇒ V3 那一步要么 EAS/云 Mac，要么买 Mac + $99 年费
 
+**Flutter 相关的（2026-09-21 实测，都是踩过的）：**
+
+- Flutter / Dart **不在** `PATH` 里（scoop 用的是 `env_add_path`，只写进新的用户环境）
+  ⇒ **agent 沙箱里必须显式加**：
+  `export PATH="/d/my-software/scoop/apps/flutter/current/bin:$PATH"`
+- ⚠️⚠️ **沙箱里跑 `pub get` / `dart test` / `flutter analyze` 必须先把 `PUB_CACHE` 指到工作区内**，
+  否则**整条命令被 SIGTERM、连输出都没有**（很容易误判成「命令写错了」或「Flutter 装坏了」）：
+
+  ```
+  export PUB_CACHE='D:\my-develop\project\other\findR\.workbuddy\tmp\pub-cache'
+  ```
+
+  原因：默认 pub 缓存在用户目录（`%LOCALAPPDATA%\Pub\Cache`），**沙箱不允许写工作区之外**。
+  **用户在「自己的终端」里跑则完全不需要这一条** —— 用默认缓存即可。
+- **`flutter create` 在沙箱里会在最后一步（`pub get`）被打断**，但**产物其实是完整的**
+  （`lib/`、`android/`、`pubspec.yaml` 都在，只差 `.dart_tool/`）
+  ⇒ **补跑一次带 `PUB_CACHE` 的 `flutter pub get` 就好，别以为要推倒重建。**
+- 沙箱把 **`reg.exe` 与 `wmic.exe` 列进了程序黑名单** ⇒ `flutter doctor` 里有三项会报
+  `the doctor check crashed`（Windows Version / Visual Studio / Connected device）。
+  **那是沙箱限制，不是环境问题**；要这三项的真实结论，得在**用户自己的终端**跑。
+
 ---
 
 ## 8. ✅ 迁移前那件事：RN 版终态已 push（2026-09-21 完成）
@@ -462,11 +524,22 @@ Flutter 版也一样，用户的数据在库里）。
   `sqlite3` + `sqlite3_flutter_libs`，**不引 drift**。**别再重开讨论。**
 - **RN 版终态已 push 到远端**（`ceaa4f4`），参照实现与回滚路都保住了。
 
-**现在只剩两件事就能开工**（Flutter SDK 已装好，见 7.2）：
+**进度（2026-09-21 收盘）：**
 
-1. ⬜ **建骨架** —— `apps/flutter/`（`flutter create`）+ `packages/findr_core/`（纯 Dart 包）
-2. ⬜ **验命门** —— FTS5 + trigram，**本地 30 秒 + 真机各一次**（见 6.0）
+- ✅ 5 个决策定案（同仓 `apps/flutter/` + 独立 Dart core 包 `packages/findr_core`；
+  旧 RN 保留对照；core 用 Dart 重写按 7 步走；Riverpod；**`package:sqlite3` 3.x，不引 drift**）
+- ✅ RN 版终态 push 到远端（`ceaa4f4`）
+- ✅ Flutter SDK 3.47.5 / Dart 3.13.4 装好
+- ✅ 骨架建好（`apps/flutter/` + `packages/findr_core/`，两边均绿）
+- ✅ **命门第 1 层通过**：FTS5 + trigram 命中中文（`dart test` 可复现）
 
-之后按 6.1 节顺序走：`flutter create` → 译 `db/`（同步写 Dart 测试）→ 译 `search/` →
+**下一步就一件事：**
+
+1. ⬜ **命门第 2 层** —— 真机自检屏验「打进 APK 的那份 SQLite」也带 FTS5（见 6.0）
+
+之后按 6.1 节顺序走：译 `db/`（同步写 Dart 测试）→ 译 `search/` →
 译 `providers/ + parse/ + pipeline/` 跑通最小闭环 → **最后才动 UI，而且按新设计写**。
+
+⚠️ 提醒：`packages/findr_core/lib/findr_core.dart` 目前是**空壳**（只有说明注释），
+`db/ search/ ...` 这些子目录**还没建** —— 那是接下来要一块一块填的。
 

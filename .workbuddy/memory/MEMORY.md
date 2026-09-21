@@ -21,6 +21,22 @@
     **我这边沙箱把 `reg.exe`、`wmic.exe` 拉黑**造成的，**不是环境问题**；
     要真实结论得让用户在**自己的终端**跑 `flutter doctor`。（铁律 5：检查器跑不起来 ≠ 能力不支持）
 - **Android SDK 仍未装** —— 可延后到 V1 要上真机时再装（出包仍走 CI）。
+
+## 一B、本轮已落地（2026-09-21）
+- ✅ **骨架已建**：`apps/flutter/`（Flutter app，`--platforms=android`，
+  **applicationId `com.findr.app.dev`** —— 用户拍板「用新包名」，与 RN 版 `com.findr.app`
+  **并排共存、碰不到 RN 的数据**）+ `packages/findr_core/`（纯 Dart 包，依赖 `sqlite3 3.6.0`）。
+  两边 `flutter analyze` / `dart test` 均绿；**RN 侧 `pnpm check` 仍是 181 通过**（基线未破）。
+- ✅ **命门第 1 层（本地）已通过**：SQLite **3.53.4** / 编译选项 **`[ENABLE_FTS5]`** /
+  trigram 下 `MATCH '圆珠笔'` **命中 1 条**；2 字与 1 字查询**返回空且不抛异常**
+  ⇒ 印证 TS 侧「≥3 字走 MATCH、更短走 LIKE 降级」照搬即可，**不需要 try/catch 兜底**。
+  押注文件：`packages/findr_core/test/fts5_trigram_test.dart`（`dart test` 可复现）。
+- ⬜ **命门第 2 层（真机）还没做** —— 要在自检屏验「打进 APK 的那份 SQLite」也带 FTS5。
+  **别拿第 1 层冒充通过**（铁律 5：得在真实的那一层上看）。
+- 工程侧：`pnpm-workspace.yaml` 加了 `!packages/findr_core`、`!apps/flutter` 排除
+  （Dart 目录不是 pnpm 包）；`apps/flutter/android/app/build.gradle.kts` 的 applicationId 已改。
+- `packages/findr_core/lib/findr_core.dart` **目前是空壳**（只有说明注释），`db/ search/ ...`
+  子目录还没建 —— 接下来一块块填。
 - 第一个技术命门：**FTS5 + trigram 分词器在 Flutter 里能不能用** —— 必须实测，不通则方案重估。
   **验两层**：① 本地纯 Dart 测试（约 30 秒，验 SQL 语法）② 真机自检屏（验 APK 里那份 SQLite）。
 - ✅ **迁移前那件事已办完**：RN 版终态已于 2026-09-21 push 到远端 **`ceaa4f4`**
@@ -31,8 +47,11 @@
   - **同仓 `apps/flutter/`**（旧 RN `apps/mobile/` 保留对照、只读；同一个仓库方便比对 TS 源码）
   - **`packages/findr_core/` = 新 Dart core，独立包、纯 Dart 零 Flutter 依赖**
     ⇒ 可用 `dart test` 直接跑；V2/V3 桌面版复用同一 core
-  - **依赖倒置**：`findr_core` 只依赖 `sqlite3`；`sqlite3_flutter_libs` 归 `apps/flutter`
-    （它唯一职责是把**带 FTS5 的 native sqlite** 打进各平台）
+  - **数据库只依赖 `package:sqlite3` 3.x**（⚠️ **`sqlite3_flutter_libs` 已废弃**
+    —— 版本号 `0.6.0+eol`，README 明说「什么都不做」，网上大量老教程还写着它）。
+    它用 **Dart build hooks** 自带**预编译 SQLite**，**默认编译选项含 `SQLITE_ENABLE_FTS5`**，
+    且**全平台同一套产物**（上游自带 SQLite 的理由就是消灭「各平台编译选项不一致」）
+    ⇒ **app 端不用加任何 native 库依赖**，core 是纯 Dart，`dart test` 直接能验库行为
   - **不引 drift**（取代此前「倾向 drift」）：我们要逐字搬现成 SQL，codegen 反而多一层翻译
   - core 必须用 Dart 重写（无成熟 Dart→TS 方案），按 7 步**从底层往上**译；状态管理 **Riverpod**
   - 注：**`zod` 在 Dart 无等价物** ⇒ 手写校验函数，别为此引入重框架
@@ -101,6 +120,22 @@
 
 ## 八、环境坑
 - bash 里先 `export PATH="/usr/bin:/bin:$PATH"`，否则 `ls` / `find` / `head` 会 command not found
+- **Flutter/Dart 不在 PATH**（scoop 用 `env_add_path`，只写进新的用户环境）⇒ agent 沙箱里要显式加：
+  `export PATH="/d/my-software/scoop/apps/flutter/current/bin:$PATH"`
+- ⚠️⚠️ **沙箱里跑 `pub get` / `dart test` / `flutter analyze` 必须先把 `PUB_CACHE` 指到工作区内**，
+  否则**整条命令被 SIGTERM、连输出都没有**（极易误判成「命令写错」或「Flutter 装坏了」）：
+
+  ```
+  export PUB_CACHE='D:\my-develop\project\other\findR\.workbuddy\tmp\pub-cache'
+  ```
+
+  原因：默认 pub 缓存在用户目录，**沙箱不允许写工作区之外**。
+  **用户在自己终端跑则不需要**（用默认缓存）。（2026-09-21 踩到，排查了三轮）
+- **`flutter create` 在沙箱里会在最后一步（`pub get`）被打断**，但**产物其实完整**
+  （只差 `.dart_tool/`）⇒ **补跑一次带 `PUB_CACHE` 的 `flutter pub get` 即可，别推倒重建。**
+- 沙箱把 **`reg.exe` / `wmic.exe` 拉黑** ⇒ `flutter doctor` 三项报 `the doctor check crashed`
+  （Windows Version / Visual Studio / Connected device）。**那是沙箱，不是环境问题**；
+  要真实结论得在用户自己的终端跑。（同类坑：诊断类工具先确认有没有被沙箱挡掉再下结论）
 - **`git push` 超过 1 分钟毫无输出 ⇒ 凭据问题**，别干等。
   修法 `gh auth setup-git`（本机 system 级是 `credential.helper=helper-selector`）。**2026-09-19 已配好。**
 - **🧪 沙箱里建不了 `.git/refs/remotes/`**（2026-09-21 实测，别重复排查）：`git fetch origin` 报

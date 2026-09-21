@@ -1,0 +1,16 @@
+name: findr_core
+description: findR 的核心逻辑（纯 Dart，零 Flutter 依赖）—— 由 packages/core 的 TS 实现逐块翻译而来。
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.4
+
+# Add regular dependencies here.
+dependencies:
+  sqlite3: ^3.6.0
+  # path: ^1.9.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
