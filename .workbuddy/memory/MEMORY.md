@@ -59,6 +59,10 @@
    —— 2026-09-20 用户明确要求。一次 CI 要等 20+ 分钟，用户在手上有后续改动时
    被已触发的构建白白占掉一轮等待。**改完 → 汇报 → 等确认 → 才 push/tag。**
    这条同时适用于「改完顺手就 push」的肌肉记忆，以及把 tag 当自动收尾动作的做法。
+9. **功能退役时，优先「保留列、只摘读写两侧」，不要动 schema** —— SQLite 删列必须重建整张表
+   （`db/schema.ts` 顶部第 3 条），而 `NOT NULL DEFAULT 0` 的残留列零成本。
+   判据是**老库与老备份必须还能读**：留一条带旧标志的 INSERT 在测试里当押注（第二十版删
+   `needs_confirm` 就是这么做的）。同理，退役的判断条件才删，**它产出的数据列可以留着**。
 
 ## 技术栈决策（2026-09-21 已定，别再重新调研）
 - **不换栈**（Flutter / KMP 都评估过）。四条理由见 `.workbuddy/memory/2026-09-21.md`：
@@ -73,14 +77,25 @@
   官方开关 `expo.camera.barcode-scanner-enabled=false`，但**必须用 config plugin 写**
   （CI 是 `prebuild --clean`，手改 `android/gradle.properties` 会被冲掉）。
   **⚠️ 用户 2026-09-21 明确「先不改」，别自作主张去加。**
-- **全平台（Win/macOS/Linux 也想做）**：结论同「不换栈」。真能六端一套代码的只有 **Flutter** 和
-  **KMP+Compose**（.NET MAUI 无 Linux；RN 桌面无 Linux；Tauri 三端 WebView 不一致）。
-  但我们**不需要一个栈管六端** —— core 零原生依赖、**已在 better-sqlite3（桌面）上跑通过**，
-  所以路线是**手机留 RN 一行不动 + 桌面加 Electron 壳**（主进程 Node.js ⇒ core 零改动；
-  渲染层 Chromium ⇒ 上一轮那份 react-native-web 平台层升级成三端产线代码）。
-  Apple 这道门两条路都躲不开：**iOS 和 macOS 构建都要 macOS 机器**，macOS 分发还要签名公证。
-  **待用户拍板**：桌面版是「手机界面拉大」还是「专门一版桌面 UI」——这决定成本量级。
-  节奏建议：手机双端先做完整 → 桌面按需（可先做纯读版）→ Linux 最后。**别一次上六端。**
+- **全平台（Win/macOS/Linux 也想做）**：**我们不需要一个栈管六端** —— core 零原生依赖、
+  **已在 better-sqlite3（桌面）上跑通过**，所以路线是**手机留 RN 不动 + 桌面加 Electron 壳**
+  （主进程 Node.js ⇒ core 零改动；渲染层 Chromium ⇒ web 平台层升级成三端产线代码）。
+  节奏建议：手机双端先做完整 → 桌面按需（可先做纯读版，不需要相机/录音，成本最低）→ Linux 最后。
+  **别一次上六端。** Apple 这道门两条路都躲不开：**iOS 与 macOS 构建都要 macOS 机器**。
+- **⚠️ 桌面「两条路」的口径（2026-09-21 用户抓到矛盾后更正，务必按新口径说）**：
+  六端表格里「RN+Expo → 桌面 ⚠️/❌」说的是 **RN 官方桌面支持**（`react-native-windows` / `-macos`：
+  无 Linux、版本追不上我们的 RN 0.86.3）；而上面建议的 Electron 方案**压根不用它**，
+  用的是 **react-native-web + Expo 的 web 目标**。两者不矛盾，但**「再加一层壳就行」把工作说小了**：
+  core 零改动（真）／界面**骨架能搬、排版要重做**（竖屏→桌面是第二套设计）／
+  **平台层照样重写**（db 换 sqlite-wasm 或走 Node 侧；**`Alert` 28 处必须重写**，RNW 的
+  `Alert.alert()` 是空函数、静默失败；安全存储/文件/分享/相机/录音全要写桌面实现）。
+- **假设性提问的答案：若不考虑重写成本，最佳是 Flutter**（2026-09-21 用户问「最佳技术栈是什么」）。
+  证据与风险见 `.workbuddy/memory/2026-09-21.md`「技术栈选型」一节。要点：
+  ① `sqlite3_flutter_libs` **默认带 FTS5**、覆盖五平台 ⇒ 我们的 FTS5 可平移；
+  ② 体积反而更好（现在 RN 包 53MB → Flutter 手机 12~25MB / 桌面 30~80MB）；
+  ③ **鸿蒙：Flutter-OH 远强于 RNOH**（5 条版本线、262 个已适配库、支持鸿蒙 PC、出 `.hap`）；
+  ④ 若「体积」第一优先 ⇒ **Tauri 2**（3~10MB）但三套 WebView 渲染不一致、移动端年轻。
+  **右上角「又小又一致」目前没人做到。实际建议仍是「现在别换」。**
 
 ## 环境坑
 - bash 里先 `export PATH="/usr/bin:/bin:$PATH"`，否则 `ls`/`find`/`head` 会 command not found
