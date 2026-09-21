@@ -15,6 +15,16 @@
   - ⚠️ **没有 `scoop\shims\flutter` 是对的**：清单用 `env_add_path: bin` ⇒ 把 SDK 的 `bin`
     **直接挂进用户 PATH**，不生成 shim ⇒ **必须在新开的终端里用**。
   - 解压后 **3.3GB**；`scoop\cache\` 里还留着 **1.9GB** 的 zip（可 `scoop cache rm flutter` 回收）。
+  - **体积别搞混**：3.3GB 是**开发期工具**、不进包；APK 体积由「打哪几个 ABI + 引入的原生库」
+    决定，与 SDK 大小无关。
+- 🔒 **版本锁定策略（2026-09-21 定，三层）**：① **本机 `scoop hold flutter` 已执行**，冻结 3.47.5，
+  连 `scoop update *` 都不动它；② **CI 里写死 `flutter-version: 3.47.5`，绝不写 `channel: stable`**
+  （⬜ 待加 flutter job 时做；本仓 `node-version: 22` 是同类先例）—— **这层比本机那层重要**，
+  因为 CI 漂版本 = 「昨天能出包今天不能」；③ 版本号记录在交接文档 §7.1.1。
+  - **FVM（extras 桶 4.3.1）现在不装** —— 会再下一份完整 SDK（又是 3.3GB）；
+    等真需要第二个版本时再引。`scoop install flutter@<版本>` + `reset` 这条路也留着。
+  - 🚫 **别用 `flutter upgrade` 升级这个 SDK**：scoop 装出来的目录带 `.git`，upgrade 会挪版本
+    而 scoop 账本仍记 3.47.5 ⇒ 不一致，下次 update/卸载出乱子。**换版本一律走 scoop。**
   - `flutter doctor`：Flutter ✅ / Chrome ✅（⇒ `flutter run -d chrome` 可用）/ Network ✅ /
     Android toolchain ❌（cmdline-tools 缺，**预期内可延后**）。
     ⚠️ doctor 里三项「check crashed」（Windows Version / Visual Studio / Connected device）是

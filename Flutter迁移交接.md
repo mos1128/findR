@@ -368,12 +368,31 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 **装法（本机已核实）** —— scoop 的 `extras` 桶里就有，一条命令：
 
 ```
-scoop install flutter        # extras 桶，当前清单是 Flutter 3.47.4 stable
+scoop install flutter        # extras 桶，当前清单是 Flutter 3.47.5 stable
 ```
 
-- 想要「把 SDK 版本钉进仓库、与 CI 严格对齐」再考虑 `scoop install fvm` + `fvm use <版本>`；
-  现阶不必，FVM 随时可加。
-- ⚠️ **`scoop update` 会推进 Flutter 版本** ⇒ CI 里务必写死具体版本号（见 4.1 末条）。
+- ⚠️ **`scoop update *` 会推进 Flutter 版本** ⇒ CI 里务必写死具体版本号（见 4.1 末条）。
+
+#### 7.1.1 版本锁定策略（2026-09-21 定，三层各司其职）
+
+| 层 | 做法 | 状态 |
+|---|---|---|
+| **本机** | **`scoop hold flutter`** ⇒ 冻结在 **3.47.5**，连 `scoop update *` 都不动它 | ✅ 已执行 |
+| **CI** | workflow 里**写死 `flutter-version: 3.47.5`**，**绝不写 `channel: stable`** | ⬜ 待加 flutter job 时一起做 |
+| **仓库** | 版本号记在本文件 + README 一行；**先不引 FVM** | ✅ 本条即为记录 |
+
+- **为什么 CI 那层比本机那层重要**：本机漂版本顶多是个别 API 报错、当场看得见；
+  **CI 漂版本 = 「昨天能出包今天不能」**，且失败点混在 20 分钟的构建日志里。
+  （本仓已有先例：`check.yml` / `android.yml` 都把 `node-version` 写死成 `22`，同理。）
+- **FVM（`extras` 桶有 4.3.1）现在不装** —— 它是 Java 世界 sdkman/jenv 的对应物
+  （`.fvmrc` 进仓库、`fvm flutter` 取代 `flutter`），但**会再下一份完整 SDK（又 3.3 GB）**。
+  **等真的需要第二个版本时再引**（V2 桌面 / 需要跨版本对比回归时）。
+- **`scoop install flutter@<版本>` 这条路也留着** —— 清单 URL 是版本模板，可多版本并存，
+  `scoop reset flutter@3.47.5` 切换（相当于 scoop 自带的 jenv）。同样现在不需要。
+- 🚫 **别用 `flutter upgrade` 升级这个 SDK**：scoop 装出来的目录里**带 `.git`**，
+  `upgrade` 会把 SDK 挪到别的版本，而 **scoop 的账本上仍记着 3.47.5**，两边不一致，
+  下次 `scoop update` / 卸载时会出乱子。**要换版本一律走 scoop**（`unhold` → `update`，
+  或 `install flutter@<版本>` + `reset`）。
 
 ### 7.2 装完之后的实测结果（2026-09-21，用户执行 `scoop install flutter` 后核实）
 
@@ -383,6 +402,9 @@ scoop install flutter        # extras 桶，当前清单是 Flutter 3.47.4 stabl
 - `dart --version` ⇒ **Dart SDK 3.13.4 (stable) · windows_x64**
 - **解压后 3.3 GB**（压缩包 1.9 GB 留在 `scoop\cache\` 里，可 `scoop cache rm flutter` 回收，
   不回收也不影响使用 —— 累计约占 5.2 GB）
+- ⚠️ **别把 3.3 GB 和 App 体积混为一谈**：这是**开发期工具**，装在开发机上、不进包。
+  APK 里装的是**预编译 engine（按 ABI 各几 MB）+ 自己的 Dart 代码**，与 SDK 体积无关。
+  App 体积只由 ① 打包哪几个 ABI ② 引入的原生库决定 —— 见第 9 节那条（现在 53 MB → 预计 20~35 MB）。
 
 **⚠️ 一个容易误判的点：没有 `scoop\shims\flutter`，这是对的，不是装坏了。**
 
