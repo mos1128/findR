@@ -12,9 +12,14 @@ library;
 import '../types.dart';
 
 /// 形如 `202603`（本地时区的年月）。
+///
+/// ⚠️ 显式 `toLocal()`：TS 那边无论传进来的 `Date` 怎么构造，`getFullYear()` / `getMonth()`
+/// **一律按本地时区**取值。Dart 的 `DateTime` 带 `isUtc` 标记，若直接读字段，传进来一个
+/// UTC 时刻就会得到 UTC 的年月 —— 那会与 RN 版已写下的目录对不上（跨月那几小时尤其致命）。
 String monthDir(DateTime date) {
-  final y = date.year;
-  final m = date.month.toString().padLeft(2, '0');
+  final local = date.toLocal();
+  final y = local.year;
+  final m = local.month.toString().padLeft(2, '0');
   return '$y$m';
 }
 

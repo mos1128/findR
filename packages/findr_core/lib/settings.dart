@@ -27,6 +27,16 @@ abstract final class SettingsKeys {
   static const String asr = 'asr';
   static const String capture = 'capture';
   static const String search = 'search';
+
+  /// 全部键名 —— **备份导出的白名单就按它走**（`backup/manifest.dart` 的 `publicSettings`）。
+  ///
+  /// 对应 TS 的 `Object.values(SETTINGS_KEYS)`。
+  ///
+  /// ⚠️ **新增设置项时必须加进这里**：导出的方向是「只放白名单里的」，不是
+  /// 「过滤掉看起来像密钥的」—— 所以漏掉一条的后果是**不导出**，而不是泄露。
+  /// 老安装里可能还残留着已从白名单删掉的键（如第十九版的 `pipeline`），
+  /// 那正是「删掉即不再外带」这条机制在起作用。
+  static const List<String> all = <String>[llm, asr, capture, search];
 }
 
 /// 主模型能力探测的缓存（存在 `llm` 设置里的 `capabilities` 字段）。

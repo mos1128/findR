@@ -24,8 +24,8 @@
 | Flutter SDK | ✅ 3.47.5 stable / Dart 3.13.4；本机已 `scoop hold` 冻结版本（§7）|
 | 骨架 | ✅ `apps/flutter/`（applicationId `com.findr.app.dev`）+ `packages/findr_core/` |
 | **命门（FTS5 + trigram）** | ✅ 第 1 层（本地）通过；⬜ **第 2 层（真机）未做** —— 见 §6.1 |
-| **core 翻译** | 🔄 **约 4,398 / 5,429 行 ≈ 81%**（全局 32%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · `providers/`+`settings`+`util/` ✅ · **`pipeline/`+`cards/`+`media/` ✅**；**下一块 = `backup/`** |
-| 验收网 | `dart test` **272 通过**；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| **core 翻译** | ✅ **约 5,394 / 5,429 行 ≈ 99.4%**（全局 39%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · `providers/`+`settings`+`util/` ✅ · `pipeline/`+`cards/`+`media/` ✅ · **`backup/` ✅**；**剩下的 35 行只是 TS 的 `src/index.ts` 桶文件**（Dart 用一个 `findr_core.dart` 代替）⇒ **core 实质译完** |
+| 验收网 | `dart test` **289 通过**；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
 | CI flutter job | ⬜ 未加（**出包链路还缺这一环**）|
 
@@ -312,8 +312,8 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 | 3 | `search/` | ✅ **全部译完**（2026-09-22，含 `builder`）；顺带把它依赖的 `parse/` `prompts/` `providers/types` 一并译掉 |
 | 4 | `providers/` 联网层 + `settings` + `util/` | ✅ **全部译完**（2026-09-22，明细见下）|
 | 5 | `pipeline/` 录入编排 + `cards/` + `media/` | ✅ **全部译完**（2026-09-22，明细见下）|
-| 6 | `backup/` | ⬜ **下一块**（996 行）|
-| 7 | UI | ⬜ **最后才动，且按新设计写**（别照抄 RN 界面）|
+| 6 | `backup/` `.findrpack` 导出导入 | ✅ **全部译完**（2026-09-22，明细见下）—— **core 到此实质译完** |
+| 7 | UI | ⬜ **下一块**（在 `apps/flutter/`，**按新设计写**，别照抄 RN 界面）|
 
 **第 2 项明细（✅ 2026-09-21，合计 1,476 行 TS）**：
 
@@ -390,10 +390,57 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 3. 📌 TS 的 `audioPart` 返回 `Blob`/`{uri,name,type}`，Dart 返回具体 `http.MultipartFile` ⇒
    断言 `{kind:'file', rel, mime}` 改成 `isA<AudioFileRef>()` + 字段判等。
 
-**验收网**：`dart test` **272 通过**（226 + 本轮 46）、`dart analyze` 无问题；
+**第 6 项明细（✅ 2026-09-22，本轮合计 996 行 TS）**：
+
+| TS 源 | 行 | Dart |
+|---|---|---|
+| `backup/manifest.ts` | 398 | `backup/manifest.dart`（manifest 生成 + **导入合并策略**；`publicSettings` 走白名单 + 按键名深层剥除）|
+| `backup/zip.ts` | 232 | `backup/zip.dart`（**只支持 STORE 的最小 ZIP 读写**；每个成员都验 CRC32）|
+| `backup/pack.ts` | 167 | `backup/pack.dart`（导出/导入入口；**先写媒体再合并 DB** —— 反过来会留下指向空文件的卡片）|
+| `backup/types.ts` | 120 | `backup/types.dart`（端口 + 报告类型 + **卡片/分类/位置/别名的 JSON 胶水**）|
+| `backup/format.ts` | 58 | `backup/format.dart`（7 字节容器头；**别在加加密之前动它**）|
+| `backup/crc32.ts` | 16 | `backup/crc32.dart`（查表法，逐位与 TS 同值）|
+| `backup/index.ts` | 5 | ——（Dart 用 `findr_core.dart` 统一导出）|
+
+验收网：`backup.test.ts` **17 个用例**全部逐条译成 `test/backup/backup_test.dart`，
+另加 `test/helpers/memory_media.dart`（对应 TS `test/memory-media.ts`）与
+`tool/export_probe.dart`（手工冒烟：写一份真实 `.findrpack` 到磁盘，供外部工具验）。
+
+**第 6 项的四条要点（比别处更值得记）**：
+
+1. ⚠️ **`MediaStorePort` 的「可选方法」在 Dart 里得换个写法**：TS 的 `exists?` 是可选成员，
+   Dart 接口不支持 ⇒ 改成**可空的函数类型 getter**（`FutureOr<bool> Function(String)? get exists`），
+   为 null 即「未实现」。调用点的判断方式与 TS 一模一样。
+   顺带：`MaybePromise<T>` ⇒ 直接用 SDK 的 `FutureOr<T>`。
+2. ⚠️ **`Uint8List` 上没有 `byteOffset` / `byteLength`**（那是 JS 的名字）——
+   Dart 的 `TypedData` 叫 **`offsetInBytes` / `lengthInBytes`**。构造 `ByteData.view` 时写错就是编译错。
+3. ⚠️ **Dart 的 `DateTime` 带 `isUtc` 标记，JS 的 `Date` 没有** ⇒
+   凡 TS 用 `getFullYear()` / `getHours()` 这类**本地时间取值器**的地方（`media/paths.ts` 的
+   `monthDir`、`backup/zip.ts` 的 DOS 时间戳），Dart 必须先 `.toLocal()`，
+   否则传进来一个 UTC 时刻会拿到 UTC 的年月/时分 —— **跨月那几小时会让文件落错文件夹**。
+   （这与「写库时间一律 `isoUtc()`」不冲突：那条管的是数据库列值，这条管的是本地语义的取值器。）
+4. 📌 **`BackupManifest.media` 用 `List?` 而不是 `List`**：TS 的 `manifest.media?.length ?? mediaEntries.length`
+   区分了「键不存在」与「空数组」，塌成 `[]` 就丢掉这个区别。同理 `toJson` 里
+   **`appVersion` 为 null 时要显式省略键**（TS 的 `JSON.stringify` 会省略 `undefined`，
+   而 Dart 的 `jsonEncode` 会写出 `"appVersion": null`）。
+5. 📌 **`validateManifest` 顺手做了 `fromJson`**：TS 只是「判完把原对象当 `BackupManifest` 用」
+   （JS 的鸭子类型），Dart 没有这种便利 ⇒ 必须真转一次。**校验规则与报错文案仍逐条对齐 TS**。
+
+**这一次第一次做了「跨实现互认」实测**（铁律 5：得在真实的那一层上看，自证不算）：
+
+| 验证 | 手段 | 结果 |
+|---|---|---|
+| Dart 产出的包是不是真 ZIP | Python `zipfile` 打开 | ✅ `namelist` 正确、`testzip()` → `None`（**所有成员 CRC 均通过**）|
+| 容器头 | 直接读字节 | ✅ `FINDR` + 小端 u16 = 1，头长 7 |
+| 白名单剥除 | Python 读 manifest | ✅ `settings.llm` 里**只有 providerType/baseUrl/model**，canary `apiKey` 不在；整包字节里也搜不到 |
+| **RN(TS) 能不能导入 Flutter(Dart) 的包** | 临时 vitest 用例跑 TS 的 `importBackup` | ✅ 2 张卡入库、位置两级、媒体 2 个、`pathNames` 与 desc 一致、无 canary |
+
+⇒ **RN 版与 Flutter 版的备份包双向互认已实测通过**，用户的旧备份可以带过来。
+
+**验收网**：`dart test` **289 通过**（272 + 本轮 17）、`dart analyze` 无问题；
 **RN 侧 `pnpm check` 仍 181 passed | 2 skipped**（基线未破）。
-**全局进度约 4,398 / 13,894 行 ≈ 32%**（按「需要动脑的行数」算比这个高 ——
-`templates.ts` 与全部 SQL 是逐字搬）。**core 内部已译 4,398 / 5,429 ≈ 81%**，剩 `backup/`。
+**全局进度约 5,394 / 13,894 行 ≈ 39%**（按「需要动脑的行数」算比这个高 ——
+`templates.ts` 与全部 SQL 是逐字搬）。**core 实质译完（只剩一个 35 行的 TS 桶文件）。**
 
 **翻译时的三条口径（都是踩过才有的）**：
 
@@ -433,21 +480,31 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
    - `makeLlmAdapter` 遇到 `gemini`/`fake` 显式抛 `UnsupportedError`：
      TS 那边是 `switch` 漏空返回 `undefined`，然后在调用点崩成「undefined 不是函数」。
 
-**下一块（`backup/`）的要点**：996 行，**core 翻译的最后一块**（之后就是 UI）。
-它是唯一一个**会被用户当文件拿走又拿回来**的模块，所以容错要求比别处高一档：
+**下一块（UI）的要点**：core 已译完，**只剩 UI 没动**。UI 在 `apps/flutter/`，
+**按新设计写，别照抄 RN 界面**（用户还没动手重构 UI —— 这是换栈白拿的好处，见 §1）。
 
-- 格式已定死（§5）：`magic "FINDR"(5B) + 版本 u16(=1) + 标准 ZIP`，**明文不加密**。
-  **别动那 7 字节头、别提前把加密骨架加回来**（`CryptoPort` 已删）。
-- ⚠️ 它正是 `util/base64.dart` / `util/utf8.dart`「逐字搬」的**唯一理由**所在：
-  解析路上「崩掉」比「解出几个错字」难收拾得多。译的时候两处宽容语义**不能松**。
-- 验收网 = `backup.test.ts` **17 个用例**，另加 `db.test.ts` / `migrate.test.ts` 里
-  与 v1/v2 迁移相关的既有断言（**已译过**，别重复译）。
-- 两条底线（§5）：① 界面必须明说不加密（红条 + 导出前确认框）；
-  ② `settings_public` 白名单是机密性的唯一屏障 —— **导出时必须 grep 一遍白名单**。
+动手之前先办这两件事（顺序别反）：
+
+1. ⬜ **补上 CI 的 flutter job**（本机 `scoop hold` 那层只保住了开发机）：
+   **版本号写死 `flutter-version: 3.47.5`，绝不写 `channel: stable`** —— CI 漂版本 =
+   「昨天能出包今天不能」，比本机漂版本难查得多。本仓 `node-version: 22` 是同类先例。
+2. ⬜ 然后才是**命门第 2 层**：在 Flutter 版的自检屏里放同一段 FTS5+trigram 检查，
+   **在真机上跑一次**（验「打进 APK 的那份 SQLite」也带 FTS5）。第 1 层已通过，但它验的是
+   「我们写的 SQL 与 trigram 语法」，不是「真正要发布的那份二进制」。
+
+UI 侧待办的口径（都写在 §5 与需求里，别漏）：
+
+- ⚠️ **明文备份必须在界面上说清楚**：页面红条 + 导出前确认框 —— 当前版本不加密，
+  谁拿到 `.findrpack` 都能读出全部记忆。
+- ⚠️ **发布仍是测试版**（release 签 debug 证书、可覆盖安装、数据保留）；
+  **功能全做完 + 重构一版 UI** 之后才正式发，**换签名放那一步**。
+  ⇒ 对用户一律说「**覆盖安装、别卸载**」。
+- ⚠️ **交互里的两个「待办」入口别忘**：`ask`（补问）与 `path_suggestion`（位置猜测）——
+  core 已经把值落库了（`pipeline/capture.dart`），界面得有地方展示 + 一键应用。
 - ⚠️ 出网口径不变：**只往用户自填的 `baseUrl` 发请求**，别引入任何我们自己的后端。
 
-**验收方式**：把 TS 侧的用例逐一译成 Dart 测试，**绿了才算译对**。
-这是一个**可以独立验证的迁移** —— 别靠"看起来对了"。
+**验收方式**：UI 没有 TS 侧的对照测试网，只能靠**真机手动过一遍**（`测试计划.md` 的场景清单
++ `test/fixtures/samples.dart` 那 20 条样本可以当录入素材）。**别靠"看起来对了"。**
 
 ✅ **那笔债已还**：`P2Output` 等的手写校验已随 `parse/schema.dart` 落地（上面第 2 条）。
 （`migrate_test` 里造旧库用的两处原始 SQL **不是债**：一处在填「要删的列」、一处要带

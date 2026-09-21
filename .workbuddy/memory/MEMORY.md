@@ -7,12 +7,16 @@
 > **本文件只放「每次会话都要知道且不随版本变」的 + 指针**；易变细节在交接文档，别在此重复维护。
 
 ## 一、进度（权威在交接 §0.1 / §6.2）
-- core 已译完：`db/` `search/` `parse/`+`prompts/` `providers/`+`settings`+`util/` `pipeline/`+`cards/`+`media/`。
-  **剩 `backup/`（996 行）= core 最后一块**，之后才是 UI（**按新设计写，别照抄 RN 界面**）。
-- 每轮必跑的验收网：`dart test`（现 **272 通过**）· `dart analyze`（现 No issues found）·
-  RN 侧 `pnpm check`（现 **181 passed | 2 skipped**，基线不许破）。
-- ⬜ **命门第 2 层（真机验「打进 APK 那份 SQLite」也带 FTS5）未做**，且卡在「**CI 的 flutter job 还没加**」；
+- ✅ **core 实质译完**：`db/` `search/` `parse/`+`prompts/` `providers/`+`settings`+`util/`
+  `pipeline/`+`cards/`+`media/` `backup/` 全部译完（5,394 / 5,429；**剩的 35 行只是 TS 的 `src/index.ts` 桶文件**）。
+- ⬜ **下一块 = UI**（在 `apps/flutter/`，**按新设计写，别照抄 RN 界面**）。动手前先办两件事：
+  ① **补 CI 的 flutter job**（版本号**写死 3.47.5**，别写 `channel: stable`）；
+  ② 再做**命门第 2 层**（真机上验「打进 APK 那份 SQLite」也带 FTS5，卡在①上）。
   第 1 层（本地）已通过 —— **别拿第 1 层冒充通过**（押注在 `test/fts5_trigram_test.dart`）。
+- 每轮必跑的验收网：`dart test`（现 **289 通过**）· `dart analyze`（现 No issues found）·
+  RN 侧 `pnpm check`（现 **181 passed | 2 skipped**，基线不许破）。
+- ✅ **备份包已实测「跨实现双向互认」**（RN 版能导入 Flutter 版导出的 `.findrpack`），
+  手段与结论见交接 §6.2「第一次做了跨实现互认实测」那张表。
 - `findr_core` 依赖：`sqlite3 ^3.6.0`（DB）+ `http ^1.2.0` / `http_parser ^4.0.0`（联网，等价 TS 的 `fetch`）。
 
 ## 二、翻译口径（踩过才有；完整版在交接 §6.2）
@@ -22,8 +26,14 @@
   挂**数组** = 混进一个坏的 ⇒ **整个数组落空**。复刻错了不报错，只会**静默少答一条**。
 - ⚙️ **`util/base64.dart` / `util/utf8.dart` 逐字搬，别换成 `dart:convert`** —— 依赖两处宽容语义
   （base64 跳过非法字符；UTF-8 遇截断按 0 补齐）；**`backup/` 是它们存在的唯一理由**。
-- ⚙️ **Dart 无结构化子类型** ⇒ TS 的 `{...deps, x}` / `interface X extends Y`
-  一律改成**具名参数或 `withXxx()`**（先例：`P2Output.withSynonyms` · `AdvanceDeps.withHotwords`）。
+- ⚙️ **Dart 无结构化子类型** ⇒ TS 的 `{...deps, x}` / `interface X extends Y` / **可选方法 `exists?`**
+  一律改成**具名参数、`withXxx()` 或可空的函数类型 getter**（先例：`P2Output.withSynonyms` ·
+  `AdvanceDeps.withHotwords` · `MediaStorePort.exists`）。`MaybePromise<T>` 直接用 SDK 的 `FutureOr<T>`。
+- ⚙️ **Dart 的 `DateTime` 带 `isUtc` 标记，JS 的 `Date` 没有** ⇒ TS 用 `getFullYear()` / `getHours()`
+  这类**本地时间取值器**的地方（`media/paths.dart` 的 `monthDir`、`backup/zip.dart` 的 DOS 时间戳），
+  Dart 必须先 `.toLocal()`，否则传进 UTC 时刻会拿到 UTC 的年月/时分 ⇒ **跨月那几小时文件落错文件夹**。
+- ⚙️ `Uint8List` 上**没有** `byteOffset` / `byteLength`（那是 JS 的名字）⇒
+  Dart 的 `TypedData` 叫 **`offsetInBytes` / `lengthInBytes`**。
 - ⚙️ 其余常有坑：参数要包成列表（无变长参）· 事务必须支持嵌套（内层 SAVEPOINT）·
   `join(' OR ')` 的空格别丢 · `Future.timeout` ≠ `AbortController`（流式另套 `Stream.timeout`）。
 - 📌 有意偏差（`close()` / `currentSchemaVersion` / 枚举 `wire` / `media.audioPart` 返回具体类型 /

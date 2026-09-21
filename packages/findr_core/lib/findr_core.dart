@@ -11,9 +11,9 @@
 ///    连同它依赖的 `prompts/`（模板 + 渲染）、`parse/`（手写校验替代 zod）一起
 /// 3. ✅ `providers/` 全部（types / fake / **sse / samples / media / openai_compat /
 ///    anthropic / capabilities / factory**）+ `settings.dart` + `util/base64` + `util/utf8`
-/// 4. ⬜ `pipeline/` 录入流程编排
-/// 5. ⬜ `backup/` `.findrpack` 导出/导入
-/// 6. ⬜ `cards/` + `media/`
+/// 4. ✅ `pipeline/` 录入流程编排（capture / edit / queue / ingest）+ `cards/badges` + `media/paths`
+/// 5. ✅ `backup/` `.findrpack` 导出/导入（crc32 / format / zip / manifest / pack）
+/// 6. ⬜ UI（在 `apps/flutter/`，**按新设计写**，别照抄 RN 界面）
 ///
 /// 三条硬约束：
 ///
@@ -31,6 +31,12 @@
 /// 调用方永远不需要写出它（要用的是「不传这个参数」）。
 library;
 
+export 'backup/crc32.dart';
+export 'backup/format.dart';
+export 'backup/manifest.dart';
+export 'backup/pack.dart';
+export 'backup/types.dart';
+export 'backup/zip.dart';
 export 'cards/badges.dart';
 export 'db/driver.dart';
 export 'db/driver_sqlite3.dart';
