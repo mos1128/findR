@@ -1,6 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 权限：
+         · RECORD_AUDIO **不由这里声明** —— record 插件的 android 清单里已经有了
+           （record_android/android/src/main/AndroidManifest.xml），清单合并时会带进来。
+           写两遍不会更安全，只会多一处「改了这里忘了那里」。
+         · CAMERA **刻意不声明**：我们用 image_picker 走系统相机（App 只是发起 intent），
+           一旦声明了 CAMERA，image_picker 反而会被要求先拿到该权限才能用。
+         · 相册同理：`pickMultiImage` 走 Android 13+ 的系统照片选择器，不需要读媒体权限。 -->
     <application
-        android:label="findr_app"
+        android:label="Findr"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

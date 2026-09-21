@@ -27,11 +27,11 @@
 | **core 翻译** | ✅ **约 5,394 / 5,429 行 ≈ 99.4%**（全局 39%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · `providers/`+`settings`+`util/` ✅ · `pipeline/`+`cards/`+`media/` ✅ · **`backup/` ✅**；**剩下的 35 行只是 TS 的 `src/index.ts` 桶文件**（Dart 用一个 `findr_core.dart` 代替）⇒ **core 实质译完** |
 | **应用层接线** | ✅ **7 个模块全写完**（约 1,000 行）：`app_paths` · `db` · `media` · `device_selfcheck` · `secure` · `backup` · `runtime` —— 见 §6.3。**UI 之前再无接线欠账** |
 | 自检屏（真机载体） | ✅ 分两组：**核心**（FTS5 命门，优先跑在真实库文件上）+ **设备层**（PRAGMA / 外键 / 嵌套事务 / 媒体往返 / 打包往返）。**入口已从 `main.dart` 挪到「设置 → 维护」**（`main.dart` 的 `home` 现在是记忆流主页）⇒ **APK 装好，进设置点「自检」即可验命门第 2 层** |
-| 验收网 | `dart test` **291 通过** · `flutter test` **37 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| 验收网 | `dart test` **291 通过** · `flutter test` **72 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
-| app 依赖 | `findr_core` · `path_provider` · `flutter_riverpod` · `http` · `http_parser` · `flutter_secure_storage` · `share_plus` · `file_picker` · `package_info_plus` |
+| app 依赖 | `findr_core` · `path_provider` · `flutter_riverpod` · `http` · `http_parser` · `flutter_secure_storage` · `share_plus` · `file_picker` · `package_info_plus` · **`image`**（压缩到 WebP）· **`image_picker`**（拍照/相册）· **`record`**（录音，m4a/AAC）· **`audioplayers`**（回放）· **`connectivity_plus`**（无网提示）|
 | CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）。`checks` 已实测全绿；`apk` **已出包 18.2MB 并发布 `flutter-dev-latest`**，且**已断言过** APK 里 `lib/arm64-v8a/libsqlite3.so` 含 `fts5`/`trigram` |
-| **界面本身** | ✅ **已按新设计写完**（14 个新文件 + `main.dart` 重写）：`theme/tokens` · `ui/{kit,media_view,card_row}` · `state/memory_stream` · `capture/{text_file,composer}` · `screens/{memory_stream,card_detail}` + `screens/settings/`（5 屏）。**没照抄 RN**（§6.3）。⬜ **还欠两块**：录入坞的**相机/相册/长按录音**、卡片详情的**音频播放**（写录入的同一轮一起接）|
+| **界面本身** | ✅ **已全部写完**（21 个文件）：`theme/tokens` · `ui/{kit,media_view,card_row,audio_player}` · `state/memory_stream` · `capture/{text_file,composer,image_compress,photo_picker,recorder,submit}` · `platform/network` · `screens/{memory_stream,card_detail}` + `screens/settings/`（5 屏）。**没照抄 RN**（§6.3）。**拍照 / 连拍 / 相册 / 长按录音 / 音频回放全部接上**，`flutter test` 从 8 涨到 **72** |
 
 **几条 git 现状（2026-09-21 实测，别重复排查）**：
 
@@ -341,7 +341,7 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 | 4 | `providers/` 联网层 + `settings` + `util/` | ✅ **全部译完**（2026-09-22，明细见下）|
 | 5 | `pipeline/` 录入编排 + `cards/` + `media/` | ✅ **全部译完**（2026-09-22，明细见下）|
 | 6 | `backup/` `.findrpack` 导出导入 | ✅ **全部译完**（2026-09-22，明细见下）—— **core 到此实质译完** |
-| 7 | UI | ✅ **已写完**（2026-09-22，**按新设计写、没照抄 RN**）：`theme/` `ui/` `state/` `capture/`（文字那一半）`screens/` —— 见 §6.3。⬜ **尾部两块**：媒体录入（相机/相册/录音）+ 音频播放 |
+| 7 | UI | ✅ **已写完**（2026-09-22，**按新设计写、没照抄 RN**）：`theme/` `ui/` `state/` `capture/`（含媒体录入）`screens/` —— 见 §6.3 |
 
 **第 2 项明细（✅ 2026-09-21，合计 1,476 行 TS）**：
 
@@ -590,12 +590,45 @@ Flutter 这边**从 `platform/` 开始接**，因为那部分是**与界面设�
    ⇒ 通用口径：**`package_info_plus` 这类平台插件别放在首帧的关键路径上 `await`。**
    （顺带把 `appVersion()` 的 `.timeout()` 也去了 —— 挂着的 timer 会让 widget test 报未完成计时器。）
 
-⬜ **界面还没接的两块**（都已在代码里明确标注，不是遗漏）：
-- **录入坞的相机 / 相册 / 长按录音 + 图片 WebP 压缩 + 录音** —— `capture/composer.dart` 文件头写着「pending」
-- **卡片详情的音频播放** —— 目前显示「播放功能随录入一起接上」
+**媒体录入与回放（第九轮补完，`flutter test` 37 → 72）**
 
-⬜ **`capture/` 与 `platform/media.dart` 之间还有一段没走通**：`media.dart` 已有两个文件端口，
-但**录入侧还没产出文件**，所以上述两块要一起做（**先做录入、再做播放**才有的放矢）。
+| RN 源 | Dart | 说明 |
+|---|---|---|
+| `capture/compress.ts` | `capture/image_compress.dart` | ✅ 纯函数、可测。`image` 包压到 WebP。**两个坑见下** |
+| `capture/picker.ts` + `CameraModal.tsx` | `capture/photo_picker.dart` | ✅ **刻意改用系统相机**（`image_picker`）替代应用内取景器 —— 理由见下 |
+| `capture/recorder.ts` | `capture/recorder.dart` | ✅ `record` 包，aacLc → m4a 不转码；误触（<500ms / 没文件）判为丢弃 |
+| `capture/submit.ts` | `capture/submit.dart` | ✅ 先写文件、再插行；来源由「手里真有什么」定（图 > 音 > 文）|
+| `app/card/[id].tsx` 的音频段 | `ui/audio_player.dart` | ✅ **RN 只是把路径印出来**，这里能听了 |
+| `expo-network` 的 `useNetworkState` | `platform/network.dart` | ✅ 无网时录入坞上方提示「先拍照或打字」 |
+
+⚠️ **`image` 包埋的两个雷（都只有实测才会发现，都已被测试钉住）**：
+
+1. **`encodeWebP` 默认 `lossless: true`，而无损模式下 `quality` 被完全忽略。**
+   只写 `encodeWebP(x, quality: 80)` 会得到一个「参数看着对、体积大一倍以上、
+   且毫无报错」的**无损**文件。包自己的源码注释就写着
+   「`encodeWebP(image, quality: 40)` on its own does nothing at all: pass `lossless: false` first」。
+   测试用「同图无损 vs 我们的输出」的体积差把它钉死了。
+2. **EXIF 方向已经由 JPEG 解码器烤进像素了 —— 别自己再补一次。**
+   `decodeImage(jpeg)` 出来的对象 `exif` 是空的，看着像漏读了方向，很容易顺手补一刀
+   （`decodeJpgExif` 取回方向 → 赋给 `decoded.exif`）。**那会把照片转两遍**：
+   `_jpeg_quantize_io.dart` 解码时就读了方向、转了像素、并**把 orientation 清成 null**
+   —— 这正是「exif 是空的」的原因。实测 1200×600 的竖拍照会变成 600×1200 又转回 1200×600。
+   `bakeOrientation` 保留着，因为 **PNG 的 `eXIf` 分块**那条路确实需要它（对已转正的图是空转）。
+
+⚠️ **一处与 RN 的刻意分歧：拍照用系统相机，不是应用内取景器。**
+RN 的 `CameraModal.tsx` 是 `expo-camera` 的自绘取景器。这里改用 `image_picker` 调系统相机，
+理由是**风险不对称**：自绘取景器要自己拥有一套相机会话的生命周期（权限、预览比例、旋转、
+前后台切换、多 ROM 差异），而这些东西**只有上真机才知道写没写对** —— 本机既没有 Android SDK
+也没有真机，等于闭着眼写；系统相机由 OS 提供，几乎不可能出岔子。
+代价是「每拍一张要回一次 App」。**需求 173 的两条（不限张数 + 构图引导）因此挪到录入坞上**：
+拍完回来就看到「已拍 N 张（不限张数）+ 第一张拍全貌 → 再拍局部 → 最后特写」，
+旁边一颗「再拍一张」接着拍。**哪天要做真·取景器连拍，只需改 `photo_picker.dart` 一个文件。**
+
+⚠️ **Android 清单只改了两处**（`android/app/src/main/AndroidManifest.xml`）：
+`android:label` 从 `findr_app` 改成 `Findr`（用户看到的 App 名）；
+**权限一条都没自己写** —— `RECORD_AUDIO` 由 `record_android` 的清单合并进来，
+`ACCESS_NETWORK_STATE` 由 `connectivity_plus` 合并进来。**刻意不声明 `CAMERA`**：
+一旦声明了，`image_picker` 反而会被要求先拿到该权限才能用。
 
 **平台层至此写完（7 个模块，约 1,000 行）** ⇒ UI 之前再无「接线要补」的欠账。
 三条容易写错的语义，写在代码注释里，这里再点一遍：

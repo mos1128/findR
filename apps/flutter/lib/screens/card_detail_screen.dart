@@ -5,8 +5,7 @@
 /// 用户点进来第一眼看不到「我记了什么」，只看到一堆分类/状态选择器（真机反馈）。
 /// 所以这一版的顺序是硬约束：**先素材，后编辑，最后才是归档/删除**。
 ///
-/// ⚠️ **录音播放还没接**（要引音频播放依赖，与媒体录入同一块）。现在只显示「有录音」与路径，
-/// **不画一个点了没反应的按钮** —— 那比没有更糟。
+/// 录音在这里**能听了**（RN 只打了路径，用户听不到自己录了什么）—— 见 `ui/audio_player.dart`。
 library;
 
 import 'package:findr_core/findr_core.dart';
@@ -15,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../platform/runtime.dart';
 import '../theme/tokens.dart';
+import '../ui/audio_player.dart';
 import '../ui/card_row.dart';
 import '../ui/kit.dart';
 import '../ui/media_view.dart';
@@ -331,26 +331,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   ),
                 if (card.audioPath != null) ...<Widget>[
                   const SizedBox(height: Spacing.three),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: c.surfaceAlt,
-                      borderRadius: BorderRadius.circular(Radii.md),
-                      border: Border.all(color: c.border),
-                    ),
-                    padding: const EdgeInsets.all(Spacing.three),
-                    child: Row(
-                      children: <Widget>[
-                        Icon(Icons.graphic_eq_rounded, size: 18, color: c.textSecondary),
-                        const SizedBox(width: Spacing.two),
-                        Expanded(
-                          child: Text(
-                            '这段录音已存在本地。播放功能随「拍照 / 录音录入」一起接上。',
-                            style: TextStyle(fontSize: 11.5, height: 1.4, color: c.textSecondary),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  AudioPlayBar(relPath: card.audioPath!, label: '这段录音'),
                 ],
                 if (images.isNotEmpty) ...<Widget>[
                   const SizedBox(height: Spacing.four),

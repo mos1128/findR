@@ -20,6 +20,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../capture/composer.dart';
+import '../capture/submit.dart';
+import '../platform/network.dart';
 import '../platform/runtime.dart';
 import '../state/memory_stream.dart';
 import '../theme/tokens.dart';
@@ -97,17 +99,32 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
   }
 
   /// 录完一条：**先落盘**（草稿立即可见），再在后台推进解析队列。
+  ///
+  /// 「先落盘」是硬顺序：图片/录音在这里才进媒体目录，卡片行随后插入。
+  /// 中间任何一步失败都只会让这次录入白费，**不会**留下一条有记录没素材的卡片
+  /// （见 `capture/submit.dart` 的文件头）。
   Future<void> _submit(ComposerPayload payload) async {
     final rt = ref.read(runtimeProvider).value;
     if (rt == null) {
       _toast('还没准备好，稍等一下');
       return;
     }
-    try {
-      createDraft(
+    // 记住这次的图片分析选择，下次默认沿用（需求 5.1）。只有**手动切过**才写。
+    final override = payload.visionOverride;
+    if (override != null && override != rt.capture.visionLast) {
+      writeCaptureSettings(
         rt.driver,
-        CaptureInput(source: SourceKind.text, text: payload.text),
-        id: makeId(),
+        CaptureSettings(
+          visionDefault: rt.capture.visionDefault,
+          visionLast: override,
+          maxAnalyzeImages: rt.capture.maxAnalyzeImages,
+        ),
+      );
+    }
+    try {
+      await persistCapture(
+        rt.driver,
+        CaptureSubmission(text: payload.text, photos: payload.photos, audio: payload.audio),
       );
     } catch (e) {
       _toast('没能存下：$e');
@@ -186,6 +203,9 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
               // 「记」这一侧只报**非模型类**的降级原因。没配模型已在顶部提示条里说过，
               // 这里再说一遍只会让同一屏出现两段几乎一样的话。
               notice: _composerNotice(rt),
+              // 图片分析开关：模型能力 + 设置里的默认值（`effectiveVision` 已把两个因素合起来）
+              visionCapable: visionSupported(rt?.llm),
+              visionDefault: rt == null ? true : currentVision(rt),
               onSubmit: _submit,
             ),
           ],
@@ -194,10 +214,25 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     );
   }
 
+  /// 录入坞上方的提示条。
+  ///
+  /// ⚠️ **这里曾经照着 RN 抄错了一条**：原来写的是「`autoAnswer` 开着就不提示没配 ASR」——
+  /// 但 `autoAnswer` 是**检索**侧的开关，跟 ASR 毫无关系，结果就是
+  /// 「打开了自动总结答案的用户，永远看不到自己其实没配 ASR」。
+  /// RN 那边的条件是 `offline || noAsr`，没有 `autoAnswer` 这一项。
+  ///
+  /// 离线排在前：它决定的是**当下能不能用**，比「缺个 ASR」更急。
   Widget? _composerNotice(RuntimeState? rt) {
+    final online = ref.watch(onlineProvider).value ?? true;
+    if (!online) {
+      // 需求 3.2 / 需求 77：存放物品的地方常常没信号，
+      // 要在**用户说完之前**就告诉他「先拍照或打字，稍后联网会自动补上」。
+      return const Notice(
+        text: '当前无网络：先拍照或打字，稍后联网会自动补上解析。',
+        tone: NoticeTone.warn,
+      );
+    }
     if (rt == null) return null;
-    if (rt.search.autoAnswer) return null;
-    // 需求 3.2：无网时先说清「先拍照，稍后补一句」，别等用户说完才发现转写不了
     if (rt.asr == null) {
       return const Notice(
         text: '还没配置 ASR：语音会先存着，之后补一句话就能解析。',
