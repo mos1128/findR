@@ -5,12 +5,13 @@
 ///
 /// 翻译顺序（从底层往上，依赖少的先做）—— 见 `Flutter迁移交接.md` 第 4.3 节：
 ///
-/// 1. `db/`        schema + 迁移 + repository ← **进行中**（driver/schema/migrate/json/settings 已译完）
-/// 2. `search/`    FTS5 检索 + 排序打分
-/// 3. `providers/` 模型 HTTP 调用
-/// 4. `parse/`     手写校验（替代 zod）
-/// 5. `pipeline/`  录入流程编排
-/// 6. `backup/`    .findrpack 导出/导入
+/// 1. ✅ `types` + `util` + `db/`（driver / schema / migrate / json / settings /
+///    repository / taxonomy）—— **已译完**
+/// 2. 🔄 `search/`（builder 已译；service / inventory / advise / answer 待译）
+/// 3. ⬜ `providers/` 模型 HTTP 调用
+/// 4. ⬜ `parse/` 手写校验（替代 zod）
+/// 5. ⬜ `pipeline/` 录入流程编排
+/// 6. ⬜ `backup/` `.findrpack` 导出/导入
 ///
 /// 两条硬约束：
 ///
@@ -21,11 +22,20 @@
 ///
 /// 检索的地基已实测通过（SQLite 3.53.4 / `ENABLE_FTS5` / trigram 下 3 字以上中文可命中），
 /// 押注在 `test/fts5_trigram_test.dart`。
+///
+/// `unset` 是对外隐藏的：它只在 `CardPatch` / `copyWith` 的**形参默认值**里出现，
+/// 调用方永远不需要写出它（要用的是「不传这个参数」）。
 library;
 
 export 'db/driver.dart';
 export 'db/driver_sqlite3.dart';
 export 'db/json.dart';
 export 'db/migrate.dart';
+export 'db/repository.dart';
 export 'db/schema.dart';
 export 'db/settings.dart';
+export 'db/taxonomy.dart';
+export 'parse/outputs.dart';
+export 'search/builder.dart';
+export 'types.dart' hide unset;
+export 'util/iso.dart';

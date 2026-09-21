@@ -46,19 +46,32 @@
 - 工程侧：`pnpm-workspace.yaml` 加了 `!packages/findr_core`、`!apps/flutter` 排除
   （Dart 目录不是 pnpm 包）；`apps/flutter/android/app/build.gradle.kts` 的 applicationId 已改。
 - 🔄 **core 翻译进行中（2026-09-21 起）**，按 `Flutter迁移交接.md` §6.1 从底层往上：
-  - ✅ **`db/` 基座已译完**：`db/driver.dart`（TS 的 SqliteDriver 形状）+ `db/driver_sqlite3.dart`
-    （`package:sqlite3` 实现，transaction **嵌套走 SAVEPOINT**，与 RN 的 op-sqlite 适配同源）
-    + `db/schema.dart`（DDL **逐字搬**，v1/v2/seed 三个数组）+ `db/migrate.dart` + `db/json.dart`
-    + `db/settings.dart`；`lib/findr_core.dart` 已改成 barrel 导出。
-  - ⬜ **还剩 `db/taxonomy.ts`（174 行）+ `db/repository.ts`（648 行）** —— 之后才进 `search/`。
-  - 验收网：`test/db/` 4 个文件、**23 个新用例**（driver 6 / migrate 4 / settings 6 / json 7）
-    + 原有命门 3 个 ⇒ `dart test` **共 26 通过**；`dart analyze` 无问题；
-    **RN 侧 `pnpm check` 仍是 181 passed | 2 skipped**（基线未破）。
-  - 与 TS 的三处**有意偏差**（都写了原因）：① 接口多一个 `close()`（TS 关的是平台 raw 句柄）；
+  - ✅ **`db/` 那一层已全部译完**（外加 `types.dart` / `util/iso.dart` / `search/builder.dart`）：
+    `db/driver.dart` + `db/driver_sqlite3.dart`（`package:sqlite3` 实现，transaction
+    **嵌套走 SAVEPOINT**，与 RN 的 op-sqlite 适配同源）+ `db/schema.dart`（DDL **逐字搬**）
+    + `db/migrate.dart` + `db/json.dart` + `db/settings.dart` + `db/repository.dart`（648 行，
+    core 最大的单文件）+ `db/taxonomy.dart` + `types.dart` + `search/builder.dart`
+    + `parse/outputs.dart`（只有 P2Output 形状）；`lib/findr_core.dart` 是 barrel。
+    合计 **1476 行 TS ≈ 全局 10.6%**（13894 行口径）。
+  - ⬜ **下一步：`search/`** —— `builder` ✅；剩 `service`(193) · `inventory`(190) ·
+    `advise`(104) · `answer`(92) = **579 行**，45 个 TS 用例当验收网。
+    重点：**排序打分与 TS 版一致**。之后 `providers/ + parse/ + pipeline/`，最后才 UI。
+  - 验收网：`dart test` **77 通过**；`dart analyze` 无问题；
+    **RN 侧 `pnpm check` 仍是 181 passed | 2 skipped**（基线未破，每轮实测）。
+  - 与 TS 的**有意偏差**（都写了原因）：① 接口多一个 `close()`（TS 关的是平台 raw 句柄）；
     ② `parseJsonArray` 显式判 `is! List`（TS 会把对象当数组返回，下游才炸）；
-    ③ `currentSchemaVersion` 用 `int.tryParse` 失败当 0（TS 是 NaN ⇒ 什么都不迁只覆写版本号）。
-  - ⚠️ **`test/db/migrate_test.dart` 里造 v1 旧库与断言目前走原始 SQL**（repository 还没译）。
-    **repository 译完要把那几处换回仓储调用**，否则「仓储写入的列名与迁移脚本对得上」没人押。
+    ③ `currentSchemaVersion` 用 `int.tryParse` 失败当 0（TS 是 NaN ⇒ 什么都不迁只覆写版本号）；
+    ④ 枚举改 enum + `wire`（`CardStatus` 未知值**抛**、`SourceKind` 未知值**降级 text**）；
+    ⑤ 新增 `util/iso.dart` 的 `isoUtc()` —— **凡写进库的时间一律走它**。
+  - ⚠️ **`P2Output` 只有形状、没有校验**（TS 靠 zod `.catch()`，Dart 无等价物）⇒
+    手写校验待译 `parse/` 时补。**这是目前唯一一笔明确的债。**
+  - ✅ `migrate_test` 的旧债已还：造数据与断言改走仓储（与 TS 同源）。文件里仍有两处原始 SQL
+    （填「要删的列」、带 `needs_confirm = 1`），**那是被测事实本身，不是债**。
+  - ⚙️ **`isoUtc()` 这条必须记住**：JS 的 `Date.toISOString()` 恒为 UTC 的
+    `2026-03-01T00:00:00.000Z`；Dart 的 `DateTime.toIso8601String()` 对本地时间会输出
+    `+08:00` 形式。这些串同时是**列值 / 排序键 / 备份包字段**，形状一变全错。
+  - ⚙️ 译 SQL 时两个易漏点：**参数一律包成列表**（Dart 无变长参数）；**`join(' OR ')` 的
+    空格别丢**（丢了测试会精确抓到，别凭眼力）。
 - 第一个技术命门：**FTS5 + trigram 分词器在 Flutter 里能不能用** —— 必须实测，不通则方案重估。
   **验两层**：① 本地纯 Dart 测试（约 30 秒，验 SQL 语法）② 真机自检屏（验 APK 里那份 SQLite）。
 - ✅ **迁移前那件事已办完**：RN 版终态已于 2026-09-21 push 到远端 **`ceaa4f4`**

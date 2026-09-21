@@ -9,9 +9,9 @@
 //   - 触发器跟着重建，之后新插入的行也能被搜到；
 //   - PRAGMA foreign_keys 被恢复成 ON（v2 临时关过）。
 //
-// 与 TS 版的差别：那边用 repository 的 `insertCard` / `listCategories` 造数据与断言，
-// 而 repository 还没译。这里改用等价的原始 SQL —— **等 repository 译完要把这几处换回来**，
-// 否则「仓储写入的列名与迁移脚本对得上」这一层就没人押着了。
+// 造数据与断言都走仓储（`insertCard` / `getCard` / `listCategories` / `listLocations`），
+// 与 TS 同源 —— 这样「**仓储写入的列名与 v1 的 DDL 对得上**」这件事由这条路径本身押着。
+// 只有两处必须手写 SQL，各自注明了原因（都是「那一列已经从仓储的列清单里摘掉了」）。
 
 import 'package:findr_core/findr_core.dart';
 import 'package:test/test.dart';
@@ -34,24 +34,39 @@ SqliteDriver makeV1Db() {
     ('l1', NULL, '主卧', 0), ('l2', 'l1', '衣柜', 1)''',
   );
 
-  // c1：把「要删的列」全部填满，并带上所有 JSON 列 —— 迁移后这些废弃值应当整体消失，
-  //     而该留的（path / tags / images / confidence / 时间戳）必须一列不漏。
-  db.exec(
-    r'''INSERT INTO cards (id, status, needs_confirm, needs_organize, structure_type, category_id,
-       entity, path_ids, path_names, item_status, todo_status, procedure_status, steps,
-       related_person, due_at, cycle, transcript, desc_text, images, audio_path, vision_analyzed,
-       tags, confidence, ask, path_suggestion, path_matched, source, retry_count, next_retry_at,
-       last_error, created_at, updated_at)
-     VALUES ('c1','active',0,0,'item','cat_item',
-       '备用手电筒','["l1","l2"]','主卧/衣柜','in_stock',NULL,NULL,NULL,
-       '老王','2026-04-01','半年一次','备用手电筒放主卧衣柜顶层',
-       '备用手电筒放在主卧衣柜顶层收纳盒里。','["files/cards/202609/c1/01.webp"]',NULL,1,
-       '["应急","备用"]',0.86,NULL,NULL,1,'photo',0,NULL,
-       NULL,'2026-09-01T00:00:00.000Z','2026-09-01T00:00:00.000Z')''',
+  // c1 走仓储写入：仓储的列清单必须是 v1 表的子集，且 JSON 编码要能被 v1 的列直接存下
+  insertCard(
+    db,
+    makeCard(
+      id: 'c1',
+      entity: '备用手电筒',
+      categoryId: 'cat_item',
+      pathIds: <String>['l1', 'l2'],
+      pathNames: '主卧/衣柜',
+      tags: <String>['应急', '备用'],
+      transcript: '备用手电筒放主卧衣柜顶层',
+      desc: '备用手电筒放在主卧衣柜顶层收纳盒里。',
+      images: <String>['files/cards/202609/c1/01.webp'],
+      visionAnalyzed: true,
+      confidence: 0.86,
+      source: SourceKind.photo,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    ),
   );
 
-  // c2：故意带着 needs_confirm = 1 —— 该列已于第二十版退役（读写两侧都摘掉了），
-  //     让它继续留在老库里，是为了押住「带这个标志的老行照样读得出来、不报错」。
+  // 【手写 SQL 之一】把「要删的列」全部填满：迁移后这些值应当整体消失，而不是被搬到别处。
+  // 只能手写 —— 这些列已经从仓储的列清单里摘掉了，而这正是被测的事实本身。
+  db
+      .prepare(
+        "UPDATE cards SET structure_type = 'item', item_status = 'in_stock', todo_status = NULL, "
+        "procedure_status = NULL, related_person = '老王', due_at = '2026-04-01', "
+        "cycle = '半年一次' WHERE id = 'c1'",
+      )
+      .run();
+
+  // 【手写 SQL 之二】c2 要带 `needs_confirm = 1`，而这一列已从读写两侧退役。
+  // 让一条老行继续带着这个标志，是为了押住「老库里带这个标志的行照样读得出来、不报错」。
   db.exec(
     r'''INSERT INTO cards (id, status, needs_confirm, needs_organize, structure_type, category_id, entity,
        path_ids, path_names, item_status, todo_status, procedure_status, steps, related_person,
@@ -64,9 +79,7 @@ SqliteDriver makeV1Db() {
        '2026-09-02T00:00:00.000Z','2026-09-02T00:00:00.000Z')''',
   );
   db
-      .prepare(
-        "INSERT INTO aliases (id, kind, name, card_id) VALUES ('al1','entity','电筒','c1')",
-      )
+      .prepare("INSERT INTO aliases (id, kind, name, card_id) VALUES ('al1','entity','电筒','c1')")
       .run();
 
   // v1 的 schema_meta 由 migrate() 自己建，这里补上以模拟「已经跑到 v1」的库
@@ -104,48 +117,33 @@ void main() {
     );
 
     // 卡片本身：id / 分类 / 位置 / JSON 列 / 生命周期字段统统不能丢
-    final c1 = db.prepare('SELECT * FROM cards WHERE id = ?').get(['c1'])!;
-    expect(c1['entity'], '备用手电筒');
-    expect(c1['category_id'], 'cat_item');
-    expect(parseJsonArray<String>(c1['path_ids']), ['l1', 'l2']);
-    expect(c1['path_names'], '主卧/衣柜');
-    expect(parseJsonArray<String>(c1['tags']), ['应急', '备用']);
-    expect(parseJsonArray<String>(c1['images']), [
-      'files/cards/202609/c1/01.webp',
-    ]);
-    expect(c1['vision_analyzed'], 1);
-    expect(c1['confidence'] as double, closeTo(0.86, 1e-9));
-    expect(c1['created_at'], '2026-09-01T00:00:00.000Z');
+    final c1 = getCard(db, 'c1')!;
+    expect(c1.entity, '备用手电筒');
+    expect(c1.categoryId, 'cat_item');
+    expect(c1.pathIds, <String>['l1', 'l2']);
+    expect(c1.pathNames, '主卧/衣柜');
+    expect(c1.tags, <String>['应急', '备用']);
+    expect(c1.images, <String>['files/cards/202609/c1/01.webp']);
+    expect(c1.visionAnalyzed, isTrue);
+    expect(c1.confidence, closeTo(0.86, 1e-9));
+    expect(c1.createdAt, '2026-09-01T00:00:00.000Z');
 
-    final c2 = db.prepare('SELECT * FROM cards WHERE id = ?').get(['c2'])!;
-    expect(c2['status'], 'pending_transcript');
-    expect(c2['retry_count'], 2);
-    expect(c2['source'], 'voice');
-    expect(c2['audio_path'], 'files/cards/202609/c2/audio.m4a');
-    expect(parseJsonArray<Map<String, Object?>>(c2['steps']), [
-      {'text': '看看家里还缺什么', 'done': false},
-    ]);
+    final c2 = getCard(db, 'c2')!;
+    expect(c2.status, CardStatus.pendingTranscript);
+    expect(c2.retryCount, 2);
+    expect(c2.source, SourceKind.voice);
+    expect(c2.audioPath, 'files/cards/202609/c2/audio.m4a');
+    expect(c2.steps, <StepItem>[const StepItem(text: '看看家里还缺什么', done: false)]);
 
     // 分类、位置、别名：一张表都不能少
-    expect(
-      db.prepare('SELECT name FROM categories ORDER BY sort').all().map(
-        (r) => r['name'],
-      ),
-      ['物品存取', '待买补货'],
-    );
-    expect(
-      db.prepare('SELECT name FROM locations ORDER BY sort').all().map(
-        (r) => r['name'],
-      ),
-      ['主卧', '衣柜'],
-    );
-    expect(
-      db.prepare('SELECT name FROM aliases WHERE id = ?').get(['al1']),
-      {'name': '电筒'},
-    );
+    expect(listCategories(db).map((c) => c.name), <String>['物品存取', '待买补货']);
+    expect(listLocations(db).map((l) => l.name), <String>['主卧', '衣柜']);
+    expect(db.prepare('SELECT name FROM aliases WHERE id = ?').get(<Object?>['al1']), <String, Object?>{
+      'name': '电筒',
+    });
 
-    // v1 的预设分类已存在 ⇒ 不该因为 current!=0 就漏播种，也不该被重复插入
-    expect(db.prepare('SELECT COUNT(*) AS n FROM categories').get()!['n'], 2);
+    // v1 的预设分类已存在 ⇒ 不该因为 current != 0 就漏播种，也不该被重复插入
+    expect(listCategories(db), hasLength(2));
   });
 
   test('v1 → v2：FTS 索引被重建，触发器与 PRAGMA 都回到正常状态', () {
@@ -154,25 +152,36 @@ void main() {
     migrate(db);
 
     // 外键在 v2 里临时关过，必须被恢复
-    expect(db.prepare('PRAGMA foreign_keys').get(), {'foreign_keys': 1});
+    expect(db.prepare('PRAGMA foreign_keys').get()?['foreign_keys'], 1);
     expect(db.prepare('PRAGMA foreign_key_check').all(), isEmpty);
 
-    expect(
-      (objectsOf(db, 'trigger')..sort()),
-      ['cards_ad', 'cards_ai', 'cards_au'],
-    );
+    expect(objectsOf(db, 'trigger')..sort(), <String>['cards_ad', 'cards_ai', 'cards_au']);
 
     // 重建前的数据能被搜到（cards_fts 整表重扫过）
-    expect(_ftsIds(db, '手电筒'), ['c1']);
+    expect(_ftsIds(db, '手电筒'), <Object?>['c1']);
 
-    // 触发器确实接上了：新插入的行也进索引
-    db.exec(
-      r'''INSERT INTO cards (id, status, needs_confirm, needs_organize, category_id, entity,
-         transcript, desc_text, tags, created_at, updated_at)
-       VALUES ('c3','active',0,0,NULL,'护照','护照放书房抽屉','护照放在书房抽屉的文件袋里。',
-         '["证件"]','2026-09-03T00:00:00.000Z','2026-09-03T00:00:00.000Z')''',
+    // 触发器确实接上了：**走仓储**新插入的行也进索引
+    insertCard(
+      db,
+      makeCard(
+        id: 'c3',
+        entity: '护照',
+        transcript: '护照放书房抽屉',
+        desc: '护照放在书房抽屉的文件袋里。',
+        tags: <String>['证件'],
+      ),
     );
-    expect(_ftsIds(db, '书房抽屉'), ['c3']);
+    expect(_ftsIds(db, '书房抽屉'), <Object?>['c3']);
+  });
+
+  test('v1 → v2：卡片引用的分类被删掉后，卡片不消失、只是变成无分类', () {
+    final db = makeV1Db();
+    addTearDown(db.close);
+    migrate(db);
+    // 重建后外键关系仍然是活的：deleteCategory 依赖它把引用置空
+    expect(deleteCategory(db, 'cat_item', DateTime.parse('2026-09-18T00:00:00.000Z')), 1);
+    expect(getCard(db, 'c1')!.entity, '备用手电筒');
+    expect(getCard(db, 'c1')!.categoryId, isNull);
   });
 
   test('全新安装：一次跑到 v2，表结构直接是最终形态且预设分类已播种', () {
@@ -181,13 +190,11 @@ void main() {
 
     expect(currentSchemaVersion(db), schemaVersion);
     expect(
-      db.prepare('SELECT name FROM categories ORDER BY sort').all().map(
-        (r) => r['name'],
-      ),
-      ['物品存取', '待买补货', '流程备忘'],
+      listCategories(db).map((c) => c.name),
+      <String>['物品存取', '待买补货', '流程备忘'],
     );
-    expect(db.prepare('SELECT * FROM locations').all(), isEmpty);
     // 新库不该有「先建 v1 再重建」留下的痕迹
+    expect(listLocations(db), isEmpty);
     expect(
       db
           .prepare(
@@ -208,17 +215,17 @@ void main() {
     migrate(db);
 
     expect(currentSchemaVersion(db), schemaVersion);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM categories').get()!['n'], 2);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM cards').get()!['n'], 2);
+    expect(listCategories(db), hasLength(2));
+    expect(db.prepare('SELECT COUNT(*) AS n FROM cards').get()?['n'], 2);
   });
 }
 
-/// 用 FTS5 检索拿卡片 id（走外部内容表的 rowid 关联，与 search/builder.ts 同一写法）。
+/// 用 FTS5 检索拿卡片 id（走外部内容表的 rowid 关联，与 `search/builder.dart` 同一写法）。
 List<Object?> _ftsIds(SqliteDriver db, String query) => db
     .prepare(
       'SELECT c.id FROM cards_fts JOIN cards c ON c.rowid = cards_fts.rowid '
       'WHERE cards_fts MATCH ?',
     )
-    .all([query])
+    .all(<Object?>[query])
     .map((r) => r['id'])
     .toList();

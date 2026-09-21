@@ -324,8 +324,7 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 1. ~~`flutter create` + 定状态管理 + 配 `sqlite3_flutter_libs`~~ ✅ **骨架已建**（2026-09-21）：
    `apps/flutter/`（Flutter 3.47.5，`--platforms=android`，applicationId `com.findr.app.dev`）
    + `packages/findr_core/`（纯 Dart 包，依赖 `sqlite3`）。`dart test` 与 `flutter analyze` 均绿。
-2. **译 `db/` 那一层**（schema + 迁移 + repository），**同步把对应的 Dart 测试写出来**
-   —— 🔄 **进行中**（2026-09-21 起）：
+2. ✅ **`db/` 那一层已译完**（2026-09-21，分两轮）：
 
    | 文件 | 行数 | 状态 |
    |---|---|---|
@@ -334,12 +333,26 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
    | `schema.ts` | 240 | ✅ `db/schema.dart`（DDL **逐字搬**，v1/v2/seed 三个数组）|
    | `migrate.ts` | 78 | ✅ `db/migrate.dart` |
    | `settings.ts` | 43 | ✅ `db/settings.dart` |
-   | `taxonomy.ts` | 174 | ⬜ 待译 |
-   | `repository.ts` | 648 | ⬜ 待译（最大的一块）|
+   | `types.ts` | 81 | ✅ `types.dart`（枚举用 enum + `wire`，落库/进包走 `wire`）|
+   | `repository.ts` | 648 | ✅ `db/repository.dart`（**core 里最大的单文件**）|
+   | `taxonomy.ts` | 174 | ✅ `db/taxonomy.dart` |
+   | `search/builder.ts` | 186 | ✅ `search/builder.dart`（repository 靠它的 `escapeLike`，顺带译掉）|
+   | ——（**新增**） | —— | ✅ `util/iso.dart` |
 
-   基座的验收网已就位：`test/db/` 下 4 个文件、**23 个新用例全绿**
-   （driver 6 / migrate 4 / settings 6 / json 7），加上原有命门 3 个 ⇒ `dart test` 共 **26 通过**。
-3. **译 `search/`** —— 重点验证：中文检索能命中、**排序打分结果与 TS 版一致**
+   **验收网**：`dart test` **77 通过**（含原命门 3 个），`dart analyze` 无问题；
+   **RN 侧 `pnpm check` 仍 181 passed | 2 skipped**（基线未破）。
+
+   ⚠️ **`util/iso.dart` 是 TS 侧没有的文件，但不是自由发挥**：JS 的 `Date.toISOString()`
+   恒产出 UTC 的 `2026-03-01T00:00:00.000Z`，而 Dart 的 `DateTime.toIso8601String()`
+   对本地时间会输出 `+08:00` 偏移形式。这些字符串同时是**列值、排序键、备份包字段**，
+   形状一变就全错 ⇒ **凡是要写进库的时间一律走 `isoUtc()`**。
+
+   ⚠️ **`P2Output`（`parse/outputs.dart`）目前只有形状、没有校验**：TS 用 zod 的 `.catch()`
+   兜底，Dart 无等价物（见 §4.3）⇒ **手写校验留到译 `parse/` 时补**，
+   在那之前它只是一份「已经可信的 P2 输出长什么样」。
+
+3. 🔄 **译 `search/`**（`builder` ✅ / `service` · `inventory` · `advise` · `answer` 待译）
+   —— 重点验证：中文检索能命中、**排序打分结果与 TS 版一致**
 4. 译 `providers/` + `parse/` + `pipeline/`，跑通「拍照/打字 → 入库 → 检索」最小闭环
 5. **最后才动 UI**（而且按新设计写，别照抄 RN 的界面）
 
@@ -568,14 +581,27 @@ Flutter 版也一样，用户的数据在库里）。
 - ✅ Flutter SDK 3.47.5 / Dart 3.13.4 装好
 - ✅ 骨架建好（`apps/flutter/` + `packages/findr_core/`，两边均绿）
 - ✅ **命门第 1 层通过**：FTS5 + trigram 命中中文（`dart test` 可复现）
+- ✅ **`db/` 那一层全部译完**（§6.1 第 2 项的表）：`types` + `util/iso` + `db/` 七件套
+  + `search/builder`，合计 **1476 行 TS** ⇒ **全局约 10.6%**（13894 行口径；
+  `prompts/templates.ts` 与全部 SQL 可逐字搬，按「需要动脑的行数」算比这个高）。
+  `dart test` **77 通过**、`dart analyze` 干净、`pnpm check` 181 passed | 2 skipped（基线未破）。
 
-**下一步就一件事：**
+**下一步：**
 
-1. ⬜ **命门第 2 层** —— 真机自检屏验「打进 APK 的那份 SQLite」也带 FTS5（见 6.0）
+1. 🔄 **译 `search/`** —— `builder` 已译；剩下 `service`(193) · `inventory`(190) ·
+   `advise`(104) · `answer`(92)，合计 **579 行**。重点验证「**排序打分与 TS 版一致**」
+   （`search.test.ts` 9 + `search-relax.test.ts` 7 + `inventory-rank.test.ts` 6 +
+   `advise.test.ts` 14 + `answer.test.ts` 9 = **45 个用例当验收网**）。
+2. ⬜ **命门第 2 层** —— 真机自检屏验「打进 APK 的那份 SQLite」也带 FTS5（见 6.0）。
+   与翻译**互不阻塞**：它要等 CI 出包，翻译可以先往下走。
 
-之后按 6.1 节顺序走：译 `db/`（同步写 Dart 测试）→ 译 `search/` →
-译 `providers/ + parse/ + pipeline/` 跑通最小闭环 → **最后才动 UI，而且按新设计写**。
+之后按 6.1 节顺序走：译 `providers/ + parse/ + pipeline/` 跑通最小闭环 →
+**最后才动 UI，而且按新设计写**。
 
-⚠️ 提醒：`packages/findr_core/lib/findr_core.dart` 目前是**空壳**（只有说明注释），
-`db/ search/ ...` 这些子目录**还没建** —— 那是接下来要一块一块填的。
+⚠️ 一笔**已知的债**：`P2Output`（`parse/outputs.dart`）只有数据形状、**没有校验** ——
+TS 那边靠 zod 的 `.catch()` 兜底，Dart 无等价物（§4.3）⇒ **手写校验待译 `parse/` 时补**。
+
+（`migrate_test` 里造旧库用的两处原始 SQL **不是债**：一处在填「要删的列」、一处要带
+`needs_confirm = 1` —— 那些列已从仓储的列清单里摘掉，手写 SQL 正是被测的事实本身。
+其余造数据与断言都已走仓储，与 TS 同源。）
 
