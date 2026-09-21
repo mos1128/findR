@@ -30,19 +30,24 @@
 | 验收网 | `dart test` **291 通过** · `flutter test` **72 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
 | app 依赖 | `findr_core` · `path_provider` · `flutter_riverpod` · `http` · `http_parser` · `flutter_secure_storage` · `share_plus` · `file_picker` · `package_info_plus` · **`image`**（压缩到 WebP）· **`image_picker`**（拍照/相册）· **`record`**（录音，m4a/AAC）· **`audioplayers`**（回放）· **`connectivity_plus`**（无网提示）|
-| CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）。`checks` 已实测全绿；`apk` **已出包 18.2MB 并发布 `flutter-dev-latest`**，且**已断言过** APK 里 `lib/arm64-v8a/libsqlite3.so` 含 `fts5`/`trigram` |
+| CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）。`checks` 已实测全绿；`apk` **已出包并发布 `flutter-dev-latest`**，且每次都对**产物本身**断言 `lib/arm64-v8a/libsqlite3.so` 含 `fts5`/`trigram`（第九轮实测：**22.1MB**；`fts5` 出现 **38** 次、`trigram` **1** 次）|
 | **界面本身** | ✅ **已全部写完**（21 个文件）：`theme/tokens` · `ui/{kit,media_view,card_row,audio_player}` · `state/memory_stream` · `capture/{text_file,composer,image_compress,photo_picker,recorder,submit}` · `platform/network` · `screens/{memory_stream,card_detail}` + `screens/settings/`（5 屏）。**没照抄 RN**（§6.3）。**拍照 / 连拍 / 相册 / 长按录音 / 音频回放全部接上**，`flutter test` 从 8 涨到 **72** |
 
 **几条 git 现状（2026-09-21 实测，别重复排查）**：
 
-- 远端仓库 `mos1128/findR` **可达**；**tag 共 17 个**，最新 `apk-m1-fix12`。
+- 远端仓库 `mos1128/findR` **可达**；**tag 本地 17 / 远端 18** —— 多出来的那个
+  `flutter-dev-latest` 是 CI 发布的出包标签，**只存在于远端**（`softprops/action-gh-release` 自己建的）。
+  RN 侧最新 `apk-m1-fix12`；Flutter 侧出包统一落在 `flutter-dev-latest`（滚动的，每次覆盖）。
 - ⚠️ **沙箱里 `.git/refs/remotes/origin/` 建不起来** —— `git fetch origin` 会报
   `new branch main -> origin/main`、`FETCH_HEAD` 也确实写了，可 `refs/remotes/origin/main`
   **就是不落盘**；连 `git update-ref` 都返回 0 却无效，手动 `mkdir` 出的目录会被回滚。
   **不影响 push 与打 tag**（`refs/heads` / `refs/tags` 可正常写入），
   **核对远端直接用 `git ls-remote origin main`**，不需要那个引用。
   真要修就在**用户自己的终端**里跑一次 `git fetch origin`，一条命令的事。
-- 桌面 APK：`findr-apk-m1-fix12.apk`（**桌面上还有 fix11，建议删掉免得装错**）。
+- 桌面 APK（2026-09-22 第九轮出包，**Flutter 版**）：**`findr-flutter-dev-20260922.apk`**，
+  22,073,793 字节，sha256 `ce62417c31f50da8efd6a402470babb378ac5e84ba5723ac8024c15e2242cf30`。
+  已核对：包名 `com.findr.app.dev` · `android:label="Findr"` · **v2 签名**（debug 证书 ⇒ 可覆盖安装）。
+  ⚠️ **RN 那些 `findr-apk-m1-fix*.apk` 已不在桌面上**，别再提「删掉 fix11 免得装错」。
 
 ---
 
@@ -570,9 +575,9 @@ Flutter 这边**从 `platform/` 开始接**，因为那部分是**与界面设�
 | `ui/` 卡片行 | `ui/card_row.dart`（**新增**）| ✅ 角标**只画不算** —— 判定全部走 core 的 `cardBadges` / `badgeLabel` / `BadgeContext`（单一真相源）|
 | `state/`（RN Zustand）| `state/memory_stream.dart`（**新增**）| ✅ **Riverpod AsyncNotifier**：记忆流 + 检索视图（流/结果/答案三态）+ 分类筛选 + `drainQueue`。`search()` 特意不叫 `runSearch`（避开与 runtime 同名）|
 | `capture/`（RN 文件录入）| `capture/text_file.dart`（**新增**）| ✅ 文本文件摄取。**超限不静默截断**（8,000 字上限，超了连实际字数一起退回）；BOM 剥掉；扩展名白名单 |
-| `capture/`（RN 录入坞）| `capture/composer.dart`（**新增**）| ✅ 底部录入坞：文字 + 文本文件。⚠️ **相机 / 相册 / 长按录音尚未接**（见下）|
+| `capture/`（RN 录入坞）| `capture/composer.dart`（**新增**）| ✅ 底部录入坞：文字 + 文本文件 + **拍照 / 连拍 / 相册 / 长按录音**（媒体那几块的实现见下面第九轮那张表）|
 | `app/index.tsx`（记忆流主页）| `screens/memory_stream_screen.dart`（**新增**）| ✅ 新首页：搜索框 + 分类 Chip 条 + 结果头 + **AI 答案卡（挂在列表下方，不盖列表）**；回前台自动 `drainQueue` |
-| `app/card/[id].tsx`| `screens/card_detail_screen.dart`（**新增**）| ✅ 实体字段编辑、位置选择、重排/重析/重生成/推进、删除。⚠️ **音频播放入口只占位未接线**（见下）|
+| `app/card/[id].tsx`| `screens/card_detail_screen.dart`（**新增**）| ✅ 实体字段编辑、位置选择、重排/重析/重生成/推进、删除。**音频回放走 `ui/audio_player.dart`**（RN 那边只是把路径印出来）|
 | `app/settings/*`（5 屏）| `screens/settings/*`（**5 个新文件**）| ✅ `provider`（双槽位 llm/asr + 探测，**区分「不支持」与「没测出来」**）· `settings`（7 面板）· `categories`（增删改排序）· `locations`（**改名必调 `refreshPathNames`**）· `backup`（**红条「当前版本不加密」+ 导出确认框两道闸**）|
 | `main.tsx` | `main.dart`（**重写**）| ✅ `await AppPaths.init()` 后 `runApp(ProviderScope(...))`；`home` 从自检屏**换成记忆流主页**；`themeMode: system` |
 | —— | `test/text_file_test.dart` · `test/memory_stream_test.dart`（**新增 29 用例**）| ✅ 文本摄取边界 21 条 + 界面行为 8 条（空态/打字落库/空白不落库/字面兜底/搜不到/回流体/分类筛选/可滚动）|
@@ -629,6 +634,15 @@ RN 的 `CameraModal.tsx` 是 `expo-camera` 的自绘取景器。这里改用 `im
 **权限一条都没自己写** —— `RECORD_AUDIO` 由 `record_android` 的清单合并进来，
 `ACCESS_NETWORK_STATE` 由 `connectivity_plus` 合并进来。**刻意不声明 `CAMERA`**：
 一旦声明了，`image_picker` 反而会被要求先拿到该权限才能用。
+
+⚠️ **包体积代价（第九轮实测）**：APK 从 18.2MB 涨到 **22.1MB**（+3.9MB）。
+解压后的大头：`lib/arm64-v8a/libflutter.so` **11.7MB**（引擎，版本固定就不变）+
+`lib/arm64-v8a/libapp.so` **7.7MB**（我们自己的 Dart 代码，**会随后续功能继续涨**）+
+`lib/arm64-v8a/libsqlite3.so` 1.7MB。涨的 3.9MB = 新依赖的 Dart 代码进 `libapp.so`
++ 它们的原生 / AndroidX 代码进 `classes.dex`。
+包里另有 `lib/armeabi-v7a/libdartjni.so`(81KB) 与 `lib/x86_64/libdartjni.so`(117KB)
+两个**非 arm64 残留** —— 它们来自 **`path_provider_android`**（第八轮就有的依赖，
+**不是本轮新增**），合计约 200KB，**不值得为它加 `abiFilters`**。
 
 **平台层至此写完（7 个模块，约 1,000 行）** ⇒ UI 之前再无「接线要补」的欠账。
 三条容易写错的语义，写在代码注释里，这里再点一遍：
