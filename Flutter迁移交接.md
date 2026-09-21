@@ -242,21 +242,31 @@
 
 ## 8. ⚠️ 迁移前必须先做的一件事（RN 版终态还没保住）
 
-**RN 版本还有 3 个提交没 push**（本地领先 `origin/main`，2026-09-21 实测）：
+**RN 版本还有 4 个提交没 push**（本地领先 `origin/main`，2026-09-21 实测）：
 
 ```
+6a3ccbf docs: 方向变更 —— 迁移 Flutter（新建 Flutter迁移交接.md + 统一十二条铁律 + 四处作废标记）
 e5cc959 memory: 第二十版落地记录 + 桌面两条路口径更正 + 全平台技术栈结论
 2eec47f 第二十版：删掉「待确认」整条功能
 3ab65b4 第十九版：删掉「低置信确认阈值」这个可配项（阈值改为 core 常量）
 ```
 
-**先把这 3 个 push 掉**，把 RN 版终态固定到远端 —— 它是迁移期的**参照实现**，也是**回滚路**。
+（远端 `origin/main` 停在 `3aead1d`，上面 4 个**只有本地有**。）
+
+**先把这 4 个 push 掉**，把 RN 版终态固定到远端 —— 它是迁移期的**参照实现**，也是**回滚路**。
 ⚠️ **push 前按铁律 8 先问用户"还有没有要改的"**，别自动推。
 
-**另外两条 git 现状**：
+**几条 git 现状（2026-09-21 实测，别重复排查）**：
 
-- `.git/refs/remotes/origin/` 目录缺失，导致 `git status` 显示 `[gone]` —— **`git fetch origin` 即可修**
-- 远端仓库 `mos1128/findR` **仍在、可达**（`git ls-remote` 通），最新 tag 到 `apk-m1-fix12`
+- **`.git/refs/remotes/origin/` 缺失** ⇒ `git status` 显示 `[gone]`、
+  `git log origin/main..HEAD` 报 `unknown revision`。
+  **这不影响 push 与出包** —— 已实测确认 **`refs/heads` 与 `refs/tags` 都能正常写入**
+  （打 tag 是出包链路的关键，可放心；push 走 refspec，不依赖这个引用）。
+- ⚠️ **但别在这个引用上耗时间**：**当前沙箱环境里它建不起来** —— `git fetch origin` 会报
+  `new branch main -> origin/main`、`FETCH_HEAD` 也确实写了，可 `.git/refs/remotes/origin/main`
+  就是不落盘；连 `git update-ref` 都返回 0 却无效，手动 `mkdir` 出的目录会被回滚。
+  **要修就在用户自己的终端里跑一次 `git fetch origin`**，一条命令的事。
+- 远端仓库 `mos1128/findR` **仍在、可达**（`git ls-remote` 通）；**tag 共 17 个**，最新到 `apk-m1-fix12`。
 - 桌面 APK：`findr-apk-m1-fix12.apk`（**桌面上还有 fix11，建议删掉免得装错**）
 
 ---

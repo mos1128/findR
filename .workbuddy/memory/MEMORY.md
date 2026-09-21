@@ -15,6 +15,8 @@
   **可直接逐字搬**：`prompts/templates.ts` + 所有 SQL 语句。**181 个用例可 1:1 译成 Dart 当验收网。**
 - 第一个技术命门：**FTS5 + trigram 分词器在 Flutter 里能不能用**（必须先实测，不通则方案重估）
 - 第一个障碍：**本机没装 Flutter SDK**（2026-09-21 实测 PATH 与 scoop 里都没有）
+- **⚠️ 迁移开工前先 push**：RN 版还有 **4 个提交只在本地**（远端 `origin/main` 停在 `3aead1d`）——
+  它是迁移期的**参照实现 + 回滚路**。**push 前按铁律 8 问用户。**
 
 ## 角色与姿态
 - 用户是这个 App 的**真实使用者**（在真机上天天用）。他的反馈是首手的、常带截图，
@@ -158,6 +160,12 @@
 - **同一文件的多个 Edit 不要并行发**，会丢写 —— **非重叠的改动也会丢**（2026-09-19 踩了三次，
   最后一次是类注释被同批次的代码改动覆盖）。**同文件一律串行，改完 grep 核对。**
 - 多行提交信息用 `git commit -F <文件>`，别用 `-m` 传多行
+- **🧪 沙箱里建不了 `refs/remotes/`**（2026-09-21 实测，别重复排查）：`git fetch origin` 会报
+  `new branch main -> origin/main`、`FETCH_HEAD` 也确实写了，但 `.git/refs/remotes/origin/main`
+  **就是不落盘**；`git update-ref` 返回 0 也无效，手动 `mkdir` 出来的目录**会被回滚**。
+  ⇒ `git status` 永远显示 `[gone]`。**要修就在用户自己的终端跑一次 `git fetch origin`。**
+  **但 `refs/heads` 与 `refs/tags` 都能正常写入**（已用临时 tag 实测）⇒
+  **出包链路（打 tag → push → CI）完全不受影响**，可以放心。
 - `adb` 不在 PATH：`C:\Users\mos\AppData\Local\Android\platform-tools\adb.exe`
 - **自检屏最后一项「crypto.randomUUID 不可用（已走兜底）」是预期偏差，别再排查** ——
   那项测 `globalThis.crypto`，而它**在 App 里从没被赋过值**。卡片 id 其实走 `expo-crypto` 真 UUID
