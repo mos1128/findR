@@ -23,7 +23,6 @@ export interface StepItem {
 export interface MemoryCard {
   id: string;
   status: CardStatus;
-  needsConfirm: boolean;
   needsOrganize: boolean;
   categoryId: string | null;
   entity: string | null;

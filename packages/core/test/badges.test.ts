@@ -26,8 +26,7 @@ test('pending 的文案是「待解析」而不是「解析中」', () => {
   expect(badgeLabel('processing', CTX)).toBe('待解析');
 });
 
-test('待确认与待整理各自独立', () => {
-  expect(cardBadges(makeCard({ id: 'a', needsConfirm: true }))).toEqual(['needs-confirm']);
+test('待整理角标独立于其他状态', () => {
   expect(cardBadges(makeCard({ id: 'b', needsOrganize: true }))).toEqual(['needs-organize']);
 });
 
@@ -73,6 +72,6 @@ test('重试角标只在仍处于待处理时出现', () => {
 
 test('需要用户动手的卡片会被标出来', () => {
   expect(cardNeedsAttention(makeCard({ id: 'a', status: 'pending' }))).toBe(true);
-  expect(cardNeedsAttention(makeCard({ id: 'b', needsConfirm: true }))).toBe(true);
+  expect(cardNeedsAttention(makeCard({ id: 'b', needsOrganize: true }))).toBe(true);
   expect(cardNeedsAttention(makeCard({ id: 'c', status: 'active' }))).toBe(false);
 });

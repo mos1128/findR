@@ -31,7 +31,7 @@ function applyUnderstanding(
   result: Extract<UnderstandingResult, { kind: 'parsed' }>,
   now: Date,
 ): void {
-  applyParseResult(deps.db, cardId, result.fields, result.needsConfirm, now, deps.idGen);
+  applyParseResult(deps.db, cardId, result.fields, now, deps.idGen);
   if (result.usedImages) setVisionAnalyzed(deps.db, cardId, true, now);
 }
 

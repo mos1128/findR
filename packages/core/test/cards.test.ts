@@ -3,7 +3,6 @@ import {
   listCards,
   countCards,
   updateCardFields,
-  clearNeedsConfirm,
   clearNeedsOrganize,
   setCardStatus,
   setVisionAnalyzed,
@@ -95,12 +94,9 @@ test('卡片只保留分类这一个组织维度（结构类型与业务状态�
   }
 });
 
-test('角标标志的清除动作', () => {
+test('待整理标志的清除动作', () => {
   const db = makeDb();
-  insertCard(db, makeCard({ id: 'c1', needsConfirm: true, needsOrganize: true }));
-  clearNeedsConfirm(db, 'c1', NOW);
-  expect(getCard(db, 'c1')!.needsConfirm).toBe(false);
-  expect(getCard(db, 'c1')!.needsOrganize).toBe(true);
+  insertCard(db, makeCard({ id: 'c1', needsOrganize: true }));
   clearNeedsOrganize(db, 'c1', NOW);
   expect(getCard(db, 'c1')!.needsOrganize).toBe(false);
 });

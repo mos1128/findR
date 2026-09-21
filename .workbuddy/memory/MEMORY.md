@@ -60,6 +60,28 @@
    被已触发的构建白白占掉一轮等待。**改完 → 汇报 → 等确认 → 才 push/tag。**
    这条同时适用于「改完顺手就 push」的肌肉记忆，以及把 tag 当自动收尾动作的做法。
 
+## 技术栈决策（2026-09-21 已定，别再重新调研）
+- **不换栈**（Flutter / KMP 都评估过）。四条理由见 `.workbuddy/memory/2026-09-21.md`：
+  ① 「guoapp 体积小」是错觉（对方仓库 1.5M 是纯源码，我们刨掉 node_modules + `.workbuddy`
+  后源码只有 2.9M）；② guoapp 的 iOS **自己 README 承认没做过 Xcode 构建、没有已签名 IPA**；
+  ③ 出包绕不开原生工具链 Gradle/Xcode/NDK，Flutter 的 CI 反而给 45 分钟；④ 迁移 = core +
+  界面 + 测试全部重写，换来的是「不比现在快、不比现在小、iOS 门槛一模一样」。
+- **iOS 的唯一门是 Mac**，三条绕法：**EAS Build（首选，我们栈自带，免费 15 次 iOS/月，
+  零改代码）** / GitHub Actions macos runner（分钟 10× 扣） / 租云 Mac。
+- **鸿蒙走卓易通**（华为 iSulad 容器沙盒，能跑 APK）⇒ **安卓包已覆盖鸿蒙，不为鸿蒙做任何改动**。
+- APK 瘦身：`expo-camera` 默认打包 **ML Kit 条码扫描（~5MB+，我们没用）**，
+  官方开关 `expo.camera.barcode-scanner-enabled=false`，但**必须用 config plugin 写**
+  （CI 是 `prebuild --clean`，手改 `android/gradle.properties` 会被冲掉）。
+  **⚠️ 用户 2026-09-21 明确「先不改」，别自作主张去加。**
+- **全平台（Win/macOS/Linux 也想做）**：结论同「不换栈」。真能六端一套代码的只有 **Flutter** 和
+  **KMP+Compose**（.NET MAUI 无 Linux；RN 桌面无 Linux；Tauri 三端 WebView 不一致）。
+  但我们**不需要一个栈管六端** —— core 零原生依赖、**已在 better-sqlite3（桌面）上跑通过**，
+  所以路线是**手机留 RN 一行不动 + 桌面加 Electron 壳**（主进程 Node.js ⇒ core 零改动；
+  渲染层 Chromium ⇒ 上一轮那份 react-native-web 平台层升级成三端产线代码）。
+  Apple 这道门两条路都躲不开：**iOS 和 macOS 构建都要 macOS 机器**，macOS 分发还要签名公证。
+  **待用户拍板**：桌面版是「手机界面拉大」还是「专门一版桌面 UI」——这决定成本量级。
+  节奏建议：手机双端先做完整 → 桌面按需（可先做纯读版）→ Linux 最后。**别一次上六端。**
+
 ## 环境坑
 - bash 里先 `export PATH="/usr/bin:/bin:$PATH"`，否则 `ls`/`find`/`head` 会 command not found
 - **`git push` 超过 1 分钟毫无输出 ⇒ 凭据问题**，别干等。

@@ -112,8 +112,9 @@ test('v1 → v2：列真的没了，该留的数据一列不漏', () => {
   expect(c1.createdAt).toBe('2026-09-01T00:00:00.000Z');
 
   const c2 = getCard(db, 'c2')!;
+  // 上面那条 INSERT 故意带着 needs_confirm = 1：该列已于第二十版退役（读写两侧都摘掉了），
+  // 让它继续留在 INSERT 里，是为了押住「老库里带这个标志的行照样读得出来、不报错」。
   expect(c2.status).toBe('pending_transcript');
-  expect(c2.needsConfirm).toBe(true);
   expect(c2.retryCount).toBe(2);
   expect(c2.source).toBe('voice');
   expect(c2.audioPath).toBe('files/cards/202609/c2/audio.m4a');

@@ -44,7 +44,6 @@ test.skipIf(!live)('真实网关冒烟：P1 录入 + P2 检索', async () => {
         pathMatched: card.pathMatched,
         tags: card.tags,
         confidence: card.confidence,
-        needsConfirm: card.needsConfirm,
         needsOrganize: card.needsOrganize,
         lastError: card.lastError,
         desc: card.desc,

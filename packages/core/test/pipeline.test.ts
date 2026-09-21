@@ -16,6 +16,7 @@ import type {
   ProviderConfig,
   TranscribeRequest,
 } from '../src/providers/types';
+import { cardBadges } from '../src/cards/badges';
 import { advanceCard, createDraft, ingestCapture, type AdvanceDeps } from '../src/pipeline/capture';
 import { runQueue, retryAllTranscriptions, __resetQueueLock } from '../src/pipeline/queue';
 import { regenerateDesc, reanalyzeCard, reorganizeCard, submitTranscript } from '../src/pipeline/edit';
@@ -213,7 +214,7 @@ test('带图成功识别后 vision_analyzed 置 1，角标随之消失', async (
   expect(getCard(db, 'c1')!.visionAnalyzed).toBe(true);
 });
 
-test('图片分析关闭且无文字：不调模型，直接落为纯图片卡片并强制确认', async () => {
+test('图片分析关闭且无文字：不调模型，直接落为纯图片卡片', async () => {
   const db = makeDb();
   createDraft(
     { db },
@@ -229,7 +230,9 @@ test('图片分析关闭且无文字：不调模型，直接落为纯图片卡�
   const card = getCard(db, 'c1')!;
   expect(card.status).toBe('active');
   expect(card.desc).toBeNull();
-  expect(card.needsConfirm).toBe(true);
+  expect(card.needsOrganize).toBe(false);
+  // 唯一该带的是「未分析」（有图但没送过模型）；「待确认」已于第二十版删掉
+  expect(cardBadges(card)).toEqual(['unanalyzed']);
   expect(card.visionAnalyzed).toBe(false);
   expect(card.images).toHaveLength(1);
 });
@@ -249,29 +252,37 @@ test('单卡图片超过上限时只送前 N 张', async () => {
 // 解析结果落库
 // ─────────────────────────────────────────────────────────────
 
-test('低置信度、分类选不出、本次新建了位置层级 —— 三者才触发待确认', async () => {
+test('解析成功即入库：低置信 / 分类选不出 / 新建了位置层级，都不再打扰用户', async () => {
   const db = makeDb();
 
+  // 第二十版删掉了「待确认」整条功能，而这三条正是它当初的触发条件 —— 现在一律照常入库、不挂角标。
   createDraft({ db }, { source: 'text', text: 'a' }, { id: 'low' });
   await advanceCard(deps({ db, llm: new FakeLLMAdapter([p1({ confidence: 0.3 })]) }), 'low');
-  expect(getCard(db, 'low')!.needsConfirm).toBe(true);
+  const low = getCard(db, 'low')!;
+  expect(low.status).toBe('active');
+  expect(cardBadges(low)).toEqual([]);
 
   createDraft({ db }, { source: 'text', text: 'b' }, { id: 'nocat' });
   await advanceCard(deps({ db, llm: new FakeLLMAdapter([p1({ category: null })]) }), 'nocat');
-  expect(getCard(db, 'nocat')!.needsConfirm).toBe(true);
+  const nocat = getCard(db, 'nocat')!;
+  expect(nocat.categoryId).toBeNull();
+  expect(cardBadges(nocat)).toEqual([]);
 
-  // 位置树里本来没有「主卧/衣柜顶层」⇒ 解析时新建了层级 ⇒ 要用户过一眼
+  // 位置树里本来没有「主卧/衣柜顶层」⇒ 解析时新建了层级：树照常长出来，卡片不挂角标
   createDraft({ db }, { source: 'text', text: 'c' }, { id: 'newpath' });
   const p1NewPath = p1({ path: ['主卧', '衣柜顶层'], path_matched: false });
   await advanceCard(deps({ db, llm: new FakeLLMAdapter([p1NewPath]) }), 'newpath');
-  expect(getCard(db, 'newpath')!.needsConfirm).toBe(true);
+  const newpath = getCard(db, 'newpath')!;
+  expect(newpath.pathNames).toBe('主卧/衣柜顶层');
+  expect(newpath.pathMatched).toBe(false);
+  expect(cardBadges(newpath)).toEqual([]);
 
-  // 命中已有位置、分类选得出、置信度够 ⇒ 不打扰
+  // 命中已有位置：行为不变
   upsertLocation(db, { id: 'l_master', parentId: null, name: '主卧', sort: 0 });
   createDraft({ db }, { source: 'text', text: 'd' }, { id: 'hit' });
   const p1Hit = p1({ path: ['主卧'], path_matched: true });
   await advanceCard(deps({ db, llm: new FakeLLMAdapter([p1Hit]) }), 'hit');
-  expect(getCard(db, 'hit')!.needsConfirm).toBe(false);
+  expect(getCard(db, 'hit')!.pathMatched).toBe(true);
 });
 
 test('内容里没有位置时：path 保持 null，也不去追问位置（改由 ask 决定）', async () => {
@@ -480,7 +491,6 @@ test('补分析图片：重跑视觉理解并清掉未分析角标', async () =>
     makeCard({
       id: 'c1',
       status: 'active',
-      needsConfirm: false,
       images: ['files/cards/202603/c1/01.webp'],
       visionAnalyzed: false,
       transcript: null,
@@ -578,7 +588,7 @@ test('ingestCapture 一次走完落盘后的全流程', async () => {
 // 位置树增量维护（问题：不该要求用户先去手工建位置）
 // ─────────────────────────────────────────────────────────────
 
-test('解析出的位置自动建树：新建了层级就要用户确认一次', async () => {
+test('解析出的位置自动建树，且不再挂角标打扰用户', async () => {
   const db = makeDb();
   const llm = new FakeLLMAdapter([p1({ path: ['主卧', '衣柜'], confidence: 0.9 })]);
   const card = await ingestCapture(deps({ db, llm }), {
@@ -588,11 +598,11 @@ test('解析出的位置自动建树：新建了层级就要用户确认一次',
 
   expect(card.pathNames).toBe('主卧/衣柜');
   expect(card.pathMatched).toBe(false); // 有新建 ⇒ 没命中已有树
-  expect(card.needsConfirm).toBe(true); // 新位置对不对，让用户过一眼
+  expect(cardBadges(card)).toEqual([]); // 位置不对就直接在详情页改，不靠角标提醒
   expect(listLocations(db).map((l) => l.name).sort()).toEqual(['主卧', '衣柜']);
 });
 
-test('位置已存在时复用，不再要求用户确认', async () => {
+test('位置已存在时复用，不会重复建树', async () => {
   const db = makeDb();
   // 上次已经长出来的树
   ensurePath(db, ['主卧', '衣柜']);
@@ -604,6 +614,5 @@ test('位置已存在时复用，不再要求用户确认', async () => {
   });
 
   expect(card.pathMatched).toBe(true);
-  expect(card.needsConfirm).toBe(false);
   expect(listLocations(db)).toHaveLength(2); // 没有因为重复解析又长出一套
 });

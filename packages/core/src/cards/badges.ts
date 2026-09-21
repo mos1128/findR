@@ -11,8 +11,6 @@ export type CardBadge =
    * 用户会一直等一个不会发生的动作（真机反馈）。
    */
   | 'processing'
-  /** 待确认：低置信 / 分类选不出 / item 缺位置 */
-  | 'needs-confirm'
   /** 待整理：结构化解析失败，只剩原文与图片 */
   | 'needs-organize'
   /** 未分析：有图但没送过模型做视觉理解 */
@@ -32,7 +30,6 @@ export function cardBadges(card: MemoryCard): CardBadge[] {
   const badges: CardBadge[] = [];
   if (card.status === 'pending_transcript') badges.push('pending-transcript');
   if (card.status === 'pending') badges.push('processing');
-  if (card.needsConfirm) badges.push('needs-confirm');
   if (card.needsOrganize) badges.push('needs-organize');
 
   const hasImages = !!card.images && card.images.length > 0;
@@ -54,8 +51,6 @@ export function badgeLabel(badge: CardBadge, ctx: BadgeContext): string {
       return ctx.asrConfigured ? '待转写' : '待转写·未配 ASR';
     case 'processing':
       return '待解析';
-    case 'needs-confirm':
-      return '待确认';
     case 'needs-organize':
       return '待整理';
     case 'unanalyzed':
@@ -75,7 +70,6 @@ export function canReanalyze(card: MemoryCard, ctx: BadgeContext): boolean {
 /** 卡片是否还需要用户动手（用来在记忆流里把待办性质的卡排前面或加提示） */
 export function cardNeedsAttention(card: MemoryCard): boolean {
   return (
-    card.needsConfirm ||
     card.needsOrganize ||
     card.status === 'pending_transcript' ||
     card.status === 'pending'

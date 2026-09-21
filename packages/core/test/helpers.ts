@@ -15,7 +15,6 @@ export function makeCard(p: Partial<MemoryCard> & { id: string }): MemoryCard {
   return {
     id: p.id,
     status: p.status ?? 'active',
-    needsConfirm: p.needsConfirm ?? false,
     needsOrganize: p.needsOrganize ?? false,
     categoryId: p.categoryId ?? 'cat_item',
     entity: p.entity ?? '测试实体',

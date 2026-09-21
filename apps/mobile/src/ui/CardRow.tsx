@@ -17,7 +17,6 @@ import { mediaUri } from '@/platform/media';
 const BADGE_TONES: Record<CardBadge, BadgeTone> = {
   'pending-transcript': 'neutral',
   processing: 'neutral',
-  'needs-confirm': 'confirm',
   'needs-organize': 'organize',
   unanalyzed: 'unanalyzed',
   retrying: 'organize',

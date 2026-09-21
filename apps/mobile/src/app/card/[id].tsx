@@ -16,7 +16,6 @@ import {
   badgeLabel,
   canReanalyze,
   cardBadges,
-  clearNeedsConfirm,
   deleteCard,
   getCard,
   listCategories,
@@ -210,19 +209,9 @@ export default function CardDetailScreen() {
         ) : null}
       </Panel>
 
-      {card.needsConfirm || card.retryCount > 0 || card.status === 'pending' || card.status === 'pending_transcript' || card.needsOrganize ? (
+      {card.retryCount > 0 || card.status === 'pending' || card.status === 'pending_transcript' || card.needsOrganize ? (
         <Panel>
           <SectionTitle hint="解决后角标即消失">待办</SectionTitle>
-          {card.needsConfirm ? (
-            <Button
-              title="确认信息无误"
-              variant="secondary"
-              onPress={() => {
-                clearNeedsConfirm(rt.driver, card.id, new Date());
-                reload();
-              }}
-            />
-          ) : null}
           {card.needsOrganize ? (
             <Button
               title="重新整理"

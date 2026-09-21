@@ -34,20 +34,6 @@ import type { MemoryCard, SourceKind } from '../types';
 /** 单卡送模型分析的图片上限。需求把「可配 N 张」列为非 MVP，这里是固定的请求体护栏 */
 export const DEFAULT_MAX_ANALYZE_IMAGES = 6;
 
-/**
- * 「待确认」的置信度门槛 —— **固定值，不再是设置项**（第十九版删掉了那个输入框）。
- *
- * 删的理由是这个数没法被用户校准：
- * 1. 它是**模型自评**的，而且 `confidence` 在 P1 schema 里是**可选**字段，
- *    模型漏报时门槛压根不参与判断；
- * 2. 它从不出现在界面上（`cards.confidence` 只入库、不展示），
- *    用户在设置页里没有任何反馈能判断「该填 0.6 还是 0.8」；
- * 3. 三种「待确认」触发条件里它只是其中之一 —— 把它调到 0 也关不掉确认，
- *    因为「分类选不出」和「本次新建了位置层级」照旧生效。
- * 留一个猜不出效果、又几乎不生效的旋钮，只会让人在设置页发愣。
- */
-export const CONFIRM_THRESHOLD = 0.6;
-
 /** 音频容器：录音直出 m4a/AAC，不转码（技术设计二） */
 export const AUDIO_MIME = 'audio/m4a';
 
@@ -100,7 +86,6 @@ export function createDraft(
     id: opts.id,
     // 有音频且无文本才等转写；已经打了字就直接进待解析（需求四「打字则跳过转写」）
     status: hasAudio && !hasText ? 'pending_transcript' : 'pending',
-    needsConfirm: false,
     needsOrganize: false,
     categoryId: null,
     entity: null,
@@ -141,7 +126,6 @@ export type UnderstandingResult =
   | {
       kind: 'parsed';
       fields: ParsedCardFields;
-      needsConfirm: boolean;
       usedImages: boolean;
     };
 
@@ -204,15 +188,16 @@ export async function runUnderstanding(
   // 给了就匹配得到复用、匹配不到**新建** —— 位置树应当由解析结果增量长出来，
   // 而不是要求用户先去设置页手工建好房间再回来选（那等于把「模型会产出什么词」推给用户猜）
   const path = out.path ? ensurePath(deps.db, out.path, deps.idGen ?? makeId) : null;
-  const needsConfirm =
-    (out.confidence != null && out.confidence < CONFIRM_THRESHOLD) ||
-    categoryId === null ||
-    // 路径里含新建层级 ⇒ 新位置对不对要让用户过一眼
-    (path != null && path.created.length > 0);
+  /*
+    这里原有一个「待确认」标记 —— 置信度 < 0.6 / 分类选不出 / 本次新建了位置层级 → 打角标，
+    第二十版整条删除。删的理由：它只产出一个角标，既不阻挡入库、也不影响检索，
+    而唯一的清除按钮只是把角标擦掉、并不修正任何数据，于是留下一个「看得见却无从下手」的提醒；
+    四条触发条件里也只剩「模型新造了位置层级」有价值，而那件事本来就该在位置树上直接改。
+    真要纠正，用户有直路：详情页点分类 chip、点位置行，或「重新整理」重跑一遍理解。
+  */
 
   return {
     kind: 'parsed',
-    needsConfirm,
     usedImages: imagesToSend.length > 0,
     fields: {
       categoryId,
@@ -320,7 +305,7 @@ export async function advanceCard(
       markRetry(deps.db, cardId, result.error, now());
       return { card: reload(), outcome: 'retry', error: result.error };
     case 'parsed': {
-      applyParseResult(deps.db, cardId, result.fields, result.needsConfirm, now(), deps.idGen ?? makeId);
+      applyParseResult(deps.db, cardId, result.fields, now(), deps.idGen ?? makeId);
       // 本次真的把图送出去了才算「已分析」，否则卡片要一直带着「未分析」角标
       if (result.usedImages) setVisionAnalyzed(deps.db, cardId, true, now());
       return { card: reload(), outcome: 'activated' };

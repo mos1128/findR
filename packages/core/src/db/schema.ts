@@ -59,6 +59,10 @@ export const SCHEMA_V1_STATEMENTS: readonly string[] = [
   //   ask             —— 非空时记忆流展示补问入口（需求 5.1 轻量追问补偿），用户编辑后清空即「最多一次」
   //   path_suggestion —— 位置失配时模型的猜测，供用户点选或新建（需求四「匹配不到才让用户点选或新建」）
   //   path_matched    —— 本次 path 是否命中已有位置树，测试计划「path 命中率 ≥ 80%」的统计依据
+  //
+  // needs_confirm 是**已退役的残留列**（第二十版整条删掉「待确认」功能，见 pipeline/capture.ts）：
+  // 保留不动是因为 SQLite 删列必须重建整张表（见本文件顶部第 3 条），而它
+  // NOT NULL DEFAULT 0、读写两侧都已摘除，留在那里零成本；老备份包带着它也能正常导入。
   `CREATE TABLE IF NOT EXISTS cards (
   id               TEXT PRIMARY KEY,
   status           TEXT NOT NULL CHECK (status IN ('pending_transcript','pending','active','archived')),

@@ -11,8 +11,13 @@ import { parseJsonArray, toJson } from './json';
 import { escapeLike } from '../search/builder';
 import type { BuiltSearch } from '../search/builder';
 
+/**
+ * 列清单。`needs_confirm` 已于第二十版从读写两侧移除（角标、按钮、置位逻辑全删）——
+ * **表里的那一列保留不动**：SQLite 删列要重建整张表（见 schema.ts 顶部第 3 条），
+ * 而 `NOT NULL DEFAULT 0` 的残留列不写不读、零成本。老备份包带着它也能正常导入。
+ */
 const CARD_COLS =
-  'id, status, needs_confirm, needs_organize, category_id, entity, path_ids, path_names, steps, transcript, desc_text, images, audio_path, vision_analyzed, tags, confidence, ask, path_suggestion, path_matched, source, retry_count, next_retry_at, last_error, created_at, updated_at';
+  'id, status, needs_organize, category_id, entity, path_ids, path_names, steps, transcript, desc_text, images, audio_path, vision_analyzed, tags, confidence, ask, path_suggestion, path_matched, source, retry_count, next_retry_at, last_error, created_at, updated_at';
 
 /** 退避序列：1min → 5min → 30min → 2h → 次日；到上限后只留手动重试 / 批量补转写 */
 export const RETRY_BACKOFF_MS: readonly number[] = [
@@ -36,7 +41,6 @@ export function rowToCard(row: Record<string, unknown>): MemoryCard {
   return {
     id: String(row.id),
     status: row.status as CardStatus,
-    needsConfirm: row.needs_confirm === 1,
     needsOrganize: row.needs_organize === 1,
     categoryId: (row.category_id as string | null) ?? null,
     entity: (row.entity as string | null) ?? null,
@@ -69,7 +73,6 @@ function cardValues(card: MemoryCard): unknown[] {
   return [
     card.id,
     card.status,
-    card.needsConfirm ? 1 : 0,
     card.needsOrganize ? 1 : 0,
     card.categoryId,
     card.entity,
@@ -143,17 +146,15 @@ export function applyParseResult(
   db: SqliteDriver,
   id: string,
   f: ParsedCardFields,
-  needsConfirm: boolean,
   now: Date,
   idGen: () => string = makeId,
 ): void {
   db.transaction(() => {
     db.prepare(
-      `UPDATE cards SET status = 'active', needs_confirm = ?, category_id = ?,
+      `UPDATE cards SET status = 'active', category_id = ?,
        entity = ?, path_ids = ?, path_names = ?, steps = ?, desc_text = ?, tags = ?, confidence = ?,
        ask = ?, path_suggestion = ?, path_matched = ?, updated_at = ? WHERE id = ?`,
     ).run(
-      needsConfirm ? 1 : 0,
       f.categoryId,
       f.entity,
       toJson(f.pathIds),
@@ -551,29 +552,16 @@ export function updateCardFields(db: SqliteDriver, id: string, patch: CardPatch,
   db.prepare(`UPDATE cards SET ${sets.join(', ')} WHERE id = ?`).run(...params);
 }
 
-export function clearNeedsConfirm(db: SqliteDriver, id: string, now: Date): void {
-  db.prepare('UPDATE cards SET needs_confirm = 0, updated_at = ? WHERE id = ?').run(
-    now.toISOString(),
-    id,
-  );
-}
-
-export function setNeedsConfirm(db: SqliteDriver, id: string, value: boolean, now: Date): void {
-  db.prepare('UPDATE cards SET needs_confirm = ?, updated_at = ? WHERE id = ?').run(
-    value ? 1 : 0,
-    now.toISOString(),
-    id,
-  );
-}
-
 /**
  * 终态：本次录入既没有可送模型的图片、也没有文本（图片分析关闭 + 无文字）。
- * 需求 5.1 允许用户坚持存为「纯图片卡片」——desc 为空，只能靠分类和标签检索，
- * 所以强制打上待确认，让用户至少把分类定下来。
+ * 需求 5.1 允许用户坚持存为「纯图片卡片」——desc 为空，只能靠分类和标签检索。
+ *
+ * 第二十版删掉了这里原先打的「待确认」：纯图片卡没有正文可核对，点一下
+ * 「确认信息无误」也不改变任何数据，标记只是凭空多一个角标。分类想改随时能改。
  */
 export function markPlainCard(db: SqliteDriver, id: string, now: Date): void {
   db.prepare(
-    "UPDATE cards SET status = 'active', desc_text = NULL, needs_confirm = 1, updated_at = ? WHERE id = ?",
+    "UPDATE cards SET status = 'active', desc_text = NULL, updated_at = ? WHERE id = ?",
   ).run(now.toISOString(), id);
 }
 
