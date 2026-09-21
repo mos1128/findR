@@ -18,7 +18,6 @@ import {
   type Category,
   type MemoryCard,
 } from '@findr/core';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNetworkState } from 'expo-network';
 
 import { Radius, Spacing } from '@/constants/theme';
@@ -33,16 +32,13 @@ import {
   useRuntime,
   visionSupported,
 } from '@/platform/runtime';
-import { useLongPressRecorder } from '@/capture/recorder';
-import { persistCapture } from '@/capture/submit';
+import { Composer } from '@/capture/Composer';
 
 export default function MemoryStreamScreen() {
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { state: rt, error: runtimeError } = useRuntime();
+  const { state: rt, error: runtimeError, refresh } = useRuntime();
   const network = useNetworkState();
-  const recorder = useLongPressRecorder();
 
   const [cards, setCards] = useState<MemoryCard[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -67,7 +63,6 @@ export default function MemoryStreamScreen() {
   const [searchNote, setSearchNote] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const queueRunning = useRef(false);
   /** 有可用的主模型配置（模型名 + 可选地址；API Key 不参与判定）—— 决定检索走哪条路 */
@@ -192,29 +187,23 @@ export default function MemoryStreamScreen() {
     }
   };
 
-  /** 底部栏的长按语音：按下录、松开落盘并建卡 */
-  const onVoicePressIn = async () => {
-    setBusy(true);
-    try {
-      await recorder.start();
-    } catch {
-      setBusy(false);
-    }
-  };
-
-  const onVoicePressOut = async () => {
-    try {
-      const audio = await recorder.stop();
-      if (!audio || !rt) return;
-      const draft = await persistCapture(rt, { images: [], audioUri: audio.uri, vision: false });
+  /**
+   * 底部录入条存下一条之后：刷新记忆流并推进解析队列。
+   *
+   * `vision` 必须**原样**传进队列，同时再把运行时重新读一遍 ——
+   * `rt.capture` 是打开时的快照，用户刚在录入条上关掉图片分析时它还是旧值；
+   * 不重读的话，回前台的队列会拿旧值处理这张卡（用户关了开关却仍然外发图片）。
+   * 重读之后 `rt` 变了，`drainQueue` 与挂在 AppState 上的监听也一起换到新值。
+   */
+  const afterSubmit = useCallback(
+    async (vision: boolean) => {
       reload();
-      void draft;
-      // 落盘后立刻推一次；失败了也还有队列在回前台时兜底
-      await drainQueue();
-    } finally {
-      setBusy(false);
-    }
-  };
+      const next = await refresh();
+      if (next) await runQueueNow(next, { vision });
+      reload();
+    },
+    [reload, refresh],
+  );
 
   const ctx = {
     visionSupported: visionSupported(rt?.llm ?? null),
@@ -247,29 +236,39 @@ export default function MemoryStreamScreen() {
     <View style={[styles.root, { backgroundColor: theme.background }]}>
       {/* 顶部：查。与底部「记」刻意做成两种材质，避免误用（需求六） */}
       <View style={[styles.topBar, { backgroundColor: theme.searchSurface, borderColor: theme.border }]}>
-        <View style={[styles.searchRow, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
-          <Text style={{ color: theme.search, fontSize: 14 }}>🔍</Text>
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={onSearch}
-            returnKeyType="search"
-            placeholder="问一句，比如「护照放哪了」"
-            placeholderTextColor={theme.textMuted}
-            style={[styles.searchInput, { color: theme.text }]}
-          />
-          {query ? (
-            <Pressable
-              onPress={() => {
-                setQuery('');
-                setResults(null);
-                setAnswer(null);
-                setAnswerError(null);
-                setAdvice(null);
-              }}>
-              <Text style={{ color: theme.textMuted, fontSize: 14 }}>✕</Text>
-            </Pressable>
-          ) : null}
+        {/* 设置入口跟搜索框同行。它原先挤在底部那一排按钮里；底部收成一条输入条之后，
+            那里只该放「记」，设置挪到这里既腾出了位置，也不再和「记」抢注意力 */}
+        <View style={styles.searchLine}>
+          <View style={[styles.searchRow, { borderColor: theme.border, backgroundColor: theme.surfaceAlt }]}>
+            <Text style={{ color: theme.search, fontSize: 14 }}>🔍</Text>
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              onSubmitEditing={onSearch}
+              returnKeyType="search"
+              placeholder="问一句，比如「护照放哪了」"
+              placeholderTextColor={theme.textMuted}
+              style={[styles.searchInput, { color: theme.text }]}
+            />
+            {query ? (
+              <Pressable
+                onPress={() => {
+                  setQuery('');
+                  setResults(null);
+                  setAnswer(null);
+                  setAnswerError(null);
+                  setAdvice(null);
+                }}>
+                <Text style={{ color: theme.textMuted, fontSize: 14 }}>✕</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <Pressable
+            onPress={() => router.push('/settings')}
+            style={({ pressed }) => [styles.gear, { opacity: pressed ? 0.6 : 1 }]}>
+            <Text style={{ fontSize: 18 }}>⚙️</Text>
+          </Pressable>
         </View>
 
         <View style={styles.chips}>
@@ -477,54 +476,9 @@ export default function MemoryStreamScreen() {
         ) : null}
       </ScrollView>
 
-      {/* 底部：记 */}
-      <View
-        style={[
-          styles.bottomBar,
-          { backgroundColor: theme.surface, borderColor: theme.border, paddingBottom: insets.bottom + 8 },
-        ]}>
-        <Pressable
-          onPress={() => router.push('/capture?mode=photo')}
-          style={({ pressed }) => [styles.toolButton, { opacity: pressed ? 0.6 : 1 }]}>
-          <Text style={styles.toolEmoji}>📷</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => router.push('/capture?mode=text')}
-          style={({ pressed }) => [styles.toolButton, { opacity: pressed ? 0.6 : 1 }]}>
-          <Text style={styles.toolEmoji}>⌨️</Text>
-        </Pressable>
-
-        <Pressable
-          onPressIn={() => void onVoicePressIn()}
-          onPressOut={() => void onVoicePressOut()}
-          disabled={busy && !recorder.isRecording}
-          style={[
-            styles.voiceButton,
-            { backgroundColor: recorder.isRecording ? theme.danger : theme.record },
-          ]}>
-          <Text style={styles.voiceLabel}>
-            {recorder.isRecording
-              ? `● ${Math.round(recorder.durationMs / 1000)}s 松开结束`
-              : '🎙️ 长按说话'}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => router.push('/settings')}
-          style={({ pressed }) => [styles.toolButton, { opacity: pressed ? 0.6 : 1 }]}>
-          <Text style={styles.toolEmoji}>⚙️</Text>
-        </Pressable>
-      </View>
-
-      {recorder.isRecording ? (
-        <View style={[styles.recordingOverlay, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={{ color: theme.danger, fontWeight: '600' }}>
-            ● 录音中 {Math.round(recorder.durationMs / 1000)}s
-          </Text>
-          <Text style={{ color: theme.textSecondary, fontSize: 12 }}>松开手指结束</Text>
-        </View>
-      ) : null}
-
+      {/* 底部：记。**唯一**的录入入口 —— 打字 / 拍照 / 相册 / 文本文件 / 长按语音
+          全在这一条里，不再有「两个按钮通到同一个页面」那种事（见 capture/Composer.tsx） */}
+      <Composer rt={rt} onSubmitted={afterSubmit} />
     </View>
   );
 }
@@ -538,7 +492,9 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  searchLine: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   searchRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
@@ -547,6 +503,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: 8,
   },
+  gear: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   searchInput: { flex: 1, fontSize: 15, padding: 0 },
   chips: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
   /** 滚动容器本体只管占满剩余高度，内边距与间距全交给 contentContainerStyle */
@@ -571,39 +528,6 @@ const styles = StyleSheet.create({
   },
   notice: { borderRadius: Radius.md, padding: Spacing.three },
   noticeText: { fontSize: 12, lineHeight: 17 },
-  bottomBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.two,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  toolButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toolEmoji: { fontSize: 20 },
-  voiceButton: {
-    flex: 1,
-    borderRadius: Radius.pill,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  voiceLabel: { color: '#ffffff', fontSize: 15, fontWeight: '600' },
-  recordingOverlay: {
-    position: 'absolute',
-    left: Spacing.three,
-    right: Spacing.three,
-    bottom: 96,
-    borderRadius: Radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: Spacing.three,
-    alignItems: 'center',
-    gap: 4,
-  },
   /**
    * 「未配模型」提示条：必须在正常文档流里。
    * 曾经写成 `position:'absolute', top:8`，正好盖住上面的搜索框 —— 别再改回浮层。

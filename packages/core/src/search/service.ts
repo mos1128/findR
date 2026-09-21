@@ -134,7 +134,12 @@ async function adviseSearch(
     return { cards: [], usedFallback: true, unclear: false, p2 };
   }
 
-  const inventory = buildInventory(deps.db);
+  // 排序提示词：优先用 P2 给出的「这个情景通常需要什么类别」（`aspects` 是通用名词，
+  // 命中率最高），再补情景描述与用户原句。**排序必须在截断之前**，
+  // 否则库一大，「最近的 200 条」就会把去年记的护照挤出清单（见 inventory.ts）。
+  const inventory = buildInventory(deps.db, {
+    terms: [...p2.aspects, p2.scenario ?? '', query],
+  });
   // 空库没必要花一次调用：没有任何库存，「你需要什么」无从谈起
   if (inventory.cards.length === 0) {
     return {

@@ -24,7 +24,6 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: theme.background },
         }}>
         <Stack.Screen name="index" options={{ title: 'Findr' }} />
-        <Stack.Screen name="capture" options={{ title: '记一笔', presentation: 'modal' }} />
         <Stack.Screen name="card/[id]" options={{ title: '卡片' }} />
         <Stack.Screen name="settings/index" options={{ title: '设置' }} />
         <Stack.Screen name="settings/provider" options={{ title: '模型配置' }} />
