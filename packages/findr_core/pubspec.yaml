@@ -9,6 +9,13 @@ environment:
 # Add regular dependencies here.
 dependencies:
   sqlite3: ^3.6.0
+  # providers/ 联网层：`http` 是 Dart 官方的 HTTP 客户端，对应 TS 侧的 `fetch`。
+  # 选它而不是 `dart:io` 的 HttpClient：① `MultipartRequest` 直接给出 multipart 编码
+  # （TS 靠 FormData，`dart:io` 要手写 30 行）；② `StreamedResponse` 正好承接 SSE 流；
+  # ③ 注入 `http.Client` 就能在测试里换掉整条网络，与 TS 注入 `fetchFn` 等价。
+  http: ^1.2.0
+  # `MultipartFile` 的 contentType 要 MediaType —— 它是 http 的传递依赖，显式声明才合规。
+  http_parser: ^4.0.0
   # path: ^1.9.0
 
 dev_dependencies:

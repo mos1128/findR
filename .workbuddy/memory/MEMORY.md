@@ -7,26 +7,29 @@
 > 本文件只放「每次会话都要知道、且不随版本变」的 + 指针；**易变细节在交接文档里，别在此重复维护**。
 
 ## 一、进度快照（2026-09-22）
-- 🔄 **core 翻译中：约 2,636 / 5,429 行 ≈ 49%**（全局 13,894 ≈ 19%）。
-  ✅ 骨架 + **`db/` 整层**（含 `types` / `util/iso` / `search/builder`）
-  + **`search/` 整层**（`service` / `inventory` / `advise` / `answer`）
-  + **`parse/` 整层**（`outputs` / `schema` / `model_json`）+ **`prompts/` 整层**（`templates` / `render`）
-  + `providers/types` · `providers/fake`。
-- ⬜ **下一步 = `providers/` HTTP 实现**（合 **782 行**）：`openai-compat`(195) · `capabilities`(211) ·
-  `anthropic`(122) · `samples`(141) · `factory`(50) · `sse`(49) · `media`(14)；
-  验收网 = `providers.test.ts` **26 个用例**。**唯一真正碰网络的一层**（要点见交接 §6.2 末）。
-  再往后 → `pipeline/`(616) → `backup/` · `cards/` · `media/` → **最后才 UI（按新设计写）**。明细见交接 §6.2。
+- 🔄 **core 翻译中：约 3,670 / 5,429 行 ≈ 68%**（全局 13,894 ≈ 26%）。
+  ✅ 骨架 + **`db/` 整层** + **`search/` 整层** + **`parse/` 整层** + **`prompts/` 整层**
+  + **`providers/` 整层**（含真正联网的 openai_compat / anthropic / capabilities / sse /
+  samples / factory / media）+ **`settings.dart`** + **`util/base64` · `util/utf8`**。
+- ⬜ **下一步 = `pipeline/`**（合 **616 行**）：`capture`(326) · `edit`(156) · `queue`(119) · `ingest`(15)；
+  顺带把 `cards/`(77) + `media/`(35) 译掉（capture 依赖它们）。
+  验收网 = `pipeline.test.ts` **31 个用例** + `samples.test.ts` 6 个
+  （**20 条手工样本集在 `packages/core/test/fixtures/`，要一并搬**）。
+  再往后 → `backup/`(996) → **最后才 UI（按新设计写）**。明细见交接 §6.2。
 - ✅ **命门第 1 层（本地）通过**：SQLite 3.53.4 / `[ENABLE_FTS5]` / trigram 下 `MATCH '圆珠笔'` 命中 1 条；
   2 字 1 字**返回空且不抛异常** ⇒ TS 侧「≥3 字 MATCH、更短 LIKE 降级」照搬即可。
   押注 `packages/findr_core/test/fts5_trigram_test.dart`。
 - ⬜ **命门第 2 层（真机）未做** —— 验「打进 APK 那份 SQLite」也带 FTS5，**别拿第 1 层冒充通过**。
 - ⬜ **CI 的 flutter job 未加** —— 出包链路缺这一环，命门第 2 层卡在它上面。
-- 验收网（每轮实测）：`dart test` **148 通过**、`dart analyze` **No issues found**、
+- 验收网（每轮实测）：`dart test` **226 通过**、`dart analyze` **No issues found**、
   **RN 侧 `pnpm check` 仍 181 passed | 2 skipped**（基线未破）。
 - ✅ 骨架：`apps/flutter/`（**`com.findr.app.dev`** —— 与 RN 版并排共存、碰不到真实数据）
-  + `packages/findr_core/`（纯 Dart，依赖 `sqlite3`）；`pnpm-workspace.yaml` 已排除这两个 Dart 目录。
+  + `packages/findr_core/`（纯 Dart）；`pnpm-workspace.yaml` 已排除这两个 Dart 目录。
 - ✅ RN 版终态已 push `ceaa4f4`（参照实现 + 回滚路）。
 - ✅ **原那笔债已还**：`P2Output` 等的手写校验已随 `parse/schema.dart` 落地（见第二节）。
+- 📦 **`findr_core` 依赖两条线**：`sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`**
+  （联网，对应 TS 的 `fetch`；选它而非 `dart:io`：`MultipartRequest` 直接给 multipart 编码、
+  `StreamedResponse` 正好承接 SSE、**注入 `http.Client` 等价于 TS 注入 `fetchFn`**）。
 
 ## 二、翻译口径（踩过才有）
 - ⚙️ **写进库的时间一律走 `util/iso.dart` 的 `isoUtc()`** —— JS `toISOString()` 恒为 UTC 的 `...Z`；
@@ -37,7 +40,16 @@
 - ⚙️ **手写校验必须逐字复刻 zod 的 `.catch()` 边界**（`parse/schema.dart`）：挂在**字段**上 =
   「只这一档回退」；挂在**数组**上 = 「数组里混进一个坏的 ⇒ **整个数组落空**」。
   **复刻错了不报错，只会静默地少答一条** ⇒ `parse_test.dart` 专门钉这个边界。
-- 其余有意偏差（`close()` / `parseJsonArray` / `currentSchemaVersion` / 枚举 `wire`）见交接 §6.2。
+- ⚙️ **`util/base64.dart` / `util/utf8.dart` 是逐字搬的，别换成 `dart:convert`** ——
+  有两处语义我们**依赖**：① base64 **解码对非法字符宽容**（跳过、返回已解出的部分），
+  `base64Decode` 直接抛 `FormatException`；② UTF-8 **解码遇截断序列按 0 补齐**
+  （JS `undefined & 0x3f === 0`），Dart 不特判抛 `RangeError`。两条都有对照组断言钉着。
+- ⚙️ **`Future.timeout` ≠ TS 的 `AbortController`**：只是「不再等」，不掐 socket。
+  流式那条路另外套了 `Stream.timeout`（**到点真 cancel 订阅**）。见 `providers/transport.dart`。
+- ⚙️ `providers/transport.dart` 是**新增的内部文件**（URL 归一化 / 超时 / 读体 / `asMap`+`asInt`），
+  TS 里这些重复了两三遍；**刻意不从 barrel 导出**。
+- 其余有意偏差（`close()` / `parseJsonArray` / `currentSchemaVersion` / 枚举 `wire` /
+  `media.audioPart` 返回具体类型 / `makeLlmAdapter` 抛 `UnsupportedError`）见交接 §6.2。
 
 ## 三、已拍板决策（别再重新调研）
 - **技术栈 = Flutter**（理由见交接 §2）。**已排除**：Tauri 2（三套 WebView 不一致 + 移动端相机/录音/安全存储缺口）·

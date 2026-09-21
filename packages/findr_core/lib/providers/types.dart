@@ -187,6 +187,17 @@ enum ProviderType {
     }
     throw ArgumentError.value(value, 'value', '未知的 provider 类型');
   }
+
+  /// 反解，认不出来就用 [fallback]。
+  ///
+  /// 给「读设置」用：TS 那边 `providerType` 是 union 类型、由类型系统保证合规，
+  /// Dart 读的是库里的 JSON 字符串，所以必须有个运行时兜底。
+  static ProviderType fromWireOr(Object? value, ProviderType fallback) {
+    for (final type in values) {
+      if (type.wire == value) return type;
+    }
+    return fallback;
+  }
 }
 
 /// 主模型 / 转写的调用配置。

@@ -24,8 +24,9 @@
 | Flutter SDK | ✅ 3.47.5 stable / Dart 3.13.4；本机已 `scoop hold` 冻结版本（§7）|
 | 骨架 | ✅ `apps/flutter/`（applicationId `com.findr.app.dev`）+ `packages/findr_core/` |
 | **命门（FTS5 + trigram）** | ✅ 第 1 层（本地）通过；⬜ **第 2 层（真机）未做** —— 见 §6.1 |
-| **core 翻译** | 🔄 **约 2,636 / 5,429 行 ≈ 49%**（§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅；**下一块 = `providers/` HTTP** |
-| 验收网 | `dart test` **148 通过**；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| **core 翻译** | 🔄 **约 3,670 / 5,429 行 ≈ 68%**（全局 26%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · **`providers/`+`settings`+`util/` ✅**；**下一块 = `pipeline/`** |
+| 验收网 | `dart test` **226 通过**；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
 | CI flutter job | ⬜ 未加（**出包链路还缺这一环**）|
 
 **几条 git 现状（2026-09-21 实测，别重复排查）**：
@@ -152,9 +153,9 @@ findR/
 ├─ packages/
 │  ├─ core/                      ← 旧 TS core【保留，它就是要翻译的规格说明书】
 │  └─ findr_core/                ← 新 Dart core（**纯 Dart，零 Flutter 依赖**）
-│     ├─ lib/{db,search,providers,parse,pipeline,backup,prompts}/
+│     ├─ lib/{db,search,providers,parse,pipeline,backup,prompts,util}/
 │     ├─ test/                   ← 181 个用例译到这里
-│     └─ pubspec.yaml            ← **只依赖 package:sqlite3**
+│     └─ pubspec.yaml            ← 依赖只有两条线：`package:sqlite3`（DB）+ `package:http`（联网）
 └─ .github/workflows/            ← flutter.yml（新增）+ android.yml（老 job，先留着）
 ```
 
@@ -167,6 +168,8 @@ findR/
    它**自带预编译 SQLite** ⇒ **app 端不用再补任何 native 库依赖**，
    **连本机的 `sqlite3.dll` 都不用准备**。（此前「core 用 sqlite3 + app 加 `sqlite3_flutter_libs`」
    的设计**已作废**，见 §4.5。）
+   （后来又加了 `package:http` + `http_parser` —— 那是**联网**那条线，与 DB 无关；
+   它同样是 Dart 官方包、纯 Dart、无 native 依赖，不破坏「app 端不用补 native 库」这条。）
 3. **名字用 `findr_core` 而不是 `core_dart`** —— Dart 包名必须 snake_case，
    且这样能与 `packages/core`（TS 老版）一眼区分。
 
@@ -307,8 +310,10 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 | 1 | 骨架 | ✅ `apps/flutter/`（Flutter 3.47.5，`--platforms=android`，`com.findr.app.dev`）+ `packages/findr_core/`（纯 Dart，依赖 `sqlite3`）|
 | 2 | `db/` 那一层 | ✅ **全部译完**（2026-09-21 分两轮，明细见下）|
 | 3 | `search/` | ✅ **全部译完**（2026-09-22，含 `builder`）；顺带把它依赖的 `parse/` `prompts/` `providers/types` 一并译掉 |
-| 4 | `providers/` HTTP 实现 + `pipeline/` | 🔄 `providers/types` + `fake` ✅；**`openai-compat`(195) · `capabilities`(211) · `anthropic`(122) · `samples`(141) · `factory`(50) · `sse`(49) · `media`(14) 待译**（合 782 行）|
-| 5 | UI | ⬜ **最后才动，且按新设计写**（别照抄 RN 界面）|
+| 4 | `providers/` 联网层 + `settings` + `util/` | ✅ **全部译完**（2026-09-22，明细见下）|
+| 5 | `pipeline/` 录入编排 | ⬜ **下一块**（capture 326 · edit 156 · queue 119 · ingest 15 = 616 行）|
+| 6 | `backup/` + `cards/` + `media/` | ⬜（996 + 77 + 35 = 1,108 行）|
+| 7 | UI | ⬜ **最后才动，且按新设计写**（别照抄 RN 界面）|
 
 **第 2 项明细（✅ 2026-09-21，合计 1,476 行 TS）**：
 
@@ -339,10 +344,27 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 | `search/advise.ts` | 104 | `search/advise.dart`（清单 → P4 模型裁决，取 refs：去重 + 丢假 id）|
 | `search/answer.ts` | 92 | `search/answer.dart`（摘要 → 答案，去重截断）|
 
-**验收网**：`dart test` **148 通过**（原 77 + 本轮 71）、`dart analyze` 无问题；
+**第 4 项明细（✅ 2026-09-22，本轮合计 1,034 行 TS）**：
+
+| TS 源 | 行 | Dart |
+|---|---|---|
+| `providers/openai-compat.ts` | 195 | `providers/openai_compat.dart`（**两套协议的线格式之一**：`/v1/chat/completions` + `/v1/audio/transcriptions`）|
+| `providers/capabilities.ts` | 211 | `providers/capabilities.dart`（**四态探测** ok / unsupported / unknown / error）|
+| `providers/samples.ts` | 141 | `providers/samples.dart`（运行时造 64×64 PNG 与 1 秒 WAV：存储型 deflate 块 + CRC32/adler32）|
+| `settings.ts` | 138 | `settings.dart`（**设置项唯一权威**：JSON 形状与 TS 逐字段对齐，含浅合并语义）|
+| `providers/anthropic.ts` | 122 | `providers/anthropic.dart`（`/v1/messages`；**401/403 才换 `x-api-key` 重试一次**）|
+| `util/utf8.ts` | 64 | `util/utf8.dart`（纯算法逐字搬，见下）|
+| `providers/factory.ts` | 50 | `providers/factory.dart`（设置 + Key → 适配器）|
+| `util/base64.ts` | 50 | `util/base64.dart`（纯算法逐字搬，见下）|
+| `providers/sse.ts` | 49 | `providers/sse.dart`（流式读取骨架 + 两套 delta 提取）|
+| `providers/media.ts` | 14 | `providers/media.dart`（文件端口；`audioPart` 返回具体 `MultipartFile`，见下）|
+| ——（**新增**）| —— | `providers/transport.dart`（URL 归一化 / 超时 / 读体，把 TS 里写了两三遍的重复收拢）|
+
+**验收网**：`dart test` **226 通过**（原 148 + 本轮 78）、`dart analyze` 无问题；
 **RN 侧 `pnpm check` 仍 181 passed | 2 skipped**（基线未破）。
-**全局进度约 2,636 / 13,894 行 ≈ 19%**（按「需要动脑的行数」算比这个高 ——
-`templates.ts` 与全部 SQL 是逐字搬）。
+**全局进度约 3,670 / 13,894 行 ≈ 26%**（按「需要动脑的行数」算比这个高 ——
+`templates.ts` 与全部 SQL 是逐字搬）。**core 内部已译 3,670 / 5,429 ≈ 68%**，
+剩 `pipeline/` `backup/` `cards/` `media/`。
 
 **翻译时的三条口径（都是踩过才有的）**：
 
@@ -363,16 +385,34 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 4. 📌 另一处**有意偏离**（代码里都写了原因）：`currentSchemaVersion` 读出坏值时当 0
    （TS 是 NaN，等于**什么都不迁、只把版本号覆写掉**）；当 0 是宁可重跑一遍，
    安全性由「v1 全 `IF NOT EXISTS` + v2 可重复执行」保证，已用幂等用例钉住。
+5. ⚠️ **`util/base64.dart` 与 `util/utf8.dart` 是逐字搬的，不是「顺手换成 `dart:convert`」**。
+   它们存在的理由（RN 没有 Buffer、Hermes 不稳）在 Dart 不成立，但**语义有两处真的不同、
+   而且我们依赖**：① base64 **解码对非法字符宽容**（跳过后返回已解出的部分），
+   `base64Decode` 直接抛 `FormatException`；② UTF-8 **解码遇截断序列按 0 补齐**
+   （JS 的 `undefined & 0x3f === 0`），Dart 不特判就抛 `RangeError`。
+   备份包解析路上「崩掉」比「解出几个错字」更难收拾。两条差异**都有对照组断言**钉着
+   （`test/util/` 里边断言我们宽容、边断言 `dart:convert` 是抛）。
+6. ⚠️ **超时：`Future.timeout` ≠ `AbortController`**。TS 的 `abort()` 真掐 socket；
+   Dart 的 `Future.timeout` 只是「不再等」。所以流式那条路**另外**套了一层 `Stream.timeout`
+   —— 它到点会**真正 cancel 订阅**，连接随之释放。差异与理由都在 `providers/transport.dart`。
+7. 📌 **三处新的有意偏离**（都在代码注释里写了）：
+   - `providers/media.dart` 的 `audioPart` 返回**具体的 `http.MultipartFile`** 而不是 TS 的 `unknown`
+     （Dart 只有一个运行时，那个「谁实现谁转型」的洞没必要留；实现方可直接 `fromPath` 走流）。
+   - `providers/transport.dart` 是**新增文件**：TS 把 URL 归一化写了两遍、
+     超时写了两遍半、`res.text().catch(()=>'')` 写了四遍，收拢成一个内部小件。
+     **刻意不从 barrel 导出** —— 它是实现细节，不是对外契约。
+   - `makeLlmAdapter` 遇到 `gemini`/`fake` 显式抛 `UnsupportedError`：
+     TS 那边是 `switch` 漏空返回 `undefined`，然后在调用点崩成「undefined 不是函数」。
 
-**下一块（`providers/` HTTP 实现）的要点**：这是**唯一真正碰网络**的一层，
-也是第一次把「送内容给模型 / 送音频转写」两条出网请求落到 Dart：
+**下一块（`pipeline/`）的要点**：这是把「一次录入」串起来的编排层，
+也是**第一个要跑真模型**的地方（前面全是纯逻辑或线格式）：
 
-- `openai-compat.ts`(195) 与 `anthropic.ts`(122) 是**两套线格式**，`capabilities.ts`(211) 决定
-  「这个 baseUrl 能用哪些能力」（视觉/音频/流式）—— **别把三家揉成一个 if 堆**。
-- `sse.ts`(49) 是**流式解析**（逐块读 `data:` 行）⇒ Dart 侧要落到 `http` 的
-  `StreamedResponse` + 手写分行缓冲，**不是 `await response.body` 一把梭**。
-- `samples.ts`(141) 是连测样例（真机自检屏会用到）；`media.ts`(14) 是图片/音频的 media-type 判定。
-- 验收网 = `providers.test.ts` **26 个用例**（TS 侧就靠它钉住线格式）。
+- `capture.ts`(326) 是**最大也最绕的一件**：图片分析 → P1 抽取 → 分类/位置匹配 → 入库 →
+  失败重试与错误落库。它依赖 `cards/` 的徽章判定与 `media/` 的路径规则（那两块 112 行，顺手译掉）。
+- `queue.ts`(119) 是**重试队列**（`nextRetryAt` / `retryCount` / `lastError` 三列，
+  schema 里已有）；`edit.ts`(156) 是手工改卡后的重跑；`ingest.ts`(15) 是把 capture 与 queue 接起来。
+- 验收网 = `pipeline.test.ts` **31 个用例**（是 core 里最大的一个测试文件）+
+  `samples.test.ts` 6 个（**20 条手工样本集**在 `test/fixtures/`，要一并搬成 Dart fixture）。
 - ⚠️ 出网口径不变：**只往用户自填的 `baseUrl` 发请求**，别引入任何我们自己的后端。
 
 **验收方式**：把 TS 侧的用例逐一译成 Dart 测试，**绿了才算译对**。
