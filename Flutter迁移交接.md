@@ -325,6 +325,20 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
    `apps/flutter/`（Flutter 3.47.5，`--platforms=android`，applicationId `com.findr.app.dev`）
    + `packages/findr_core/`（纯 Dart 包，依赖 `sqlite3`）。`dart test` 与 `flutter analyze` 均绿。
 2. **译 `db/` 那一层**（schema + 迁移 + repository），**同步把对应的 Dart 测试写出来**
+   —— 🔄 **进行中**（2026-09-21 起）：
+
+   | 文件 | 行数 | 状态 |
+   |---|---|---|
+   | `driver.ts`（接口） | 12 | ✅ `db/driver.dart` + `db/driver_sqlite3.dart`（`package:sqlite3` 实现）|
+   | `json.ts` | 14 | ✅ `db/json.dart` |
+   | `schema.ts` | 240 | ✅ `db/schema.dart`（DDL **逐字搬**，v1/v2/seed 三个数组）|
+   | `migrate.ts` | 78 | ✅ `db/migrate.dart` |
+   | `settings.ts` | 43 | ✅ `db/settings.dart` |
+   | `taxonomy.ts` | 174 | ⬜ 待译 |
+   | `repository.ts` | 648 | ⬜ 待译（最大的一块）|
+
+   基座的验收网已就位：`test/db/` 下 4 个文件、**23 个新用例全绿**
+   （driver 6 / migrate 4 / settings 6 / json 7），加上原有命门 3 个 ⇒ `dart test` 共 **26 通过**。
 3. **译 `search/`** —— 重点验证：中文检索能命中、**排序打分结果与 TS 版一致**
 4. 译 `providers/` + `parse/` + `pipeline/`，跑通「拍照/打字 → 入库 → 检索」最小闭环
 5. **最后才动 UI**（而且按新设计写，别照抄 RN 的界面）

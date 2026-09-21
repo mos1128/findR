@@ -5,7 +5,7 @@
 ///
 /// 翻译顺序（从底层往上，依赖少的先做）—— 见 `Flutter迁移交接.md` 第 4.3 节：
 ///
-/// 1. `db/`        schema + 迁移 + repository
+/// 1. `db/`        schema + 迁移 + repository ← **进行中**（driver/schema/migrate/json/settings 已译完）
 /// 2. `search/`    FTS5 检索 + 排序打分
 /// 3. `providers/` 模型 HTTP 调用
 /// 4. `parse/`     手写校验（替代 zod）
@@ -23,4 +23,9 @@
 /// 押注在 `test/fts5_trigram_test.dart`。
 library;
 
-// 目前是空壳骨架：按上面的顺序把 TS 实现逐块译过来，每块配一个测试。
+export 'db/driver.dart';
+export 'db/driver_sqlite3.dart';
+export 'db/json.dart';
+export 'db/migrate.dart';
+export 'db/schema.dart';
+export 'db/settings.dart';
