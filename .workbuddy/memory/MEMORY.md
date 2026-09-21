@@ -1,6 +1,20 @@
 # findR 项目长期记忆
 
-> 详细交接在仓库根 `开发交接.md`（**唯一权威**）。这里只放「每次会话都要知道、且不随版本变」的东西。
+> 🚩 **当前方向：正在从 RN (Expo) 迁移到 Flutter** —— 用户 2026-09-21 拍板。
+> **新会话先读仓库根 `Flutter迁移交接.md`**（迁移的唯一权威）。
+> `开发交接.md` 是 RN 时代的历史与十二条铁律（**仍然有效**，但「1. 一句话状态 / 下一步 /
+> 未验证清单 / 真机端到端验证」四节**已就地标作废**）。
+> 这里只放「每次会话都要知道、且不随版本变」的东西。
+
+## 迁移路线（用户 2026-09-21 拍板，别再问、也别自行调整顺序）
+**V1 安卓 → V2 Windows → V3 macOS + iOS**，一版一版出、每版要能独立出包。
+- **Linux 放最后**（用户提过要覆盖，但没排进这三版）
+- **鸿蒙靠卓易通装安卓包，不为它做任何改动**
+- **UI 重构直接在 Flutter 里做** —— 没有"搬旧界面"的包袱，别先照抄 RN 的界面
+- 迁移工作量基线：**13,894 行**（core 5429 / 测试 3773 / 界面 4692）。
+  **可直接逐字搬**：`prompts/templates.ts` + 所有 SQL 语句。**181 个用例可 1:1 译成 Dart 当验收网。**
+- 第一个技术命门：**FTS5 + trigram 分词器在 Flutter 里能不能用**（必须先实测，不通则方案重估）
+- 第一个障碍：**本机没装 Flutter SDK**（2026-09-21 实测 PATH 与 scoop 里都没有）
 
 ## 角色与姿态
 - 用户是这个 App 的**真实使用者**（在真机上天天用）。他的反馈是首手的、常带截图，
@@ -78,13 +92,13 @@
   （CI 是 `prebuild --clean`，手改 `android/gradle.properties` 会被冲掉）。
   **⚠️ 用户 2026-09-21 明确「先不改」，别自作主张去加。**
 - **全平台（Win/macOS/Linux 也想做）**：**我们不需要一个栈管六端** —— core 零原生依赖、
-  **已在 better-sqlite3（桌面）上跑通过**，所以路线是**手机留 RN 不动 + 桌面加 Electron 壳**
-  （主进程 Node.js ⇒ core 零改动；渲染层 Chromium ⇒ web 平台层升级成三端产线代码）。
-  节奏建议：手机双端先做完整 → 桌面按需（可先做纯读版，不需要相机/录音，成本最低）→ Linux 最后。
+  **已在 better-sqlite3（桌面）上跑通过**，所以路线是**手机留 RN 不动 + 桌面加 Tauri 壳**
+  （Rust 只当壳、不写业务；3~10MB，用户已熟这套工具链 —— 他的 `ccg-gateway` 就是）。
+  节奏建议：手机双端先做完整 → 桌面按需（可先做纯读版，不需要相机/录音/钥匙串）→ Linux 最后。
   **别一次上六端。** Apple 这道门两条路都躲不开：**iOS 与 macOS 构建都要 macOS 机器**。
 - **⚠️ 桌面「两条路」的口径（2026-09-21 用户抓到矛盾后更正，务必按新口径说）**：
   六端表格里「RN+Expo → 桌面 ⚠️/❌」说的是 **RN 官方桌面支持**（`react-native-windows` / `-macos`：
-  无 Linux、版本追不上我们的 RN 0.86.3）；而上面建议的 Electron 方案**压根不用它**，
+  无 Linux、版本追不上我们的 RN 0.86.3）；而上面建议的 Tauri 方案**压根不用它**，
   用的是 **react-native-web + Expo 的 web 目标**。两者不矛盾，但**「再加一层壳就行」把工作说小了**：
   core 零改动（真）／界面**骨架能搬、排版要重做**（竖屏→桌面是第二套设计）／
   **平台层照样重写**（db 换 sqlite-wasm 或走 Node 侧；**`Alert` 28 处必须重写**，RNW 的
@@ -96,6 +110,45 @@
   ③ **鸿蒙：Flutter-OH 远强于 RNOH**（5 条版本线、262 个已适配库、支持鸿蒙 PC、出 `.hap`）；
   ④ 若「体积」第一优先 ⇒ **Tauri 2**（3~10MB）但三套 WebView 渲染不一致、移动端年轻。
   **右上角「又小又一致」目前没人做到。实际建议仍是「现在别换」。**
+- **🚩 时机判断已更正（2026-09-21，比上面这条更重要）**：我此前说「最佳换栈时机 = UI 重构做完、
+  iOS 要开工那一刻」—— **这句是错的，会害用户把界面写两遍**。真相是：**「UI 重构」本身就是那个
+  不可逆分叉点**，换栈必须与它同时决定、不能串行。A 现在换 → 界面 1 遍 + core 译 1 遍；
+  B 继续 RN → 界面 1 遍 + core 动 0 遍；**C 先重构再换 → 界面 2 遍（最差，别再提这个方案）**。
+  好消息：**用户还没动手 UI 重构**，正处在可无痛选 A / B 的窗口。
+- **Flutter 在 2026-09 变得比此前更硬（新证据，推翻我部分旧口径）**：
+  ① **Canonical 于 Google I/O 2026 正式接管 Flutter 桌面**（三端 lead maintainer，
+     Ubuntu App Center / Firmware Updater 都是 Flutter 写的）—— 结构性信号，不是社区打补丁；
+  ② **Flutter 3.44（2026-06）**：多窗口支持落地、Windows 走**真 Win32**（可上 Fluent 质感）、
+     跨平台 popup/tooltip/dialog 原语；
+  ③ **Material / Cupertino 正从 core SDK 抽成独立包** ⇒ **框架升级不再连带 UI 破坏性变更**；
+  ④ **`camera_desktop` 已到 1.2.1**（我上轮引的 0.1 是另一个包，**那次说错了**）：
+     Linux GStreamer+V4L2 / macOS AVFoundation / Windows Media Foundation，枚举·预览·拍照·录像全有
+     ⇒ **桌面相机缺口基本已补上**；
+  ⑤ `sqflite` / `image_picker` 已有**官方桌面支持**，`file_picker`/`file_selector` 补文件选择；
+  ⑥ 体积：engine 固定成本 4~8MB ⇒ 桌面包 30~80MB，**比 Tauri（3~10MB）差一个档**
+     —— 而这正是用户在意的「打包体积」那一项。
+- **重写估算的基准数字（做任何移植估算都用这组，别拍脑袋）**：core 源码 **5429 行 / 42 文件** +
+  core 测试 **3773 行 / 22 文件** + 界面 **4692 行 / 27 文件** ⇒ **合计 13,894 行**；
+  平台层 + 采集层 **1734 行**；迁移面 26 个依赖，其中 **17 个 `expo-*` 模块**要逐个找替代。
+  **可复用两样**：SQL 语句与 prompt 模板**语言无关**（可逐字搬）；**181 个用例可近 1:1 译成
+  Dart 测试当验收网**。
+- **Tauri 专项核查（2026-09-21，用户拿自己的 `ccg-gateway` 10MB 当证据后核实）**：
+  ① **他的网关我拆过**：Tauri 2 · **33,748 行 Rust** · Vue3+Element Plus · sqlx/axum/tokio/reqwest ·
+  **纯桌面**（capabilities 用 `desktop-schema.json`，CI 只出 Win exe / macOS dmg / Linux AppImage）·
+  **无 FTS5**。10MB 里有一部分是 `strip=true, lto=true, codegen-units=1, panic="abort"` 的功劳。
+  本机另有 `cc-switch`（第三方开源，Tauri 2 · 63,141 行 Rust · React），可当参照。
+  ② **那 10MB 与我们不重叠**：它是「服务器形状」（HTTP 代理 + 协议翻译 + sqlx），
+  findR 是「设备形状」（相机 / 录音 / 压缩 / 钥匙串 / FTS5）。**别拿它当迁移论据。**
+  ③ **Tauri 移动端三个已核实缺口，全落在关键路径**：相机只有**官方插件且仅 iOS/Android**（桌面无）；
+  录音**无官方插件**，只有第三方 `tauri-plugin-audio-recorder` 0.1（手机出 M4A，格式对得上但版本太新）；
+  **安全存储官方无解** —— Tauri 维护者 FabianLars 明说 stronghold「**不再推荐、v3 移除**」，
+  社区 keyring **不支持 Android**。另：「Android System WebView 版本过旧」是移动端第一号已知坑。
+  ④ **鸿蒙：Tauri 官方不支持，且是架构性的**（HarmonyOS NEXT 无 Android WebView 接口、无 Rust 工具链）。
+  卓易通理论上能跑 Android APK，但 Tauri 强依赖系统 WebView ⇒ 双重风险。Flutter 有原生路（见上）。
+  ⑤ **关键澄清：「Tauri + Rust」不是必须的** —— 可选「薄 Rust + core 留在 TS 跑在 webview（sqlite-wasm）」，
+  那样 **core 零改动**；但也就拿不到「厚 Rust 压进 10MB」的可迁移性。两条都行，**得先选**。
+  ⑥ **结论**：仍**不换栈**。但 **Tauri 作为「桌面壳」是真对的选择**（桌面版不需要相机/录音/钥匙串，
+  恰好是它的主场，且用户已熟）—— 比 Electron 更合适，这条可以放心推荐。
 
 ## 环境坑
 - bash 里先 `export PATH="/usr/bin:/bin:$PATH"`，否则 `ls`/`find`/`head` 会 command not found
