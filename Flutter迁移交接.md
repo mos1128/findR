@@ -44,10 +44,13 @@
   **不影响 push 与打 tag**（`refs/heads` / `refs/tags` 可正常写入），
   **核对远端直接用 `git ls-remote origin main`**，不需要那个引用。
   真要修就在**用户自己的终端**里跑一次 `git fetch origin`，一条命令的事。
-- 桌面 APK（2026-09-22 第九轮出包，**Flutter 版**）：**`findr-flutter-dev-20260922.apk`**，
-  22,073,793 字节，sha256 `ce62417c31f50da8efd6a402470babb378ac5e84ba5723ac8024c15e2242cf30`。
-  已核对：包名 `com.findr.app.dev` · `android:label="Findr"` · **v2 签名**（debug 证书 ⇒ 可覆盖安装）。
+- 桌面 APK（**Flutter 版**；2026-09-22 同一天出了两版，**别装错**）：
+  · **`findr-flutter-dev-20260922-b.apk`** ← **要装的是这个**（第十轮，带「全屏相册左右滑」），
+    22,204,865 字节，sha256 `e9d0631b725a12af5bfcb5afaebc53539ff98f43f5cdd40f3f93ccd0f7391108`。
+  · `findr-flutter-dev-20260922.apk`（第九轮，**已作废**；用户已装过，只差相册滑动）。
+  两版都核对过：包名 `com.findr.app.dev` · `android:label="Findr"` · **v2 签名**（debug 证书 ⇒ 可覆盖安装）。
   ⚠️ **RN 那些 `findr-apk-m1-fix*.apk` 已不在桌面上**，别再提「删掉 fix11 免得装错」。
+  ⚠️ **一天内重复出包时文件名必须带轮次/序号**，否则「装哪个」这件事迟早出事（本轮已踩）。
 
 ---
 
