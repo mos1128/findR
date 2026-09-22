@@ -282,6 +282,10 @@ Future<UnderstandingResult> runUnderstanding(
       ask: out.ask.isEmpty ? null : out.ask,
       pathSuggestion: out.pathSuggestion,
       // 以「本次真的新建过节点」为准，比模型自报可靠：新建过 ⇒ 没匹配上已有树
+      // ⚠️ 没给 path 时退回去用模型自报的 `pathMatched`，它一般是 `false` ⇒ 这一列**不为 null**。
+      // 界面不受影响（`card_detail_screen.dart` 只在 `pathNames != null` 时才看它），但**统计口径必须当心**：
+      // 算「path 命中率」时分母只能取「真的给出了 path」的样本，否则「正确地不给位置」会被算成没命中。
+      // （TS 侧 2026-09-22 首次实测就因此假跌到 38.9%，实为 7/7。）
       pathMatched: path != null ? path.created.isEmpty : out.pathMatched,
     ),
   );
