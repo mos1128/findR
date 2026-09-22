@@ -335,7 +335,14 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 ],
                 if (images.isNotEmpty) ...<Widget>[
                   const SizedBox(height: Spacing.four),
-                  SectionTitle('照片', hint: '${images.length} 张'),
+                  // 多张时把「点开能左右滑」写出来：全屏相册的翻页手势没有视觉提示，
+                  // 不说一句就等于没做（真机就吃过一次这个亏）。
+                  SectionTitle(
+                    '照片',
+                    hint: images.length > 1
+                        ? '${images.length} 张 · 点开可左右滑'
+                        : '${images.length} 张',
+                  ),
                   const SizedBox(height: Spacing.two),
                   SizedBox(
                     height: 96,
@@ -344,7 +351,8 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                       itemCount: images.length,
                       separatorBuilder: (_, _) => const SizedBox(width: Spacing.two),
                       itemBuilder: (_, i) => GestureDetector(
-                        onTap: () => openImageViewer(context, images[i]),
+                        // 整组一起交出去 + 从点的那张开始，才能左右滑着看下一张。
+                        onTap: () => openImageViewer(context, images, initialIndex: i),
                         child: MediaThumb(relPath: images[i], size: 96, fallbackIcon: '📷'),
                       ),
                     ),

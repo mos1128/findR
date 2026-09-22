@@ -5,14 +5,14 @@
 > `开发交接.md` 是 RN 历史：**铁律与用户口径仍有效**，其「当前进度 / 下一步 / 未验证 / 真机端到端」四节已作废。
 
 ## 一、进度与下一步
-- ✅ core 实质译完 · ✅ `platform/` 七模块全写完 · ✅ **界面已按新设计写完、没照抄 RN**（`flutter test` 8 → **72**，
-  含拍照 / 连拍 / 相册 / 长按录音 / 音频回放）。
-- ✅ CI 通（**版本写死 3.47.5**）：出包已发布 `flutter-dev-latest`，且断言过 APK 里 `libsqlite3.so`
-  含 fts5/trigram。**本机没 Android SDK ⇒ 出包只能走 CI。**
-- ⬜ **下一步 = 只剩真机那层**：① **命门第 2 层**（装 `flutter-dev-latest` → 设置 → 维护 → 自检，两组全绿）；
-  ② 媒体链路真机验证（竖拍照片存下来是不是正的）。
-  ⚠️ **别拿 `dart test` / `flutter test` 冒充真机那层；用户确认前别说「媒体录入可用」。**
-- 每轮必跑：core `dart analyze` + `dart test`（**291**）· app `flutter analyze` + `flutter test`（**72**）·
+- ✅ core 实质译完 · ✅ `platform/` 七模块全写完 · ✅ **界面已按新设计写完、没照抄 RN**
+  （含拍照 / 相册 / 长按录音 / 音频回放 / 全屏相册左右滑；`flutter test` 8 → **83**）。
+- ✅ **命门三层全过（2026-09-22）**：真机上自检两组全绿 ⇒ **随 APK 发出去的那份 SQLite 确实带
+  FTS5 + trigram，整套检索方案成立**。**媒体链路真机也验过了**（竖拍照片存下来是正的）。
+- ✅ CI 通（**版本写死 3.47.5**）：出包发布 `flutter-dev-latest`（第九轮 **22.1MB**），
+  每次都对**产物本身**断言 fts5/trigram。**本机没 Android SDK ⇒ 出包只能走 CI。**
+- ⬜ **下一步**：V1 Android 功能面已齐，等用户继续报真机问题；之后才轮到 V2 Windows（§1 路线）。
+- 每轮必跑：core `dart analyze` + `dart test`（**291**）· app `flutter analyze` + `flutter test`（**83**）·
   RN `pnpm check`（**181 passed / 2 skipped**，基线不许破）。
 
 ## 二、已拍板决策（别再重新调研）

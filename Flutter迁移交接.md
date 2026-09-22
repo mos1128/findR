@@ -23,15 +23,15 @@
 | RN 版终态 | ✅ 已 push 到远端 `ceaa4f4`（参照实现 + 回滚路）|
 | Flutter SDK | ✅ 3.47.5 stable / Dart 3.13.4；本机已 `scoop hold` 冻结版本（§7）|
 | 骨架 | ✅ `apps/flutter/`（applicationId `com.findr.app.dev`）+ `packages/findr_core/` |
-| **命门（FTS5 + trigram）** | ✅ 第 1 层（`dart test`）· ✅ **中间层（`flutter test`，Flutter 工具链下 native assets 真编出了 SQLite）**；⬜ **第 2 层（真机）未做** —— 见 §6.1 |
+| **命门（FTS5 + trigram）** | ✅ 第 1 层（`dart test`）· ✅ 中间层（`flutter test`，Flutter 工具链下 native assets 真编出了 SQLite）· ✅ **第 2 层（真机，2026-09-22 用户实测：自检两组全绿）** ⇒ **三层全部通过，整套检索方案成立** —— 见 §6.1 |
 | **core 翻译** | ✅ **约 5,394 / 5,429 行 ≈ 99.4%**（全局 39%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · `providers/`+`settings`+`util/` ✅ · `pipeline/`+`cards/`+`media/` ✅ · **`backup/` ✅**；**剩下的 35 行只是 TS 的 `src/index.ts` 桶文件**（Dart 用一个 `findr_core.dart` 代替）⇒ **core 实质译完** |
 | **应用层接线** | ✅ **7 个模块全写完**（约 1,000 行）：`app_paths` · `db` · `media` · `device_selfcheck` · `secure` · `backup` · `runtime` —— 见 §6.3。**UI 之前再无接线欠账** |
 | 自检屏（真机载体） | ✅ 分两组：**核心**（FTS5 命门，优先跑在真实库文件上）+ **设备层**（PRAGMA / 外键 / 嵌套事务 / 媒体往返 / 打包往返）。**入口已从 `main.dart` 挪到「设置 → 维护」**（`main.dart` 的 `home` 现在是记忆流主页）⇒ **APK 装好，进设置点「自检」即可验命门第 2 层** |
-| 验收网 | `dart test` **291 通过** · `flutter test` **72 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| 验收网 | `dart test` **291 通过** · `flutter test` **83 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
 | app 依赖 | `findr_core` · `path_provider` · `flutter_riverpod` · `http` · `http_parser` · `flutter_secure_storage` · `share_plus` · `file_picker` · `package_info_plus` · **`image`**（压缩到 WebP）· **`image_picker`**（拍照/相册）· **`record`**（录音，m4a/AAC）· **`audioplayers`**（回放）· **`connectivity_plus`**（无网提示）|
 | CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）。`checks` 已实测全绿；`apk` **已出包并发布 `flutter-dev-latest`**，且每次都对**产物本身**断言 `lib/arm64-v8a/libsqlite3.so` 含 `fts5`/`trigram`（第九轮实测：**22.1MB**；`fts5` 出现 **38** 次、`trigram` **1** 次）|
-| **界面本身** | ✅ **已全部写完**（21 个文件）：`theme/tokens` · `ui/{kit,media_view,card_row,audio_player}` · `state/memory_stream` · `capture/{text_file,composer,image_compress,photo_picker,recorder,submit}` · `platform/network` · `screens/{memory_stream,card_detail}` + `screens/settings/`（5 屏）。**没照抄 RN**（§6.3）。**拍照 / 连拍 / 相册 / 长按录音 / 音频回放全部接上**，`flutter test` 从 8 涨到 **72** |
+| **界面本身** | ✅ **已全部写完**（22 个文件）：`theme/tokens` · `ui/{kit,media_view,card_row,audio_player}` · `state/memory_stream` · `capture/{text_file,composer,image_compress,photo_picker,recorder,submit}` · `platform/network` · `screens/{memory_stream,card_detail}` + `screens/settings/`（5 屏）。**没照抄 RN**（§6.3）。**拍照 / 连拍 / 相册 / 长按录音 / 音频回放 / 全屏相册左右滑全部接上**，`flutter test` 从 8 涨到 **83** |
 
 **几条 git 现状（2026-09-21 实测，别重复排查）**：
 
@@ -282,7 +282,7 @@ findR/
 
 ## 6. 进度与下一步
 
-### 6.1 命门（FTS5 + trigram）—— 第 1 层 ✅ / 中间层 ✅ / 第 2 层 ⬜
+### 6.1 命门（FTS5 + trigram）—— **三层全部 ✅（2026-09-22 收口）**
 
 > 建一张 FTS5 表 + **trigram 分词器**，插入中文内容，用 **3 个字以上**的词做 `MATCH`，**必须命中**。
 > 我们整套检索完全建立在这上面。**这一条不通 ⇒ 整个方案要重新评估。**
@@ -324,17 +324,27 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 `package:sqlite3/src/ffi/libsqlite3.g.dart → …\native_assets\windows\sqlite3.dll`。
 ⇒ **不需要 `flutter config --enable-native-assets`，3.47.5 下默认就是开的**（原本担心这点，现在不用管了）。
 
-**第 2 层 · 真机 —— ⬜ 还没做；但**载体与出包链路都已就绪**
+**第 2 层 · 真机 —— ✅ 已通过（2026-09-22，用户实测）**
+
+用户在真机上装好 `flutter-dev-latest` 后，进 **设置 → 维护 → 自检**，
+**两组全部全绿**。⇒ **随 APK 发到手机上的那份 SQLite 确实带 FTS5 + trigram，整套检索方案成立。**
+
+同一轮真机反馈还确认了**媒体链路**也是好的（竖着拿手机拍的照片存下来是正的 ——
+即 `image` 包那个「EXIF 转两遍」的坑确实绕过去了，见 §6.3）。
+
+**出包链路与产物级断言（前置筛子）也都跑通了**：
 
 | 需要的东西 | 状态 |
 |---|---|
-| 真机上跑的自检屏 | ✅ `apps/flutter/lib/selfcheck/self_check_screen.dart`，且 `main.dart` 已指向它（临时入口，UI 做起来就换掉）|
-| 能装到真机的 APK | ✅ CI `.github/workflows/flutter.yml` 的 `apk` 作业已**实测出包成功**（`app-release.apk`，**18.2MB**）。本机没装 Android SDK，出包只能走 CI |
-| 产物级断言（前置筛子）| ✅ 该作业会从 APK 里抽出 SQLite 的 `.so`，断言二进制里**含 `fts5` 与 `trigram` 字符串**（模块按名注册，名字串会留在二进制里）。这能在上真机前就挡掉「native assets 没打进包」；⚠️ **这一步本轮因文件名写错而没跑到，待下一次出包复核** |
+| 真机上跑的自检屏 | ✅ `apps/flutter/lib/selfcheck/self_check_screen.dart`。**入口在「设置 → 维护」**（`main.dart` 的 `home` 早已换成记忆流主页，不再是自检屏）|
+| 能装到真机的 APK | ✅ CI 的 `apk` 作业已多次实测出包（第九轮 **22.1MB**）。本机没装 Android SDK，出包只能走 CI |
+| 产物级断言 | ✅ 该作业会从 APK 里抽出 SQLite 的 `.so`，断言二进制里**含 `fts5` 与 `trigram`**（模块按名注册，名字串会留在二进制里）。第九轮实测：`fts5` 出现 **38** 次、`trigram` **1** 次 |
 
-⚠️ **仍然别只做第 1 层就宣布命门通过**，也**别拿中间层冒充第 2 层**：前两层跑的都是桌面上的产物，
-只有第 2 层验的是**真正随 APK 发到手机上的那份二进制**。
-（这正是铁律 5「调用失败与能力不支持必须分开判」的同类问题：得在真实的那一层上看。）
+⚠️ **三层各验的是不同的一份东西，别互相冒充**（铁律 5 的同类问题）：
+第 1 层验桌面上的 libsqlite3、中间层验 Flutter 工具链编出来的 native assets、
+第 2 层验的才是**真正随 APK 发到手机上的那份二进制**。
+（第九轮出包前的产物级断言虽然能挡掉「native assets 没打进包」，
+但它只证明「**编进去了**」，证明不了「**运行时跑得起来**」—— 后者才是第 2 层。）
 
 ### 6.2 翻译进度（core 5,429 行口径）
 
@@ -571,7 +581,7 @@ Flutter 这边**从 `platform/` 开始接**，因为那部分是**与界面设�
 | `platform/runtime.tsx` | `platform/runtime.dart` | ✅ Riverpod。`RuntimeState` 快照 + `dbProvider`（**全生命周期只开一次库**）+ `runtimeProvider.refresh()`（保存设置后重读）。**不做业务判断** |
 | `ui/`（RN 设计系统）| `theme/tokens.dart`（**新增**）| ✅ **全新设计令牌**：`FindrColors extends ThemeExtension`（light/dark 两套、`lerp` 可插值）+ `Spacing` / `Radii` / `maxContentWidth` + `buildFindrTheme(Brightness)`。**类名是 `Radii` 不是 `Radius`**（后者与 `dart:ui` 的 `Radius` 撞名）|
 | `ui/*`（RN 组件）| `ui/kit.dart`（**新增**）| ✅ 组件箱：`ScreenBody`（CustomScrollView + 居中 + 限宽 800）/ `Panel` / `FindrButton`（4 变体）/ `FindrChip` / `FindrBadge` / `Notice`（**恒在文档流里，绝不浮层**）/ `EmptyState` / `FindrField` / `ListRow` / `FindrTopBar` |
-| —— | `ui/media_view.dart`（**新增**）| ✅ `mediaFileOf` / `MediaThumb` / `MediaFull`。**`AppPaths.ready == false` 时返回 null 而不是抛**（缩略图退化成带来源图标的占位块，不留白框）|
+| —— | `ui/media_view.dart`（**新增**）| ✅ `mediaFileOf` / `MediaThumb` / `MediaFull` / **`openImageViewer`（全屏相册，同卡片多张可左右滑）**。**`AppPaths.ready == false` 时返回 null 而不是抛**（缩略图退化成带来源图标的占位块，不留白框）|
 | `ui/` 卡片行 | `ui/card_row.dart`（**新增**）| ✅ 角标**只画不算** —— 判定全部走 core 的 `cardBadges` / `badgeLabel` / `BadgeContext`（单一真相源）|
 | `state/`（RN Zustand）| `state/memory_stream.dart`（**新增**）| ✅ **Riverpod AsyncNotifier**：记忆流 + 检索视图（流/结果/答案三态）+ 分类筛选 + `drainQueue`。`search()` 特意不叫 `runSearch`（避开与 runtime 同名）|
 | `capture/`（RN 文件录入）| `capture/text_file.dart`（**新增**）| ✅ 文本文件摄取。**超限不静默截断**（8,000 字上限，超了连实际字数一起退回）；BOM 剥掉；扩展名白名单 |
@@ -605,6 +615,33 @@ Flutter 这边**从 `platform/` 开始接**，因为那部分是**与界面设�
 | `capture/submit.ts` | `capture/submit.dart` | ✅ 先写文件、再插行；来源由「手里真有什么」定（图 > 音 > 文）|
 | `app/card/[id].tsx` 的音频段 | `ui/audio_player.dart` | ✅ **RN 只是把路径印出来**，这里能听了 |
 | `expo-network` 的 `useNetworkState` | `platform/network.dart` | ✅ 无网时录入坞上方提示「先拍照或打字」 |
+| `app/card/[id].tsx` 的照片条 | `ui/media_view.dart` 的 `openImageViewer` | ✅ **同一卡片的多张照片，点开后能左右滑着看**；RN 那边**连点开都没有**（只是一排缩略图）|
+
+⚠️ **全屏相册：真机报「同一个卡片中的两张图不能左右滑动切换」（2026-09-22 修）**
+
+原来那个全屏页只收**一个** `relPath`，想看第二张只能**退出去、再点第二张缩略图**
+—— 那不是少个手势，是条死路。现在一次拿到整组 + `initialIndex`（**从点的那张开始**，
+不是每次都从头），用 `PageView` 翻页，标题给出「2 / 3」。
+只有一张时不显示页码（没有可翻的页，数字只是噪音）。
+卡片详情里那句 `N 张 · 点开可左右滑` 是**必需的**：翻页手势没有视觉提示，
+不写出来就等于没做。
+
+**两个踩到的坑（都写进代码注释 + 用例了）**：
+
+1. ⚠️ **每一页都要用 `SizedBox.expand` 铺满，别用 `Center` 直接包 `Image`。**
+   图片还没解码完时 `Image` 的固有尺寸是 **0**，`InteractiveViewer` 会跟着变成 **0×0**，
+   于是「在图上拖动」根本落不到它身上 —— 页面看着正常、就是划不动。
+   铺满后 `BoxFit.contain` 自己会居中按比例装进去，两边留黑边反而更像相册。
+2. ⚠️ **`InteractiveViewer` 并没有吃掉翻页手势** —— 别再往这个方向查一遍。
+   我一开始就是这么怀疑的，去读了 `ScaleGestureRecognizer` 才确认不成立：
+   它要 **`kPanSlop`(=36px)** 才接受，而 `HorizontalDragGestureRecognizer` 只要
+   **`kTouchSlop`(=18px)**，翻页永远先赢。
+   真正的原因是**我的用例用了 `tester.drag` 拖整整半页、收尾速度为 0**，
+   而 PageView 恰好在半页处**回弹** ⇒ 「明明划了却没翻页」是**测试造出来的假象**。
+   **改成 `tester.fling(..., 速度 900)` 就够了。**
+   > 通用教训：`tester.drag` 收尾速度是 0，凡是靠**惯性**翻页/滚动的东西
+   > （PageView、ListView 的甩动）都得用 `fling`，否则会得到一个「像 bug 的测试」，
+   > 然后去改一段根本没坏的代码。
 
 ⚠️ **`image` 包埋的两个雷（都只有实测才会发现，都已被测试钉住）**：
 
