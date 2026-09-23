@@ -6,7 +6,8 @@
 > 要把 AI 当真实助手用」—— 定位题（我护照放哪了）与推理题（出国玩该带什么）需要**完全不同的输入**：
 > 前者的答案在库里躺着，后者的答案要靠常识把情景与**库存**连起来。
 > 所以先分路，再各自执行：locate 走本地字面检索，advise 走「整库清单 → P4 裁决」。
-> 见 `开发交接.md` 第十五版小节与 `需求.md` 5.3。
+> 见 `需求.md` 5.3。（原文还引了《开发交接.md》第十五版小节 —— 该文档已于 2026-09-23 删除，
+> 需要时 `git show ad93100:开发交接.md`。）
 
 ---
 
@@ -351,7 +352,8 @@ advise 的约束：
 
 ### System
 
-见 `packages/core/src/prompts/templates.ts` 的 `P4_SYSTEM`（权威副本在此，改一处要同步）。
+见 `packages/findr_core/lib/prompts/templates.dart` 的 `P4_SYSTEM`（**权威副本在代码里，改一处要同步**；
+原 TS 副本已删，需要时 `git show ad93100:packages/core/src/prompts/templates.ts`）。
 
 ### 输入格式
 
@@ -365,7 +367,7 @@ advise 的约束：
 1 | c01 | 护照 | 物品存取 | 主卧/床头柜 | 因私护照，和户口本放在一起
 ```
 
-清单由 `search/inventory.ts` 的 `buildInventory` 生成：
+清单由 `findr_core` 的 `search/inventory.dart`（`buildInventory`）生成：
 
 - 每行只取 `实体 / 分类 / 位置 / 简述(60 字)` —— 不是全文，但足以判断「这东西那个场合用不用得上」；
 - **先按相关度排序，再截断**（第十七版）：`terms` 取 P2 的 `aspects` + `scenario` + 用户原句，
@@ -398,7 +400,7 @@ advise 的约束：
 - 这里没有 `suggest`：P3 的 `suggest` 是「还能问什么」，`missing` 是「你还缺什么」——
   后者才是这个场景里真正有价值的信息。
 
-### 客户端行为（`search/advise.ts`）
+### 客户端行为（`findr_core` 的 `search/advise.dart`）
 
 - **只认清单里存在的 id**：模型编出来的 id 一律丢掉，否则列表会指向不存在的卡。
 - **同一张卡同时进了两档时以 `picks` 为准**，避免列表里出现两张一样的卡。

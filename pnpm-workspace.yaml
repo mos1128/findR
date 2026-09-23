@@ -1,9 +1,0 @@
-packages:
-  - "packages/*"
-  - "apps/*"
-  # Dart/Flutter 目录不是 pnpm 包，显式排除（它们由 pub 管理）
-  - "!packages/findr_core"
-  - "!apps/flutter"
-allowBuilds:
-  better-sqlite3: true
-  esbuild: true

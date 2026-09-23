@@ -1,9 +1,9 @@
 name: flutter
 
-# 与 android.yml（RN 版）同一理由：私有仓库的 Actions 额度有限，而一次 APK 构建十几分钟。
+# 私有仓库的 Actions 额度有限，而一次 APK 构建十几分钟（RN 版当年同理）：
 #   - checks 作业：push / PR 都跑，便宜，是迁移期的验收网。
 #   - apk    作业：只有 tag（fapk-*）或手动触发才跑，因为它要真出包。
-# RN 版用 apk-* 前缀，Flutter 版刻意用 **fapk-***，免得一个 tag 同时引爆两条流水线。
+# 出包 tag 刻意用 **fapk-*** 前缀（RN 版当年是 apk-*），与旧标签区分开。
 on:
   workflow_dispatch:
   push:
@@ -91,8 +91,8 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # 沿用 runner 镜像预装的 Android SDK（理由与 android.yml 同：setup-android 会认不出
-      # 镜像自带的 cmdline-tools 而自作主张再下一份，然后在 licenses 那步失败）。
+      # 沿用 runner 镜像预装的 Android SDK（setup-android 会认不出镜像自带的
+      # cmdline-tools 而自作主张再下一份，然后在 licenses 那步失败）。
       - name: Check preinstalled Android SDK
         run: |
           echo "ANDROID_HOME=${ANDROID_HOME:-<未设置>}"

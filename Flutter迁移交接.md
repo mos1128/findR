@@ -1,9 +1,12 @@
-# Findr · Flutter 迁移交接
+# Findr · Flutter 交接
 
-> **用户 2026-09-21 拍板：从 React Native (Expo) 迁移到 Flutter。**
-> **本文件是新会话的第一份必读，也是迁移的唯一权威。**
-> RN 时代历史仍在 `开发交接.md`（**不废** —— 铁律、环境坑、用户口径、历史决策仍有效）；
-> 但它的「当前进度 / 下一步 / 未验证清单 / 真机端到端验证」四节**已随迁移作废**，别照着做。
+> **本文件是新会话的第一份必读，也是唯一权威。**
+> 历史：2026-09-21 从 React Native (Expo) 迁到 Flutter；**2026-09-23 迁移收尾 ——
+> 旧版 RN / TS 代码已整块删除**（`apps/mobile` + `packages/core` + pnpm/tsconfig 工具链），
+> RN 期的《开发交接.md》也一并删除。
+> ⚠️ **需要查旧实现**：`git show ad93100:<路径>`（`ad93100` = 删除前最后一个提交）。
+> Dart 代码里大量注释写着「逐字对应 `packages/core/src/xxx.ts`」—— 那些是**移植出处**，
+> 源文件已不在工作区，别去 `lib/` 外面找。
 
 ---
 
@@ -12,28 +15,29 @@
 1. 读**本文件**全文
 2. 读 `需求.md` —— **产品规格，最高权威**
 3. 读 `技术设计.md` —— 数据模型、算法、判定标准
-4. 按需读 `packages/core/src/` 的 TS 实现 —— **它就是规格说明书，是"要翻译的东西"**
-5. 从 **§6.2 的进度**接着做（§4 那 5 个决策**已全部定案，别再重新讨论**）
+4. 看 **§0.2** —— 那里是「一期的全部剩余」，比任何进度叙述都准
+5. §4 那 5 个决策**已全部定案，别再重新讨论**；§6 是已完成部分的过程记录，按需查
 
-### 0.1 当前状态快照（2026-09-22）
+### 0.1 当前状态快照（2026-09-23）
 
 | 项 | 状态 |
 |---|---|
 | 5 个开工决策 | ✅ 定案（§4）|
-| RN 版终态 | ✅ 已 push 到远端 `ceaa4f4`（参照实现 + 回滚路）|
+| **旧版 RN / TS 代码** | ❌ **2026-09-23 整块删除**（`apps/mobile` + `packages/core` + pnpm / tsconfig 工具链 + RN 的《开发交接.md》），**用户拍板，不是误删**。要查旧实现：`git show ad93100:<路径>` |
 | Flutter SDK | ✅ 3.47.5 stable / Dart 3.13.4；本机已 `scoop hold` 冻结版本（§7）|
 | 骨架 | ✅ `apps/flutter/`（applicationId `com.findr.app.dev`）+ `packages/findr_core/` |
 | **命门（FTS5 + trigram）** | ✅ 第 1 层（`dart test`）· ✅ 中间层（`flutter test`，Flutter 工具链下 native assets 真编出了 SQLite）· ✅ **第 2 层（真机，2026-09-22 用户实测：自检两组全绿）** ⇒ **三层全部通过，整套检索方案成立** —— 见 §6.1 |
-| **core 翻译** | ✅ **约 5,394 / 5,429 行 ≈ 99.4%**（全局 39%，§6.2）—— `db/` ✅ · `search/` ✅ · `parse/`+`prompts/` ✅ · `providers/`+`settings`+`util/` ✅ · `pipeline/`+`cards/`+`media/` ✅ · **`backup/` ✅**；**剩下的 35 行只是 TS 的 `src/index.ts` 桶文件**（Dart 用一个 `findr_core.dart` 代替）⇒ **core 实质译完** |
+| **core 翻译** | ✅ **译完**：5,394 / 5,429 行 ≈ 99.4%（余下 35 行是 TS 的 `src/index.ts` 桶文件，Dart 用 `findr_core.dart` 代替）⇒ 过程明细见 §6.2 |
 | **应用层接线** | ✅ **7 个模块全写完**（约 1,000 行）：`app_paths` · `db` · `media` · `device_selfcheck` · `secure` · `backup` · `runtime` —— 见 §6.3。**UI 之前再无接线欠账** |
 | 自检屏（真机载体） | ✅ 分两组：**核心**（FTS5 命门，优先跑在真实库文件上）+ **设备层**（PRAGMA / 外键 / 嵌套事务 / 媒体往返 / 打包往返）。**入口已从 `main.dart` 挪到「设置 → 维护」**（`main.dart` 的 `home` 现在是记忆流主页）⇒ **APK 装好，进设置点「自检」即可验命门第 2 层** |
-| 验收网 | `dart test` **291 通过** · `flutter test` **83 通过** · `dart analyze` / `flutter analyze` 均无问题；RN 侧 `pnpm check` **181 passed / 2 skipped**（基线未破）|
+| 验收网 | `dart analyze` / `flutter analyze` 均无问题 · `dart test` **296 通过** · `flutter test` **90 通过**。⚠️ **TS 侧的 `pnpm check` 基线已随 TS 代码一起废除**，别再去找它 |
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
 | app 依赖 | `findr_core` · `path_provider` · `flutter_riverpod` · `http` · `http_parser` · `flutter_secure_storage` · `share_plus` · `file_picker` · `package_info_plus` · **`image`**（压缩到 WebP）· **`image_picker`**（拍照/相册）· **`record`**（录音，m4a/AAC）· **`audioplayers`**（回放）· **`connectivity_plus`**（无网提示）|
-| CI flutter job | ✅ **已加**：`.github/workflows/flutter.yml`（`checks` 作业 + `apk` 作业；**版本写死 3.47.5**）。`checks` 已实测全绿；`apk` **已出包并发布 `flutter-dev-latest`**，且每次都对**产物本身**断言 `lib/arm64-v8a/libsqlite3.so` 含 `fts5`/`trigram`（第九轮实测：**22.1MB**；`fts5` 出现 **38** 次、`trigram` **1** 次）|
-| **界面本身** | ✅ **已全部写完**（22 个文件）：`theme/tokens` · `ui/{kit,media_view,card_row,audio_player}` · `state/memory_stream` · `capture/{text_file,composer,image_compress,photo_picker,recorder,submit}` · `platform/network` · `screens/{memory_stream,card_detail}` + `screens/settings/`（5 屏）。**没照抄 RN**（§6.3）。**拍照 / 连拍 / 相册 / 长按录音 / 音频回放 / 全屏相册左右滑全部接上**，`flutter test` 从 8 涨到 **83** |
+| CI | ✅ `.github/workflows/flutter.yml` **唯一一条流水线**（`checks` + `apk`；**版本写死 3.47.5**）。`apk` 每次都对**产物本身**断言 `libsqlite3.so` 含 `fts5`/`trigram`、合并清单含 `INTERNET`，最后发 `flutter-dev-latest`（当前包约 22.2MB）|
+| 品牌素材 | ✅ RN 的图标 / 启动图已搬到 `apps/flutter/assets/branding/`（**尚未接入**，属发布收尾那一步；参数也记在那边了）|
+| **界面 + UI 重构** | ✅ 界面写完（22 个文件，**没照抄 RN**；`flutter test` 8 → 83）· ✅ **UI 重构一版（2026-09-23，用户真机验收通过）**：配色换冷灰系、卡片改阴影浮起、录入口重写成微信式输入栏 —— 明细见 §6.3。**拍照 / 连拍 / 相册 / 长按录音 / 音频回放 / 全屏相册左右滑全部接上** |
 
-### 0.2 「一期 = 安卓版」的全部剩余（2026-09-22 逐条核实）
+### 0.2 「一期 = 安卓版」的全部剩余（2026-09-23 更新）
 
 ⚠️ **用户 2026-09-22 明确：一期只做安卓版**，V2 / V3 / Linux 全算后续。
 一期 ≈ `技术设计.md` 的 **M1 录入 + M2 检索 + M3 管理 + M4 备份** 四个里程碑 ⇒ **下表就是一期的全部剩余**。
@@ -47,8 +51,8 @@
 | | M4 验收（换机：导出 → **卸载** → 重装 → 导入）| ✅ 属最小验收 ⑦，**已过**（2026-09-23）。⚠️ 带 Key 的那版还没上过真机，下次复验 |
 | **B 功能欠账** | **后台自动补跑**（M2 明列：技术设计说「Android 的 BackgroundFetch 推到 M2」）| ⬜ **没做**。现状只有「App 回前台时补跑」（`memory_stream_screen.dart:62`）。⚠️ 技术设计自己标了 **best-effort、验收不依赖** |
 | | **gemini 适配器**（M2 明列）| ⬜ **没做**。`core/providers/` 只有 `anthropic` / `openai_compat` / `fake`。**只有你打算用 Gemini 才需要** |
-| **C UI 重构** | 重构一版 | ⬜ 未做。用户一直想做，**且是「正式发版」的前置条件** |
-| **D 发布** | **应用图标 + 启动图** | ⬜ **现在还是 Flutter 模板默认**（`mipmap-*/ic_launcher.png` 441~1443 字节）。✅ **RN 有现成素材可直接搬**：`apps/mobile/assets/images/` 里的 `icon.png` · `android-icon-{foreground,background,monochrome}.png` · `splash-icon.png`；自适应背景色 `#E6F4FE`（RN `app.json`）|
+| **C UI 重构** | 重构一版 | ✅ **2026-09-23 完成，且用户已在真机上验收通过**（配色 / 组件库 / 三主界面 + 录入口改微信式输入栏，明细见 §6.3 末段）|
+| **D 发布** | **应用图标 + 启动图** | ⬜ **现在还是 Flutter 模板默认**（`mipmap-*/ic_launcher.png` 441~1443 字节）。✅ **素材已备好**：`apps/flutter/assets/branding/`（`icon.png` · `android-icon-{foreground,background,monochrome}.png` · `splash-icon.png`，**参数与两种接入方式写在该目录的 README 里**）|
 | | **换正式签名** | ⬜ 现在 release 签 **debug 证书**（`android/app/build.gradle.kts:38`，CI 里还有一道 Guard 挡模板漂移）|
 | | 版本号 | 🟡 现为 `0.1.0+1`（与 RN 的 `0.1.0` 一致）—— 正式发前定 |
 | | 正式发版方式 | ⬜ 未定 |
@@ -62,32 +66,27 @@
 必须「**先导出备份 → 存到 App 之外（微信/文件）→ 再卸载 → 重装 → 导入**」。先卸载就是丢数据。
 原设计说「换签名要与 M4 同批做」—— **M4 已完成 ⇒ 现在可以做了**。
 
-⚠️ **回答「一期做完了吗」的正确口径（2026-09-23 更新）**：
-**功能面齐 + 真机 7 条验收全过 ⇒ 一期的「功能 + 验收」这一半，已经完成。**
-但「一期的全部」还含 **C（UI 重构）** 与 **D（发布收尾：图标 / 启动图 / 换正式签名 / 版本号）**。
-⇒ **准确说法**：「安卓版的功能和验收都过了；**剩 UI 重构和发布收尾**，做完才算一期完成。」
-别把「验收通过」直接说成「一期完成」，也别把「能装能用」说成「开发完成」。
+⚠️ **回答「一期做完了吗」的正确口径（2026-09-23 晚更新）**：
+**功能面齐 + 真机 7 条验收全过 + UI 重构一版（也已真机过）⇒ 一期只剩 D 组（发布收尾）。**
+D 组 = **应用图标 / 启动图 · 换正式签名 · 定版本号 · 定发版方式**。
+⇒ **准确说法**：「功能、验收、UI 都过了；**只剩发布收尾**，做完才算一期完成。」
+别把「验收通过」说成「一期完成」，也别把「能装能用」说成「开发完成」。
 
 **几条 git 现状（2026-09-21 实测，别重复排查）**：
 
-- 远端仓库 `mos1128/findR` **可达**；**tag 本地 17 / 远端 18** —— 多出来的那个
-  `flutter-dev-latest` 是 CI 发布的出包标签，**只存在于远端**（`softprops/action-gh-release` 自己建的）。
-  RN 侧最新 `apk-m1-fix12`；Flutter 侧出包统一落在 `flutter-dev-latest`（滚动的，每次覆盖）。
+- 远端仓库 `mos1128/findR` **可达**；出包标签统一落在 `flutter-dev-latest`（滚动的，每次覆盖）。
+  （RN 时代的 `apk-*` 标签已成历史 —— 源码 2026-09-23 已删。）
 - ⚠️ **沙箱里 `.git/refs/remotes/origin/` 建不起来** —— `git fetch origin` 会报
   `new branch main -> origin/main`、`FETCH_HEAD` 也确实写了，可 `refs/remotes/origin/main`
   **就是不落盘**；连 `git update-ref` 都返回 0 却无效，手动 `mkdir` 出的目录会被回滚。
   **不影响 push 与打 tag**（`refs/heads` / `refs/tags` 可正常写入），
   **核对远端直接用 `git ls-remote origin main`**，不需要那个引用。
   真要修就在**用户自己的终端**里跑一次 `git fetch origin`，一条命令的事。
-- 桌面 APK（**Flutter 版**）：
-  · **`findr-flutter-dev-20260923.apk`** ← **要装的是这个**（第十二轮，**修复 release 缺 INTERNET 权限**，
-    2026-09-23 真机验收第 ① 条撞出），22,204,885 字节，
-    sha256 `47dbba8874f11c27cb45f88c25d16ef6804a31f7a1beeb3183f312e8a88092dc`。
-  · `findr-flutter-dev-20260922-b.apk`、`findr-flutter-dev-20260922.apk`（**均已作废** ——
-    都没有 INTERNET 权限，探测必然失败，别再装）。
-  都核对过：包名 `com.findr.app.dev` · `android:label="Findr"` · **v2 签名**（debug 证书 ⇒ 可覆盖安装）；
-  20260923 这版另验过合并清单含 INTERNET / ACCESS_NETWORK_STATE / RECORD_AUDIO 三项、fts5 35 次 / trigram 1 次。
-  ⚠️ **RN 那些 `findr-apk-m1-fix*.apk` 已不在桌面上**，别再提「删掉 fix11 免得装错」。
+- **出包 / 装机口径（2026-09-23 用户环境已变）**：用户本机**已有 Android 环境**，并已用
+  **无线调试 + 热更新**在自己手机上装过新版 ⇒ **不必再走「CI 出包 → 传 APK → 手动安装」那条老路**。
+  CI 的 `apk` 作业仍保留，用途变成「发 `flutter-dev-latest` 供分发」+「对产物做断言」。
+  包的固定属性：包名 `com.findr.app.dev` · `android:label="Findr"` · debug 证书签名（⇒ **可覆盖安装、数据保留**）。
+  ⚠️ 桌面上的 `findr-flutter-dev-2026*.apk` 都是历史留档，**别拿旧包来判断当前状态**。
 
 ---
 
@@ -153,7 +152,10 @@
 
 ---
 
-## 3. 迁移的真实工作量（2026-09-21 实测）
+## 3. 迁移的真实工作量（2026-09-21 实测，**已全部完成**）
+
+> ⚠️ 表里的 `packages/core` / `apps/mobile` 已于 2026-09-23 删除 ——
+> 这些数字是当时的实测规模，留作「这次迁移到底有多大」的记录。
 
 | 模块 | 文件 | 行数 | 迁移方式 |
 |---|---|---|---|
@@ -171,12 +173,13 @@
 
 **迁移面**：26 个依赖，其中 **17 个 `expo-*` 模块**要逐个找 Flutter 替代。
 
-**这不是"重新设计"，是"翻译 + 换壳"。** 有 181 个用例当验收网，译错了会立刻被抓住 ⇒
+**这不是"重新设计"，是"翻译 + 换壳"。** 当时有 181 个 TS 用例当验收网（如今是 Dart 侧 296 + 90），译错了会立刻被抓住 ⇒
 **迁移风险比行数看起来低**。
 
-⚠️ 有个工具迁移后**没用了**：`.workbuddy/tools/probe-hbc-strings.py`（解析 Hermes 字节码字符串表）
-是 RN 专有的（Hermes 是 RN 的 JS 引擎）。**Flutter 是 AOT 编译，没有 Hermes，这个工具作废**，
-别再找它。但 **APK 拆解手法**（用 Python `zipfile` 按 `compress_size` 聚合）**仍然有用**。
+⚠️ 有个工具迁移后**没用了**：`.workbuddy/tools/probe-hbc-strings.py`（解析 Hermes 字节码字符串表）——
+Hermes 是 RN 的 JS 引擎，Flutter 是 AOT 编译、没有它 ⇒ **该工具已于 2026-09-23 随 RN 代码一并删除**，别再找它。
+但 **APK 拆解手法**（用 Python `zipfile` 按产物结构断言）**仍然有用** ——
+CI 里那两道产物级断言（`libsqlite3.so` 含 fts5/trigram、合并清单含 INTERNET）就是这套手法的延续。
 
 ---
 
@@ -223,16 +226,24 @@ findR/
    （后来又加了 `package:http` + `http_parser` —— 那是**联网**那条线，与 DB 无关；
    它同样是 Dart 官方包、纯 Dart、无 native 依赖，不破坏「app 端不用补 native 库」这条。）
 3. **名字用 `findr_core` 而不是 `core_dart`** —— Dart 包名必须 snake_case，
-   且这样能与 `packages/core`（TS 老版）一眼区分。
+   且这样能与当年的 `packages/core`（TS 老版）一眼区分（那个包已于 2026-09-23 删除）。
 
 **另外两条工程约定**：
 `.gitignore` 用 Flutter 工程自带的（**别把 `build/`、`.dart_tool/` 提交进来**）；
 **CI 里的 Flutter 版本号写死成与本地相同的具体版本**（不要写 `channel: stable`，见 §7.1.1）。
 
-### 4.2 ✅ 旧 RN 项目怎么处理 —— **保留，不删**（用户定）
+### 4.2 ✅ 旧 RN / TS 项目怎么处理 —— **2026-09-23 整块删除**（用户改判）
 
-- 它是迁移期的**参照实现**，也是**回滚路**。用户原话：「旧版保留方便对照」
-- 等 **V1（安卓）在真机上跑通并验收过**，再考虑归档
+- 原决策（2026-09-21）是「**保留，不删**」—— 定位是**参照实现** + **回滚路**，用户原话「旧版保留方便对照」。
+- **2026-09-23 用户改判：全部删除。** 这个改判站得住：迁移已实质完成（core 译完 + 界面 + UI 重构
+  都过了真机），「参照 + 回滚」的价值已被「Flutter 版自己能跑通」取代；
+  而且**删除 ≠ 丢失** —— 源码完整躺在 git 历史里（删除前最后一个提交 `ad93100`，
+  `git show ad93100:<路径>` 可取回）。
+- 删除范围：`apps/mobile` · `packages/core` · pnpm / tsconfig 工具链 · RN 的《开发交接.md》。
+  ⚠️ **只有图标素材被抢救出来**，留在 `apps/flutter/assets/branding/`（发布收尾要用，见 §0.2 D 组）。
+- ⚠️ **副作用**：Dart 代码里 60 多处「逐字对应 `packages/core/src/xxx.ts`」的注释，
+  现在指向的是**历史出处**而不是活文件 —— 这是有意保留的（它记录了移植来源与对照行数），
+  **不是漏改**，别再顺着这些路径去找文件。
 
 ### 4.3 ✅ core 怎么处理 —— **必须用 Dart 重写**（唯一没有捷径的一件）
 
@@ -282,33 +293,38 @@ findR/
 
 ## 5. 现有资产清单（新会话必须知道它们存在）
 
-### 5.1 六份权威文档（口径互相牵连，**改一处要 grep 全捞**）
+### 5.1 现有文档（口径互相牵连，**改一处要 grep 全捞**）
 
 | 文件 | 作用 |
 |---|---|
 | `需求.md` | **产品规格，最高权威** |
 | `技术设计.md` | 数据模型、算法、判定标准 |
 | `场景分析.md` | 各字段的使用场景 |
-| `prompt设计.md` | 提示词设计（对应 `templates.ts`）|
-| `测试计划.md` | 验收标准 |
-| `开发交接.md` | RN 时代历史与铁律（**本文件的前身**）|
+| `prompt设计.md` | 提示词设计（落地在 `findr_core/lib/prompts/templates.dart`）|
+| `测试计划.md` | 验收标准与实测指标 |
+| `最小验收清单.md` | 真机最小验收 7 条（**已全过**，下次只需复验 ⑥⑦）|
+| **本文件** | Flutter 时代的交接权威（铁律 / 环境坑 / 用户口径都在这里）|
 
-### 5.2 TS core 的关键文件（= 要翻译的规格说明书）
+（RN 时代的《开发交接.md》已于 2026-09-23 删除；它的铁律与环境坑已收进本文件 §7 / §8。）
 
-- `db/schema.ts` —— 建表 + 迁移。**⚠️ 文件顶部写了"SQLite 删列必须重建整张表"等硬约束，先读它**
-- `db/repository.ts` —— 全部 CRUD
-- `search/inventory.ts` —— L3 整库清单 + 相关性打分（`INVENTORY_POOL = 2000`；`scoreCard` 字段权重
-  entity 6 / tags 4 / category 3 / path 2 / body 1，≥4 字 ×2；**全 0 分时退化回 `created_at DESC`**）
-- `search/` 其余 —— L1（FTS5 本地检索）/ L2 + 意图路由
-- `pipeline/capture.ts` —— 录入流水线（P1/P2 解析、重试、状态机）
-- `providers/anthropic.ts` —— 模型调用。**认证：默认 `authorization: Bearer`，仅 401/403 时
-  自动改用 `x-api-key` 重试一次**（这是第二十版定的，别改回去）
-- `backup/` —— `.findrpack` 格式 = `magic "FINDR"(5B) + 版本 u16(=1) + 标准 ZIP`，**明文不加密**
-  （**界面上必须明说不加密** —— 页面红条 + 导出前确认框，这是唯一防线）
-- `settings.ts` —— 设置项的**唯一权威定义**（`SETTINGS_KEYS`）。
-  `settings_public` 白名单是「settings 这条通道」的屏障 —— **Key 从不走这条**。
-  ⚠️ **「备份永不含 Key」已于 2026-09-23 放开**（用户决定，见 §6.4）：Key 走 manifest 的
-  可选字段 `apiKeys`，由平台层显式传入；**包是明文**，界面必须点名说清代价
+### 5.2 几个「当初对着 TS 敲定的规格」要点（源码已删，这里留结论）
+
+- **建表 / 迁移**（原 `db/schema.ts`）：⚠️ **SQLite 删列必须重建整张表**；DDL 刻意拆成
+  「一条 DDL = 一个数组元素」（原 TS 侧是因为 op-sqlite 只能执行多语句的第一条，Dart 沿用同一形状）
+- **仓储**（原 `db/repository.ts`，648 行）—— core 里最大的单文件，全部 CRUD 在这里
+- **L3 整库清单 + 相关性打分**（原 `search/inventory.ts`）：`INVENTORY_POOL = 2000`；
+  `scoreCard` 字段权重 **entity 6 / tags 4 / category 3 / path 2 / body 1**，≥4 字 ×2；
+  **全 0 分时退化回 `created_at DESC`**
+- **模型调用**（原 `providers/anthropic.ts`）：认证**默认 `authorization: Bearer`，
+  仅 401/403 时自动换 `x-api-key` 重试一次**（第二十版定的，别改回去）
+- **备份格式**（原 `backup/`）：`.findrpack` = `magic "FINDR"(5B) + 版本 u16(=1) + 标准 ZIP`，**明文不加密**
+  （界面必须明说不加密 —— 页面红条 + 导出前确认框，这是唯一防线）
+- **设置项唯一权威**（原 `settings.ts`）：`SETTINGS_KEYS`；`settings_public` 白名单是「settings 这条通道」的屏障
+  —— **Key 从不走这条**。⚠️ 「备份永不含 Key」已于 2026-09-23 放开（Key 走 manifest 的可选字段 `apiKeys`，
+  由平台层显式传入，**core 只搬不读**；**包是明文**，界面必须点名说清代价）
+
+对应 Dart 实现：`findr_core/lib/` 下的 `db/schema.dart` · `db/repository.dart` · `search/inventory.dart` ·
+`providers/anthropic.dart` · `backup/` · `settings.dart`。
 
 ### 5.3 数据库现状（迁移必须复刻）
 
@@ -391,73 +407,21 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 （第九轮出包前的产物级断言虽然能挡掉「native assets 没打进包」，
 但它只证明「**编进去了**」，证明不了「**运行时跑得起来**」—— 后者才是第 2 层。）
 
-### 6.2 翻译进度（core 5,429 行口径）
+### 6.2 core 翻译与界面（**已完成**，5,429 行口径）
 
 | 顺序 | 模块 | 状态 |
 |---|---|---|
-| 1 | 骨架 | ✅ `apps/flutter/`（Flutter 3.47.5，`--platforms=android`，`com.findr.app.dev`）+ `packages/findr_core/`（纯 Dart，依赖 `sqlite3`）|
-| 2 | `db/` 那一层 | ✅ **全部译完**（2026-09-21 分两轮，明细见下）|
-| 3 | `search/` | ✅ **全部译完**（2026-09-22，含 `builder`）；顺带把它依赖的 `parse/` `prompts/` `providers/types` 一并译掉 |
-| 4 | `providers/` 联网层 + `settings` + `util/` | ✅ **全部译完**（2026-09-22，明细见下）|
-| 5 | `pipeline/` 录入编排 + `cards/` + `media/` | ✅ **全部译完**（2026-09-22，明细见下）|
-| 6 | `backup/` `.findrpack` 导出导入 | ✅ **全部译完**（2026-09-22，明细见下）—— **core 到此实质译完** |
-| 7 | UI | ✅ **已写完**（2026-09-22，**按新设计写、没照抄 RN**）：`theme/` `ui/` `state/` `capture/`（含媒体录入）`screens/` —— 见 §6.3 |
+| 1 | 骨架 | ✅ `apps/flutter/`（Flutter 3.47.5，`android`，`com.findr.app.dev`）+ `packages/findr_core/`（纯 Dart，依赖 `sqlite3`）|
+| 2 | `db/` 那一层 | ✅ 全部译完（2026-09-21）|
+| 3 | `search/` | ✅ 全部译完（2026-09-22，含 `builder`）；顺带把它依赖的 `parse/` `prompts/` `providers/types` 一并译掉 |
+| 4 | `providers/` 联网层 + `settings` + `util/` | ✅ 全部译完（2026-09-22）|
+| 5 | `pipeline/` 录入编排 + `cards/` + `media/` | ✅ 全部译完（2026-09-22）|
+| 6 | `backup/` `.findrpack` 导出导入 | ✅ 全部译完（2026-09-22）—— **core 到此译完** |
+| 7 | 界面 | ✅ 写完（2026-09-22，**按新设计写、没照抄 RN**）+ ✅ **UI 重构一版**（2026-09-23，用户真机验收通过）—— 见 §6.3 末段 |
 
-**第 2 项明细（✅ 2026-09-21，合计 1,476 行 TS）**：
-
-| TS 源 | 行 | Dart |
-|---|---|---|
-| `driver.ts`（接口）| 12 | `db/driver.dart` + `db/driver_sqlite3.dart`（`package:sqlite3` 实现）|
-| `json.ts` | 14 | `db/json.dart` |
-| `schema.ts` | 240 | `db/schema.dart`（DDL **逐字搬**，v1/v2/seed 三个数组）|
-| `migrate.ts` | 78 | `db/migrate.dart` |
-| `settings.ts` | 43 | `db/settings.dart` |
-| `types.ts` | 81 | `types.dart`（枚举用 enum + `wire`，落库/进包走 `wire`）|
-| `repository.ts` | 648 | `db/repository.dart`（**core 里最大的单文件**）|
-| `taxonomy.ts` | 174 | `db/taxonomy.dart` |
-| `search/builder.ts` | 186 | `search/builder.dart`（repository 靠它的 `escapeLike`，顺带译掉）|
-| ——（**新增**）| —— | `util/iso.dart`（见下）|
-
-**第 3 项明细（✅ 2026-09-22，本轮合计 1,160 行 TS）**：
-
-| TS 源 | 行 | Dart |
-|---|---|---|
-| `prompts/templates.ts` | 221 | `prompts/templates.dart`（**18 个模板逐字搬**，`r'''...'''` 原样字符串，改一个字就是错）|
-| `prompts/render.ts` | 138 | `prompts/render.dart`（`{{占位}}` 替换 + P1/P2/P3/P4 组装 + 分类/位置/字段说明格式化）|
-| `parse/index.ts` | 116 | `parse/outputs.dart`（P1/P2/P3/P4 形状）+ `parse/schema.dart`（**手写校验取代 zod**）+ `parse/model_json.dart`（`extractJson`/`fixJson`）|
-| `providers/types.ts` | 84 | `providers/types.dart`（适配器接口 + `Part`/`AudioRef`/`ChatRequest` 等契约）|
-| `providers/fake.ts` | 22 | `providers/fake.dart`（测试替身，队列式应答 + 记录请求）|
-| `search/inventory.ts` | 190 | `search/inventory.dart`（**相关性打分**：字段权重 entity 6 / tags 4 / category 3 / path 2 / body 1；≥4 字词 ×2 加权；**先排序再截断**）|
-| `search/service.ts` | 193 | `search/service.dart`（**检索主流程**：P2 规划 → 本地字面检索（含放宽阶梯）→ advise → 字面兜底）|
-| `search/advise.ts` | 104 | `search/advise.dart`（清单 → P4 模型裁决，取 refs：去重 + 丢假 id）|
-| `search/answer.ts` | 92 | `search/answer.dart`（摘要 → 答案，去重截断）|
-
-**第 4 项明细（✅ 2026-09-22，本轮合计 1,034 行 TS）**：
-
-| TS 源 | 行 | Dart |
-|---|---|---|
-| `providers/openai-compat.ts` | 195 | `providers/openai_compat.dart`（**两套协议的线格式之一**：`/v1/chat/completions` + `/v1/audio/transcriptions`）|
-| `providers/capabilities.ts` | 211 | `providers/capabilities.dart`（**四态探测** ok / unsupported / unknown / error）|
-| `providers/samples.ts` | 141 | `providers/samples.dart`（运行时造 64×64 PNG 与 1 秒 WAV：存储型 deflate 块 + CRC32/adler32）|
-| `settings.ts` | 138 | `settings.dart`（**设置项唯一权威**：JSON 形状与 TS 逐字段对齐，含浅合并语义）|
-| `providers/anthropic.ts` | 122 | `providers/anthropic.dart`（`/v1/messages`；**401/403 才换 `x-api-key` 重试一次**）|
-| `util/utf8.ts` | 64 | `util/utf8.dart`（纯算法逐字搬，见下）|
-| `providers/factory.ts` | 50 | `providers/factory.dart`（设置 + Key → 适配器）|
-| `util/base64.ts` | 50 | `util/base64.dart`（纯算法逐字搬，见下）|
-| `providers/sse.ts` | 49 | `providers/sse.dart`（流式读取骨架 + 两套 delta 提取）|
-| `providers/media.ts` | 14 | `providers/media.dart`（文件端口；`audioPart` 返回具体 `MultipartFile`，见下）|
-| ——（**新增**）| —— | `providers/transport.dart`（URL 归一化 / 超时 / 读体，把 TS 里写了两三遍的重复收拢）|
-
-**第 5 项明细（✅ 2026-09-22，本轮合计 728 行 TS）**：
-
-| TS 源 | 行 | Dart |
-|---|---|---|
-| `pipeline/capture.ts` | 326 | `pipeline/capture.dart`（**core 里最绕的一件**：`AdvanceDeps` + 草稿 → 转写 → 理解 → 入库；`UnderstandingResult` / `AdvanceOutcome` 用 sealed class + enum）|
-| `pipeline/edit.ts` | 156 | `pipeline/edit.dart`（补文字 / 重新整理 / 补分析 / 重生成 desc，四个入口都建在 `runUnderstanding` 上）|
-| `pipeline/queue.ts` | 119 | `pipeline/queue.dart`（串行重试队列；模块级 `_running` 锁 + `resetQueueLockForTest`）|
-| `cards/badges.ts` | 77 | `cards/badges.dart`（角标判定 + 文案 + `canReanalyze`；`CardBadge` 枚举带 `wire`）|
-| `media/paths.ts` | 35 | `media/paths.dart`（媒体相对路径规则；**月份用本地时间**，与 `isoUtc` 那套时间戳不同源，见下）|
-| `pipeline/ingest.ts` | 15 | `pipeline/ingest.dart`（`ingestText` 薄封装）|
+⚠️ 原先这里有 5 张「TS 源文件 → Dart 文件」的行数对照表，**2026-09-23 随 TS 源码一并移除**。
+需要对照时：看 Dart 文件顶部的注释（写着它的 TS 出处），或用 `git show ad93100:<路径>` 取回旧源码。
+**下面保留的都是翻译过程中的踩坑与有意偏离 —— 那才是有复用价值的部分。**
 
 验收网：`pipeline.test.ts` **31 个用例**（逐字译成 `test/pipeline/pipeline_test.dart`）+
 `badges.test.ts` 9 个（`test/cards/badges_test.dart`）+
@@ -477,18 +441,6 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
    代码里写了注释，别顺手「统一」掉。
 3. 📌 TS 的 `audioPart` 返回 `Blob`/`{uri,name,type}`，Dart 返回具体 `http.MultipartFile` ⇒
    断言 `{kind:'file', rel, mime}` 改成 `isA<AudioFileRef>()` + 字段判等。
-
-**第 6 项明细（✅ 2026-09-22，本轮合计 996 行 TS）**：
-
-| TS 源 | 行 | Dart |
-|---|---|---|
-| `backup/manifest.ts` | 398 | `backup/manifest.dart`（manifest 生成 + **导入合并策略**；`publicSettings` 走白名单 + 按键名深层剥除）|
-| `backup/zip.ts` | 232 | `backup/zip.dart`（**只支持 STORE 的最小 ZIP 读写**；每个成员都验 CRC32）|
-| `backup/pack.ts` | 167 | `backup/pack.dart`（导出/导入入口；**先写媒体再合并 DB** —— 反过来会留下指向空文件的卡片）|
-| `backup/types.ts` | 120 | `backup/types.dart`（端口 + 报告类型 + **卡片/分类/位置/别名的 JSON 胶水**）|
-| `backup/format.ts` | 58 | `backup/format.dart`（7 字节容器头；**别在加加密之前动它**）|
-| `backup/crc32.ts` | 16 | `backup/crc32.dart`（查表法，逐位与 TS 同值）|
-| `backup/index.ts` | 5 | ——（Dart 用 `findr_core.dart` 统一导出）|
 
 验收网：`backup.test.ts` **17 个用例**全部逐条译成 `test/backup/backup_test.dart`，
 另加 `test/helpers/memory_media.dart`（对应 TS `test/memory-media.ts`）与
@@ -521,13 +473,13 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 | Dart 产出的包是不是真 ZIP | Python `zipfile` 打开 | ✅ `namelist` 正确、`testzip()` → `None`（**所有成员 CRC 均通过**）|
 | 容器头 | 直接读字节 | ✅ `FINDR` + 小端 u16 = 1，头长 7 |
 | 白名单剥除 | Python 读 manifest | ✅ `settings.llm` 里**只有 providerType/baseUrl/model**，canary `apiKey` 不在；整包字节里也搜不到 |
-| **RN(TS) 能不能导入 Flutter(Dart) 的包** | 临时 vitest 用例跑 TS 的 `importBackup` | ✅ 2 张卡入库、位置两级、媒体 2 个、`pathNames` 与 desc 一致、无 canary |
+| **RN(TS) 能不能导入 Flutter(Dart) 的包** | 当时用临时 vitest 用例跑 TS 的 `importBackup`（一次性验证；TS 已删）| ✅ 2 张卡入库、位置两级、媒体 2 个、`pathNames` 与 desc 一致、无 canary |
 
 ⇒ **RN 版与 Flutter 版的备份包双向互认已实测通过**，用户的旧备份可以带过来。
 
 **验收网**：`dart test` **289 通过**（272 + 本轮 17）、`dart analyze` 无问题；
 `flutter test` **2 通过**（2026-09-22 补，含命门中间层）、`flutter analyze` 无问题；
-**RN 侧 `pnpm check` 仍 181 passed | 2 skipped**（基线未破）。
+**RN 侧 `pnpm check` 的 181 个测试（181 passed / 2 skipped）已于 2026-09-23 随 TS 代码一并废除** —— 别再把它当基线。
 **全局进度约 5,394 / 13,894 行 ≈ 39%**（按「需要动脑的行数」算比这个高 ——
 `templates.ts` 与全部 SQL 是逐字搬）。**core 实质译完（只剩一个 35 行的 TS 桶文件）。**
 
@@ -615,7 +567,7 @@ UI 侧待办的口径（都写在 §5 与需求里，别漏）：
 
 ### 6.3 应用层（`apps/flutter/`）进度
 
-RN 那边应用层是 `apps/mobile/src/`：`platform/`（接线）+ `app/`（路由与页面）+ `ui/` + `capture/`。
+（历史对照）RN 那边应用层是 `apps/mobile/src/`：`platform/`（接线）+ `app/`（路由与页面）+ `ui/` + `capture/` —— **该目录已于 2026-09-23 删除**。
 Flutter 这边**从 `platform/` 开始接**，因为那部分是**与界面设计无关**的 —— 任何界面都得有它。
 
 | RN 源 | Dart | 状态 |
@@ -766,6 +718,27 @@ release 包所有域名解析失败**（`Failed host lookup`，第一台真机�
 ⚠️ **但它仍不能替代真机**：Android 的文件系统语义、以及随 APK 发布的那份 SQLite，
 只有真机上才算验过。
 
+**UI 重构（2026-09-23 完成，用户真机验收通过）**
+
+范围：**只动界面层**（`apps/flutter/lib` 的 `theme/` `ui/` `screens/` `capture/`），
+**没碰** `packages/findr_core`、数据库 schema、`.findrpack` 格式。
+
+| 文件 | 改动 |
+|---|---|
+| `theme/tokens.dart` | 换整套冷灰配色；`border` 由实色改半透明；`Radii` 新增 `xs = 4` |
+| `ui/kit.dart` | Panel 去描边改**阴影浮起**；SectionTitle 加重；Chip 改实心药丸；Badge 改淡底；Notice 去掉左侧竖条；EmptyState 加圆底图标；Field / TopBar 去描边 |
+| `ui/card_row.dart` | 卡片行重做 |
+| `screens/memory_stream_screen.dart` | 主列表页重做 |
+| `screens/card_detail_screen.dart` | 详情页重做 |
+| `capture/composer.dart` | **重头**：录入口重写成**微信式输入栏** —— 左1 话筒/键盘切换 · 中 输入框或「按住说话」药丸 · 右2 ＋素材 · 右1 存 |
+| `screens/settings/settings_screen.dart` | 删掉 5 条面板 hint 文案（视觉简化）|
+
+验收：三侧基线未破（core `analyze` 干净 + `test` 296 · app `analyze` 干净 + `test` 90）；
+用户已在真机上过了一遍，确认可用。
+
+⚠️ **这次没有新增测试**（`flutter test` 仍是 90 条，与重构前同数）——
+新界面靠**真机肉眼**验收，这点要清楚：以后改界面时，测试网不会替你挡住视觉退化。
+
 ---
 
 ## 7. 环境现状（本机实测，2026-09-21）
@@ -775,7 +748,7 @@ release 包所有域名解析失败**（`Failed host lookup`，第一台真机�
 | **Flutter SDK** | ✅ **已装**：**3.47.5 stable · Dart 3.13.4**，实测通过（装法见 §7.1）|
 | **Android SDK** | ⬜ **未装，可以先不装**（`ANDROID_HOME` 为空；`%LOCALAPPDATA%\Android` 只有 platform-tools）|
 | **出包方式** | ✅ **仍走 CI**（`mos1128/findR` 的 GitHub Actions，**flutter job 待加**）|
-| 本机已有 | Node 22 / pnpm / Python 3.13 / `gh` CLI（**已登录**）/ `adb`（不在 PATH）/ **scoop** |
+| 本机已有 | Python 3.13 / `gh` CLI（**已登录**）/ `adb`（不在 PATH）/ **scoop**。⚠️ Node / pnpm 原为 TS 侧所需，**TS 删除后已无关**；另 **2026-09-23 用户本机已装好自己的 Android 环境**（可无线调试 + 热更新）|
 
 ### 7.1 为什么 Flutter SDK 必须装（2026-09-21 用户提问后定案）
 
@@ -915,7 +888,8 @@ release 包所有域名解析失败**（`Failed host lookup`，第一台真机�
 
 ## 8. 十二条铁律（从 RN 时代继承）
 
-> ⚠️ **这一节与 `开发交接.md` 第 0 节是同一份，改一处必须同步另一处。**
+> ⚠️ **这一节原是 RN 期《开发交接.md》的第 0 节 —— 那份文档已于 2026-09-23 删除，
+> 现在这里是唯一出处**（不再需要同步两处）。
 > 每一条都真实踩过，代价很大。**这些与语言无关，迁到 Flutter 照样成立。**
 
 1. **文档改一处要 grep 全捞**（字段清单散在六份 md 里）
