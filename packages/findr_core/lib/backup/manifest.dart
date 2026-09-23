@@ -1,9 +1,13 @@
 /// manifest 的生成与合并 —— 逐字对应 `packages/core/src/backup/manifest.ts`（398 行）。
 ///
-/// 导出侧的安全原则（技术设计七「永不包含 API Key 与生物锁设置」）：
+/// 导出侧的安全原则：
 /// settings 走**白名单** —— 只有 [SettingsKeys.all] 里列出的键可能进包，再叠一层按键名剥除，
 /// **而不是「过滤掉看起来像密钥的」**。方向反过来，才能在将来有人往 settings 里塞新东西时
 /// 默认是「不导出」而不是「导出」。API Key 本身只在系统安全存储里，压根不在 settings 表里。
+///
+/// ⚠️ **白名单这条没变，但「备份不含 Key」已于 2026-09-23 由用户决定放开**：
+/// Key 现在走 manifest 的 `apiKeys` **单独字段**（见 `types.dart`），由平台层显式传入。
+/// 所以这里**仍然不许**把 Key 混进 settings —— 两个通道分开，才能各管各的开关与风险提示。
 library;
 
 import 'dart:convert' show jsonEncode;

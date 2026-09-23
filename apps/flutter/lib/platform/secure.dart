@@ -81,6 +81,43 @@ final class MemoryApiKeyStore implements ApiKeyStore {
   }
 }
 
+/// 导入一份备份时，哪些 Key 该写进本机。
+final class KeyRestorePlan {
+  const KeyRestorePlan({required this.toWrite, required this.skipped});
+
+  /// 要写哪些槽位（值是备份里带回来的那把）。
+  final Map<ApiKeySlot, String> toWrite;
+
+  /// 因为本机已经有 Key 而**不动**的槽位数。
+  final int skipped;
+}
+
+/// 决定导入时该写哪几把 Key：**只填本机为空的槽位**。
+///
+/// 与「导入不删除本地任何数据」同一条口径 —— 换机场景下新机是空的，一定会写上；
+/// 而往一台**已经配好**的机器上再导一次，不该把正在用的 Key 悄悄换掉。
+/// 要换 Key 去设置页改，那是显式动作。
+///
+/// 抽成纯函数是为了这条规则能被单测押住：它写在一个 widget 里就没人测得到了。
+KeyRestorePlan planKeyRestore({
+  required Map<String, String> incoming,
+  required Map<ApiKeySlot, String?> current,
+}) {
+  final toWrite = <ApiKeySlot, String>{};
+  var skipped = 0;
+  for (final slot in ApiKeySlot.values) {
+    final value = incoming[slot.storageKey];
+    if (value == null || value.isEmpty) continue;
+    final have = current[slot];
+    if (have != null && have.isNotEmpty) {
+      skipped++;
+      continue;
+    }
+    toWrite[slot] = value;
+  }
+  return KeyRestorePlan(toWrite: toWrite, skipped: skipped);
+}
+
 /// 设置页只显示掩码（需求 3.6）。规则与 RN 版逐字相同。
 String maskApiKey(String? key) {
   if (key == null || key.isEmpty) return '未配置';

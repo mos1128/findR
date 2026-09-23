@@ -252,7 +252,7 @@ void main() {
       expect(dst.media.files, isEmpty);
     });
 
-    test('导出产物里绝不出现 API Key 或白名单外的设置项', () async {
+    test('settings 走白名单：白名单外的设置项绝不进包（Key 也不从这条通道漏出去）', () async {
       final src = sourceSide();
       setSetting(src.deps.db, 'llm', <String, Object?>{
         'providerType': 'anthropic',
@@ -272,6 +272,9 @@ void main() {
       expect(settings.containsKey('tracking_id'), isFalse);
       // 这条断言现在比加密时代更重要：文件是明文的，白名单一旦漏了就是直接泄露
       expect(containsBytes(exported.bytes, utf8Encode('sk-LEAK-CANARY-1234567890')), isFalse);
+      // Key 走 `apiKeys` 那条单独通道（2026-09-23 起），**不是** settings。
+      // 「不传就不带」这条必须守住：默认不带，才谈得上界面上的开关有意义。
+      expect(manifest.containsKey('apiKeys'), isFalse);
     });
 
     test('库里引用了但磁盘上已不存在的媒体：不阻断导出，但要如实报告', () async {
@@ -280,6 +283,83 @@ void main() {
       final r = await exportFrom(src);
       expect(r.report.mediaMissing, <String>[audio]);
       expect(r.report.mediaWritten, 1);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 备份：随包带走 API Key（2026-09-23 需求变更）
+  //
+  // 这一组钉的是「通道本身的开关」：**默认不带，只有调用方显式传了才带**。
+  // 界面上那个「带上 Key」的勾选框，靠的就是这里。
+  // ─────────────────────────────────────────────────────────────
+
+  group('备份：随包带走 API Key', () {
+    const llmKey = 'findr.llm.apiKey';
+    const asrKey = 'findr.asr.apiKey';
+
+    test('不传 secrets 时，manifest 里压根没有 apiKeys 键；导入返回空', () async {
+      final src = sourceSide();
+      final exported = await exportBackup(src.deps, now: at);
+      expect(rawManifestOf(exported.bytes).containsKey('apiKeys'), isFalse);
+
+      final res = await importBackup(targetSide().deps, exported.bytes);
+      expect(res.apiKeys, isEmpty);
+    });
+
+    test('传了 secrets 才会进包，且导入能原样取回', () async {
+      final src = sourceSide();
+      final exported = await exportBackup(
+        src.deps,
+        now: at,
+        secrets: <String, String>{llmKey: 'sk-llm-abc', asrKey: 'sk-asr-xyz'},
+      );
+      final manifest = rawManifestOf(exported.bytes);
+      expect(manifest['apiKeys'], <String, Object?>{llmKey: 'sk-llm-abc', asrKey: 'sk-asr-xyz'});
+
+      final res = await importBackup(targetSide().deps, exported.bytes);
+      expect(res.apiKeys, <String, String>{llmKey: 'sk-llm-abc', asrKey: 'sk-asr-xyz'});
+    });
+
+    test('带 Key 的包是明文的：Key 原文能在整包字节里搜到（这是必须让用户知道的代价）', () async {
+      final src = sourceSide();
+      final exported = await exportBackup(
+        src.deps,
+        now: at,
+        secrets: <String, String>{llmKey: 'sk-PLAINTEXT-CANARY'},
+      );
+      // 这不是在测试「加密有没有生效」—— 这一版**就是没有加密**。
+      // 钉住它，是为了让「备份带 Key 会把密钥明文交给拿到文件的人」这句话有据可查，
+      // 将来加了加密，这条会红 ⇒ 正好提醒加密那条路要跟上。
+      expect(containsBytes(exported.bytes, utf8Encode('sk-PLAINTEXT-CANARY')), isTrue);
+    });
+
+    test('老包没有 apiKeys 键：导入照常成功，只是不带 Key', () async {
+      final base = <String, Object?>{
+        'format': 'findrpack',
+        'formatVersion': 1,
+        'schemaVersion': currentSchemaVersion(sourceSide().deps.db),
+        'exportedAt': isoUtc(at),
+        'cards': <Object?>[],
+        'categories': <Object?>[],
+        'locations': <Object?>[],
+        'aliases': <Object?>[],
+        'settings': <String, Object?>{},
+        'media': <Object?>[],
+      };
+      final m = validateManifest(base);
+      expect(m.apiKeys, isNull);
+    });
+
+    test('core 不自己读 Key：只搬调用方给的，多一把少一把都不会自作主张', () async {
+      final src = sourceSide();
+      final exported = await exportBackup(
+        src.deps,
+        now: at,
+        secrets: <String, String>{}, // 显式给空 = 不带（与 null 同义）
+      );
+      // 空 map 也写进 JSON ⇒ 导入侧拿到空 map，语义是「带了但一把都没有」
+      expect(rawManifestOf(exported.bytes)['apiKeys'], isEmpty);
+      expect((await importBackup(targetSide().deps, exported.bytes)).apiKeys, isEmpty);
     });
   });
 

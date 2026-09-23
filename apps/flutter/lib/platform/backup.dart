@@ -6,6 +6,10 @@
 /// ⚠️ **包里没有任何加密**（2026-09-20 决策，见 core 的 `backup/format.dart`）：
 /// 它就是一层壳 + 标准 ZIP，拿到文件的人直接就能读到全部记忆。
 /// 所以界面**必须**明说不加密（红条 + 导出前确认框），且只能往用户自己信得过的地方递。
+///
+/// ⚠️ **API Key 可以随包带走**（2026-09-23 用户决定）。Key 只有平台层够得着
+/// （在 Keystore 里，见 `secure.dart`），所以「读出来塞进包 / 取回来写回去」都在这里：
+/// 这是**唯一**该碰 Key 的一层，界面只决定带不带，不自己读写安全存储。
 library;
 
 import 'dart:io';
@@ -100,6 +104,11 @@ Future<ExportOutcome> exportToFile(
   SqliteDriver db, {
   String? version,
   void Function(ExportPhase phase)? onPhase,
+
+  /// 要随包带走的 API Key（键名 = `ApiKeySlot.storageKey`）。**null / 空 = 不带**。
+  ///
+  /// 不带是默认值 —— 「备份含 Key」是件有代价的事，只能由界面显式选择。
+  Map<String, String>? secrets,
 }) async {
   final now = DateTime.now();
 
@@ -107,6 +116,7 @@ Future<ExportOutcome> exportToFile(
   final result = await exportBackup(
     BackupDeps(db: db, media: const DeviceMediaStore(), appVersion: version),
     now: now,
+    secrets: secrets,
   );
 
   onPhase?.call(ExportPhase.writing);

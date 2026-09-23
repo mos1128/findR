@@ -2,9 +2,13 @@
 /// `packages/core/src/backup/types.ts`（120 行）。
 ///
 /// 两条硬约束来自《技术设计.md》第七节，改动前先读那一节：
-///   1. **永不包含 API Key 与生物锁设置** —— 导出侧走 `settings_public` 白名单（见 manifest.dart），
+///   1. **settings 走白名单** —— 导出侧只放 `settings_public`（见 manifest.dart），
 ///      不是「过滤掉看起来像密钥的」，而是「只放白名单里的」，**方向反过来才对**。
 ///   2. **core 不直接依赖任何文件实现** —— RN 侧与 node 测试侧各自注入（见 [MediaStorePort]）。
+///
+/// ⚠️ **API Key 可随包带走（2026-09-23 用户决定，属需求变更）**：见 [BackupManifest.apiKeys]。
+/// 它**不在** settings 白名单里（白名单那条没动），而是单独一个可选字段，
+/// 由平台层在导出时显式传入 —— 这样「带不带」的开关留在界面上，core 不做默认。
 ///
 /// ⚠️ **当前不做加密**（2026-09-20 决策）：备份文件是明文 ZIP，谁拿到谁能读。
 /// 这里已经没有 CryptoPort 了；加密回归时按 `format.dart` 里写的那套（提 [backupFormatVersion]）
@@ -171,6 +175,7 @@ final class BackupManifest {
     required this.aliases,
     required this.settings,
     required this.media,
+    this.apiKeys,
   });
 
   factory BackupManifest.fromJson(Map<String, Object?> json) => BackupManifest(
@@ -188,6 +193,10 @@ final class BackupManifest {
     // （TS 的 `manifest.media?.length ?? mediaEntries.length` 正是靠这个区分），
     // 所以「键不存在」要保留成 null，不能塌成 `[]`。
     media: json.containsKey('media') ? _listOf(json['media'], MediaEntryMeta.fromJson) : null,
+    // 老包没有这个键 ⇒ null（「没带 Key」），与「带了但为空」不是一回事。
+    apiKeys: (json['apiKeys'] as Map?)?.map(
+      (k, v) => MapEntry<String, String>(k.toString(), v.toString()),
+    ),
   );
 
   final String format;
@@ -208,6 +217,16 @@ final class BackupManifest {
 
   final List<MediaEntryMeta>? media;
 
+  /// 随包带走的 API Key（**明文**，键名与 `ApiKeySlot.storageKey` 对齐）。
+  ///
+  /// ⚠️ **2026-09-23 用户决定：换机后重填 Key 太麻烦，所以备份默认带走。**
+  /// 代价写在界面上（导出确认框 + 备份页红条）：**包是不加密的，带 Key 等于
+  /// 把密钥明文交给任何拿到这个文件的人**。别在别处悄悄默认带上。
+  ///
+  /// `null` = 这份包没带 Key（老包 / 用户在导出时关掉了）；空 map = 带了但一把都没有。
+  /// core **不自己读 Key**（它在 Keystore 里，只有平台层够得着），只负责搬运。
+  final Map<String, String>? apiKeys;
+
   /// 回填媒体索引（`pack.ts` 写完文件后才能算出 size/crc32）。
   ///
   /// TS 那边是 `manifest.media = mediaMeta` 直接改字段；Dart 的 [BackupManifest] 不可变，
@@ -224,6 +243,23 @@ final class BackupManifest {
     aliases: aliases,
     settings: settings,
     media: mediaList,
+    apiKeys: apiKeys,
+  );
+
+  /// 挂上要随包带走的 Key。传 null / 空 map 都表示「这份包不带 Key」。
+  BackupManifest withApiKeys(Map<String, String>? keys) => BackupManifest(
+    format: format,
+    formatVersion: formatVersion,
+    schemaVersion: schemaVersion,
+    exportedAt: exportedAt,
+    appVersion: appVersion,
+    cards: cards,
+    categories: categories,
+    locations: locations,
+    aliases: aliases,
+    settings: settings,
+    media: media,
+    apiKeys: keys,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -240,6 +276,9 @@ final class BackupManifest {
     'aliases': aliases.map((a) => a.toJson()).toList(),
     'settings': settings,
     'media': (media ?? const <MediaEntryMeta>[]).map((m) => m.toJson()).toList(),
+    // 没带 Key 就**完全不写这个键** —— 老包与「关掉开关导出的包」形状一致，
+    // 导入侧永远能靠 `apiKeys == null` 分辨「没带」。
+    if (apiKeys != null) 'apiKeys': apiKeys,
   };
 }
 

@@ -1,13 +1,18 @@
 /// 备份与恢复 —— 对应 RN 的 `app/settings/backup.tsx`。
 ///
-/// **两条来自需求与《技术设计》第七节的硬约束，改这里之前先读那两处**：
+/// **来自需求与《技术设计》第七节的硬约束，改这里之前先读那两处**：
 ///
-/// 1. 导出文件**永远不含 API Key 与安全存储内容**（core 侧走白名单，不是靠过滤）；
-/// 2. 导入**不删除本地任何数据**，同 id 按 `updated_at` 新者胜。
+/// 1. 导入**不删除本地任何数据**，同 id 按 `updated_at` 新者胜；
+/// 2. settings 走白名单（core 侧），Key **不走** settings。
 ///
 /// ⚠️ **这一版没有加密**（2026-09-20 决策）：`.findrpack` 就是一个套了 7 字节头的 ZIP，
 /// 谁拿到谁能读到全部内容。界面上必须把这件事说白 —— 页顶红条 + 导出前的二次确认框，
 /// **两处都要**，缺一处就会有人以为它是加密的。
+///
+/// ⚠️ **API Key 现在可以随包带走**（2026-09-23 用户决定：换机后重填 Key 太麻烦）。
+/// 默认带上，但**代价必须在用户按下「导出」前就说清楚**：包是明文，带上 Key 等于
+/// 把密钥明文交给任何拿到这个文件的人 —— 而导出完一步就是分享面板（微信 / 网盘）。
+/// 所以勾选框 + 确认框里都要点名 Key，不能只在红条里笼统说「内容是明文」。
 library;
 
 import 'dart:async';
@@ -19,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../platform/backup.dart';
 import '../../platform/runtime.dart';
+import '../../platform/secure.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
 
@@ -36,6 +42,13 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   Timer? _ticker;
   ExportOutcome? _exported;
   ImportResult? _imported;
+
+  /// 导出要不要把 API Key 一起带走。**默认带** —— 用户要的就是「换机不用重填」；
+  /// 代价在确认框里点名说清楚，并在下面给一个随时能关掉的开关。
+  bool _includeKeys = true;
+
+  /// 上一次导入「恢复了几把 Key / 跳过几把」。null = 还没导入过。
+  ({int restored, int skipped})? _keyRestore;
 
   /// 挑中的备份文件。**留着 `PlatformFile` 而不是只留路径** ——
   /// 从微信/云盘转存过来的文件是 `content://` 虚拟文档，真正可读的是它自己的
@@ -66,6 +79,19 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     });
   }
 
+  /// 读出要随包带走的 Key。**两把都读不出来（都没配）就当不带** ——
+  /// 那样写进包里一个空对象只会让 manifest 多一个没用的键。
+  Future<Map<String, String>?> _collectSecrets() async {
+    if (!_includeKeys) return null;
+    final store = ref.read(apiKeyStoreProvider);
+    final out = <String, String>{};
+    for (final slot in ApiKeySlot.values) {
+      final v = await store.read(slot);
+      if (v != null && v.isNotEmpty) out[slot.storageKey] = v;
+    }
+    return out.isEmpty ? null : out;
+  }
+
   Future<void> _runExport() async {
     setState(() {
       _busy = true;
@@ -78,6 +104,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         _rt.driver,
         version: _rt.version,
         onPhase: (p) => setState(() => _phase = p),
+        secrets: await _collectSecrets(),
       );
       if (!mounted) return;
       setState(() => _exported = out);
@@ -97,8 +124,12 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
 
   /// 明文导出等于把整个记忆库摊开给任何拿到文件的人，而分享面板一点就发出去。
   /// 所以这里挡一道：说清楚它不是加密的，再让用户决定。
+  ///
+  /// ⚠️ 带上 Key 时**必须点名 Key**，不能只说「内容是明文」：多数人听到「内容」想到的是
+  /// 自己的卡片，不会联想到那两把模型密钥也在文件里。
   Future<void> _confirmThenExport() async {
     final c = FindrColors.of(context);
+    final withKeys = _includeKeys;
     final yes = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -106,6 +137,8 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         title: Text('这份备份没有加密', style: TextStyle(fontSize: 16, color: c.danger)),
         content: Text(
           '文件里就是你全部卡片的内容与图片、录音，拿到它的人不需要密码就能直接打开。\n\n'
+          '${withKeys ? '⚠️ 你勾了「带上 API Key」—— 那两把模型密钥也会明文写在这个文件里，'
+              '拿到文件的人可以直接拿去用（花的钱算你的）。\n\n' : ''}'
           '请只保存到自己信得过的地方（自己的电脑、私人云盘），别发到群聊里。\n\n'
           '加密会在这个功能的下一个版本补上。',
           style: TextStyle(fontSize: 13, height: 1.6, color: c.textSecondary),
@@ -129,6 +162,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     setState(() {
       _note = null;
       _imported = null;
+      _keyRestore = null;
     });
     try {
       final file = await pickBackupFile();
@@ -145,13 +179,18 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     setState(() {
       _busy = true;
       _note = null;
+      _keyRestore = null;
     });
     try {
       final bytes = await readBackupBytes(picked);
       final res = await importFromBytes(_rt.driver, bytes);
+      final restored = await _restoreKeys(res.apiKeys);
       if (!mounted) return;
-      setState(() => _imported = res);
-      // 导入直接改了 DB，必须让运行时把设置重新读一遍，否则界面还是旧的
+      setState(() {
+        _imported = res;
+        _keyRestore = restored;
+      });
+      // 导入直接改了 DB 与安全存储，必须让运行时重读一遍，否则界面还是旧的
       await ref.read(runtimeProvider.notifier).refresh();
     } catch (e) {
       if (mounted) {
@@ -160,6 +199,26 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 把包里带回来的 Key 写进本机安全存储。
+  ///
+  /// ⚠️ **本机该槽已经有 Key 时不动它** —— 与「导入不删除本地任何数据」同一条口径：
+  /// 换机场景下新机本来就是空的，一定会写上；而「往已配好的机器上再导一次」不该
+  /// 把正在用的 Key 悄悄换掉。要改 Key 去设置页改，那是显式动作。
+  Future<({int restored, int skipped})> _restoreKeys(Map<String, String> incoming) async {
+    if (incoming.isEmpty) return (restored: 0, skipped: 0);
+    final store = ref.read(apiKeyStoreProvider);
+    final current = <ApiKeySlot, String?>{};
+    for (final slot in ApiKeySlot.values) {
+      current[slot] = await store.read(slot);
+    }
+    // 「只填本机为空的槽位」这条规则在 platform/secure.dart 里有单测押着，别在这里重写。
+    final plan = planKeyRestore(incoming: incoming, current: current);
+    for (final entry in plan.toWrite.entries) {
+      await store.write(entry.key, entry.value);
+    }
+    return (restored: plan.toWrite.length, skipped: plan.skipped);
   }
 
   void _dialog(String title, String body) {
@@ -224,9 +283,14 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Text(
-                  '不含 API Key、不含任何安全存储内容 —— 导进去也还是要在新机器上重新填一次 Key。',
-                  style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
+                ListRow(
+                  title: '带上 API Key',
+                  subtitle: '换机后不用重新填那两把 Key。⚠️ 包是不加密的，'
+                      '带上就等于把密钥明文写进文件 —— 只给自己的设备用',
+                  right: Switch(
+                    value: _includeKeys,
+                    onChanged: (v) => setState(() => _includeKeys = v),
+                  ),
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrButton(
@@ -306,6 +370,19 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                     title: '导入完成 · 备份来自 ${_fmtWhen(imported.manifestInfo.exportedAt)}',
                     tone: NoticeTone.success,
                     text: _importSummary(imported),
+                  ),
+                ],
+                if (_keyRestore != null &&
+                    (_keyRestore!.restored > 0 || _keyRestore!.skipped > 0)) ...<Widget>[
+                  const SizedBox(height: Spacing.two),
+                  Notice(
+                    title: 'API Key',
+                    tone: NoticeTone.info,
+                    text: _keyRestore!.restored > 0
+                        ? '已从备份恢复 ${_keyRestore!.restored} 把 Key，现在就能直接用。'
+                            '${_keyRestore!.skipped > 0 ? '\n另有 ${_keyRestore!.skipped} 把没动 —— 本机已经配过了，保留你现在的。' : ''}'
+                        : '这份备份带了 ${_keyRestore!.skipped} 把 Key，但本机都已经配过，'
+                            '所以一把都没改（要换 Key 请去「设置 → 模型」里改）。',
                   ),
                 ],
               ],

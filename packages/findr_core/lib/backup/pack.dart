@@ -48,11 +48,20 @@ final class ExportResult {
   final ExportReport report;
 }
 
-Future<ExportResult> exportBackup(BackupDeps deps, {DateTime? now}) async {
+/// [secrets] = 要随包带走的 API Key（键名用 `ApiKeySlot.storageKey`）。
+///
+/// ⚠️ core **不自己读 Key** —— 它在 Keystore 里，只有平台层够得着。这里只负责搬运，
+/// 所以「带不带」这个决定必须由调用方显式做出（传 null = 不带）。
+/// 别在这里加默认值去读什么，那会让「备份含 Key」这件事变成隐式行为。
+Future<ExportResult> exportBackup(
+  BackupDeps deps, {
+  DateTime? now,
+  Map<String, String>? secrets,
+}) async {
   final at = now ?? DateTime.now();
   final schemaVer = deps.schemaVersion ?? currentSchemaVersion(deps.db);
   final built = buildManifest(deps.db, schemaVer, at, deps.appVersion);
-  final manifest = built.manifest;
+  final manifest = built.manifest.withApiKeys(secrets);
   final mediaPaths = built.mediaPaths;
 
   // 第一趟：只读一遍媒体算 size/crc，**读完就丢** ——
@@ -122,10 +131,21 @@ final class ImportManifestInfo {
 }
 
 final class ImportResult {
-  const ImportResult({required this.report, required this.manifestInfo});
+  const ImportResult({
+    required this.report,
+    required this.manifestInfo,
+    required this.apiKeys,
+  });
 
   final ImportReport report;
   final ImportManifestInfo manifestInfo;
+
+  /// 包里带回来的 API Key（键名 = `ApiKeySlot.storageKey`）。
+  ///
+  /// ⚠️ **core 不会自己去写 Keystore** —— 那是平台层的事（core 不该依赖
+  /// `flutter_secure_storage`）。这里只是把值交给调用方，写不写由界面决定。
+  /// 空 map = 这份包没带 Key。
+  final Map<String, String> apiKeys;
 }
 
 /// 浅层校验 + 转成强类型清单。
@@ -187,6 +207,7 @@ Future<ImportResult> importBackup(BackupDeps deps, Uint8List bytes) async {
       // 这正是 `media` 在 [BackupManifest] 里是 `List?` 而不是 `List` 的原因。
       media: manifest.media?.length ?? mediaEntries.length,
     ),
+    apiKeys: manifest.apiKeys ?? const <String, String>{},
   );
 }
 
