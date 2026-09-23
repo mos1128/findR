@@ -49,12 +49,13 @@ String _clip(String s, int n) => s.length <= n ? s : s.substring(0, n);
 
 /// 副标题：`来源 · 分类 · 位置 · 摘要`。
 String cardSubtitleOf(MemoryCard card, String? categoryName, String? categoryEmoji) {
-  final parts = <String>['${sourceIcon[card.source] ?? '⌨️'} ${sourceLabel[card.source] ?? '文字'}'];
+  final parts = <String>[];
+  // 来源如果没在左侧封面展示，在副标题开头保留
+  parts.add('${sourceIcon[card.source] ?? '⌨️'} ${sourceLabel[card.source] ?? '文字'}');
   if (categoryName != null && categoryName.isNotEmpty) {
     parts.add('$categoryEmoji$categoryName'.trim());
   }
-  final pathNames = card.pathNames;
-  if (pathNames != null && pathNames.isNotEmpty) parts.add(pathNames);
+  // 如果位置已经在专门的药丸条里画了，副标题就不重复拼 pathNames，保持信息干练
   final desc = card.desc;
   if (desc != null && desc.isNotEmpty && card.entity != null && card.entity!.isNotEmpty) {
     parts.add(desc);
@@ -63,7 +64,10 @@ String cardSubtitleOf(MemoryCard card, String? categoryName, String? categoryEmo
     if (transcript != null &&
         transcript.isNotEmpty &&
         (card.entity != null || (desc != null && desc.isNotEmpty))) {
-      parts.add(transcript);
+      final title = cardTitleOf(card);
+      if (transcript != title && !title.startsWith(transcript) && !transcript.startsWith(title)) {
+        parts.add(transcript);
+      }
     }
   }
   return parts.join(' · ');
@@ -116,7 +120,9 @@ class CardRow extends StatelessWidget {
     final c = FindrColors.of(context);
     final badges = cardBadges(card);
     final images = card.images;
-    final cover = images != null && images.isNotEmpty ? images.first : null;
+    final hasImages = images != null && images.isNotEmpty;
+    final cover = hasImages ? images.first : null;
+    final path = card.pathNames;
 
     return Material(
       color: c.surface,
@@ -128,72 +134,129 @@ class CardRow extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(Radii.lg),
-            border: Border.all(
-              color: highlight ? c.record : c.border,
-              width: highlight ? 1.6 : 1,
-            ),
+            border: highlight ? Border.all(color: c.record, width: 1.5) : null,
+            boxShadow: <BoxShadow>[
+              BoxShadow(
+                color: highlight ? c.record.withValues(alpha: 0.12) : c.shadow,
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: c.shadow.withValues(alpha: 0.03),
+                blurRadius: 2,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
           padding: const EdgeInsets.all(Spacing.four),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              MediaThumb(
-                relPath: cover,
-                fallbackIcon: sourceIcon[card.source] ?? '⌨️',
-              ),
-              const SizedBox(width: Spacing.four),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
                         Expanded(
                           child: Text(
                             cardTitleOf(card),
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
                               color: c.text,
+                              height: 1.3,
                             ),
                           ),
                         ),
-                        if (card.status == CardStatus.archived) const FindrBadge(label: '已归档'),
+                        if (card.status == CardStatus.archived) ...<Widget>[
+                          const SizedBox(width: Spacing.two),
+                          const FindrBadge(label: '已归档'),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: Spacing.one + 1),
+                    const SizedBox(height: Spacing.two),
                     Text(
                       cardSubtitleOf(card, categoryName, categoryEmoji),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, height: 1.35, color: c.textSecondary),
+                      style: TextStyle(fontSize: 13, height: 1.45, color: c.textSecondary),
                     ),
+                    if (path != null && path.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: Spacing.two),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: c.record.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(Radii.xs + 2),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Icon(Icons.place_rounded, size: 12, color: c.record),
+                            const SizedBox(width: 3),
+                            Flexible(
+                              child: Text(
+                                path,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: c.record,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     if (badges.isNotEmpty) ...<Widget>[
                       const SizedBox(height: Spacing.two),
                       Wrap(
-                        spacing: Spacing.one,
-                        runSpacing: Spacing.one,
+                        spacing: Spacing.one + 1,
+                        runSpacing: Spacing.one + 1,
                         children: <Widget>[
                           for (final b in badges)
                             FindrBadge(label: badgeLabel(b, ctx), tone: toneOfBadge(b)),
                         ],
                       ),
                     ],
-                    // P1 的补问入口：非阻塞，最多一句（需求 5.1）
                     if (card.ask != null && card.ask!.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Spacing.one + 1),
-                      Text(
-                        '想确认：${card.ask}',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, height: 1.35, color: c.badgeConfirm),
+                      const SizedBox(height: Spacing.two),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: c.badgeConfirmBg,
+                          borderRadius: BorderRadius.circular(Radii.sm),
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            Icon(Icons.help_outline_rounded, size: 14, color: c.badgeConfirm),
+                            const SizedBox(width: Spacing.one),
+                            Expanded(
+                              child: Text(
+                                '想确认：${card.ask}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.35,
+                                  color: c.badgeConfirm,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                     // 建议结果的入选理由 —— 放最后，不抢标题与副标题的位置
                     if (note != null && note!.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Spacing.one + 1),
+                      const SizedBox(height: Spacing.two),
                       Text(
                         note!,
                         maxLines: 2,
@@ -204,6 +267,38 @@ class CardRow extends StatelessWidget {
                   ],
                 ),
               ),
+              if (hasImages) ...<Widget>[
+                const SizedBox(width: Spacing.three),
+                Stack(
+                  children: <Widget>[
+                    MediaThumb(
+                      relPath: cover,
+                      size: 72,
+                      fallbackIcon: '📷',
+                    ),
+                    if (images.length > 1)
+                      Positioned(
+                        right: 4,
+                        bottom: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.7),
+                            borderRadius: BorderRadius.circular(Radii.pill),
+                          ),
+                          child: Text(
+                            '${images.length}张',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

@@ -99,7 +99,18 @@ class Panel extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(Radii.lg),
-        border: Border.all(color: c.border),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: c.shadow,
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: c.shadow.withValues(alpha: 0.04),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       padding: padding,
       child: Column(
@@ -134,10 +145,15 @@ class SectionTitle extends StatelessWidget {
         Expanded(
           child: Text(
             title,
-            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: c.textSecondary),
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.2,
+              color: c.text,
+            ),
           ),
         ),
-        if (hint != null)
+        if (hint != null && hint!.isNotEmpty)
           Text(hint!, style: TextStyle(fontSize: 11.5, color: c.textMuted)),
         ?trailing,
       ],
@@ -175,15 +191,16 @@ class FindrButton extends StatelessWidget {
     final c = FindrColors.of(context);
     final (Color bg, Color fg, Color? border) = switch (variant) {
       FindrButtonVariant.primary => (c.record, c.recordText, null),
-      FindrButtonVariant.secondary => (c.surfaceAlt, c.text, c.border),
+      FindrButtonVariant.secondary => (c.surfaceAlt, c.text, null),
       FindrButtonVariant.danger => (c.danger, Colors.white, null),
       FindrButtonVariant.ghost => (Colors.transparent, c.record, null),
     };
     // 文字与图标一起上色，别只改一个
     final style = TextStyle(
-      fontSize: compact ? 13 : 15,
+      fontSize: compact ? 13 : 14.5,
       fontWeight: FontWeight.w600,
       color: fg,
+      letterSpacing: 0.1,
     );
     final child = loading
         ? SizedBox(
@@ -210,11 +227,13 @@ class FindrButton extends StatelessWidget {
       style: TextButton.styleFrom(
         backgroundColor: bg,
         foregroundColor: fg,
-        disabledBackgroundColor: bg.withValues(alpha: 0.45),
-        disabledForegroundColor: fg.withValues(alpha: 0.6),
+        elevation: variant == FindrButtonVariant.primary && !loading && onPressed != null ? 2 : 0,
+        shadowColor: c.record.withValues(alpha: 0.3),
+        disabledBackgroundColor: bg.withValues(alpha: 0.4),
+        disabledForegroundColor: fg.withValues(alpha: 0.5),
         padding: EdgeInsets.symmetric(
           horizontal: compact ? Spacing.three : Spacing.four,
-          vertical: compact ? Spacing.two : Spacing.three,
+          vertical: compact ? 8 : 12,
         ),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -230,9 +249,6 @@ class FindrButton extends StatelessWidget {
 }
 
 /// 分类筛选 / 可点标签。
-///
-/// 与 RN 不同的一处：选中态用「查」的深冷色实心 + 白字（RN 用的是同一套 `search` 色，
-/// 但这里额外把未选中态做成 fully transparent 的描边，让选中项在一排里更跳）。
 class FindrChip extends StatelessWidget {
   const FindrChip({
     super.key,
@@ -250,25 +266,33 @@ class FindrChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = active
+        ? (isDark ? Colors.white : const Color(0xFF0F172A))
+        : c.surfaceAlt;
+    final fg = active
+        ? (isDark ? const Color(0xFF121212) : Colors.white)
+        : c.textSecondary;
+
     return Material(
-      color: active ? c.search : Colors.transparent,
-      shape: StadiumBorder(
-        side: BorderSide(color: active ? c.search : c.border, width: 1),
-      ),
+      color: bg,
+      borderRadius: BorderRadius.circular(Radii.pill),
+      elevation: 0,
       child: InkWell(
         onTap: onPressed,
-        customBorder: const StadiumBorder(),
+        borderRadius: BorderRadius.circular(Radii.pill),
         child: Padding(
           padding: EdgeInsets.symmetric(
-            horizontal: dense ? Spacing.three : Spacing.four,
-            vertical: dense ? 5 : 7,
+            horizontal: dense ? Spacing.three + 2 : Spacing.four,
+            vertical: dense ? 6 : 8,
           ),
           child: Text(
             label,
             style: TextStyle(
               fontSize: dense ? 12.5 : 13.5,
-              fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-              color: active ? Colors.white : c.textSecondary,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              color: fg,
+              letterSpacing: -0.1,
             ),
           ),
         ),
@@ -277,7 +301,7 @@ class FindrChip extends StatelessWidget {
   }
 }
 
-/// 角标色板。**语义与 RN 一致**（`cards/badges.dart` 决定用哪个），只是画法不同。
+/// 角标色板。
 enum BadgeTone { neutral, confirm, organize, unanalyzed, accent }
 
 class FindrBadge extends StatelessWidget {
@@ -289,22 +313,27 @@ class FindrBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final (Color fg, Color bg) = switch (tone) {
-      BadgeTone.neutral => (c.badgePending, c.badgePendingBg),
-      BadgeTone.confirm => (c.badgeConfirm, c.badgeConfirmBg),
-      BadgeTone.organize => (c.badgeOrganize, c.badgeOrganizeBg),
-      BadgeTone.unanalyzed => (c.badgeUnanalyzed, c.badgeUnanalyzedBg),
-      BadgeTone.accent => (c.recordText, c.record),
+    final (Color bg, Color fg) = switch (tone) {
+      BadgeTone.neutral => (c.surfaceAlt, c.textSecondary),
+      BadgeTone.confirm => (c.badgeConfirmBg, c.badgeConfirm),
+      BadgeTone.organize => (c.badgeOrganizeBg, c.badgeOrganize),
+      BadgeTone.unanalyzed => (c.badgeUnanalyzedBg, c.badgeUnanalyzed),
+      BadgeTone.accent => (c.record.withValues(alpha: 0.1), c.record),
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(Radii.sm - 2),
+        borderRadius: BorderRadius.circular(Radii.xs + 2),
       ),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
       child: Text(
         label,
-        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg),
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: fg,
+          letterSpacing: 0.1,
+        ),
       ),
     );
   }
@@ -326,11 +355,6 @@ enum NoticeTone {
 }
 
 /// 提示条 —— 全 App 唯一的「说一句话」组件。
-///
-/// **默认放在正常文档流里**。曾经在 RN 那边做过 `position:absolute` 的浮层，
-/// 正好盖住搜索框，表现为「找不到搜索入口」（真机反馈）。
-/// 这里刻意**不提供**浮层用法：要浮层就用 `ScaffoldMessenger` 的 SnackBar，
-/// 别在页面里手搓 `Stack` + `Positioned`。
 class Notice extends StatelessWidget {
   const Notice({
     super.key,
@@ -350,25 +374,26 @@ class Notice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final (Color fg, Color bg, Color bar, IconData defaultIcon) = switch (tone) {
-      NoticeTone.info => (c.textSecondary, c.surfaceAlt, c.borderStrong, Icons.info_outline),
-      NoticeTone.warn => (c.badgeConfirm, c.badgeConfirmBg, c.badgeConfirm, Icons.lightbulb_outline),
-      NoticeTone.danger => (c.danger, c.badgeOrganizeBg, c.danger, Icons.error_outline),
-      NoticeTone.success => (c.success, c.surfaceAlt, c.success, Icons.check_circle_outline),
+    final (Color fg, Color bg, IconData defaultIcon) = switch (tone) {
+      NoticeTone.info => (c.textSecondary, c.surfaceAlt, Icons.info_outline_rounded),
+      NoticeTone.warn => (c.badgeConfirm, c.badgeConfirmBg.withValues(alpha: 0.5), Icons.lightbulb_outline_rounded),
+      NoticeTone.danger => (c.danger, c.badgeOrganizeBg.withValues(alpha: 0.5), Icons.error_outline_rounded),
+      NoticeTone.success => (c.success, c.surfaceAlt, Icons.check_circle_outline_rounded),
     };
     return Container(
       decoration: BoxDecoration(
         color: bg,
-        // 新设计点：左侧一条 3px 的语义色竖条，让「这是提示不是内容」一眼可辨
-        border: Border(left: BorderSide(color: bar, width: 3)),
         borderRadius: BorderRadius.circular(Radii.md),
       ),
-      padding: const EdgeInsets.fromLTRB(Spacing.three, Spacing.three, Spacing.three, Spacing.three),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.four, vertical: Spacing.three),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(icon ?? defaultIcon, size: 16, color: fg),
-          const SizedBox(width: Spacing.two),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon ?? defaultIcon, size: 16, color: fg),
+          ),
+          const SizedBox(width: Spacing.three),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -380,7 +405,7 @@ class Notice extends StatelessWidget {
                   ),
                   const SizedBox(height: Spacing.one),
                 ],
-                Text(text, style: TextStyle(fontSize: 12.5, height: 1.4, color: fg)),
+                Text(text, style: TextStyle(fontSize: 12.5, height: 1.45, color: fg)),
                 if (action != null) ...<Widget>[
                   const SizedBox(height: Spacing.two),
                   Align(alignment: Alignment.centerLeft, child: action),
@@ -406,27 +431,46 @@ class EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Spacing.six, horizontal: Spacing.four),
-      child: Column(
-        children: <Widget>[
-          if (icon != null) ...<Widget>[
-            Icon(icon, size: 34, color: c.textMuted),
-            const SizedBox(height: Spacing.three),
-          ],
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.textSecondary),
-          ),
-          if (hint != null) ...<Widget>[
-            const SizedBox(height: Spacing.two),
+      padding: const EdgeInsets.symmetric(vertical: Spacing.six + 8, horizontal: Spacing.four),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (icon != null) ...<Widget>[
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: c.surface,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(child: Icon(icon, size: 26, color: c.textMuted)),
+              ),
+              const SizedBox(height: Spacing.three),
+            ],
             Text(
-              hint!,
+              title,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12.5, height: 1.4, color: c.textMuted),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: c.text,
+                letterSpacing: -0.2,
+              ),
             ),
+            if (hint != null) ...<Widget>[
+              const SizedBox(height: Spacing.two),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 280),
+                child: Text(
+                  hint!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, height: 1.5, color: c.textMuted),
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -502,22 +546,26 @@ class FindrField extends StatelessWidget {
             hintText: placeholder,
             hintStyle: TextStyle(fontSize: 14, color: c.textMuted),
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: Spacing.three,
+              horizontal: Spacing.four,
               vertical: Spacing.three,
             ),
             filled: true,
             fillColor: c.surfaceAlt,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(Radii.md),
+              borderSide: BorderSide.none,
+            ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.sm),
-              borderSide: BorderSide(color: c.border),
+              borderRadius: BorderRadius.circular(Radii.md),
+              borderSide: BorderSide.none,
             ),
             disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.sm),
-              borderSide: BorderSide(color: c.border),
+              borderRadius: BorderRadius.circular(Radii.md),
+              borderSide: BorderSide.none,
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.sm),
-              borderSide: BorderSide(color: c.record, width: 1.5),
+              borderRadius: BorderRadius.circular(Radii.md),
+              borderSide: BorderSide.none,
             ),
           ),
         ),
@@ -559,7 +607,7 @@ class ListRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
-      borderRadius: BorderRadius.circular(Radii.sm),
+      borderRadius: BorderRadius.circular(Radii.md),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: Spacing.three, horizontal: Spacing.two),
         child: Row(
@@ -627,10 +675,7 @@ class FindrTopBar extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     return Container(
-      decoration: BoxDecoration(
-        color: c.searchSurface,
-        border: Border(bottom: BorderSide(color: c.border)),
-      ),
+      color: c.searchSurface,
       child: SafeArea(
         bottom: false,
         child: SizedBox(

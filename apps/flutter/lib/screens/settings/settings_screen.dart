@@ -93,7 +93,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         children: <Widget>[
           Panel(
             title: '模型',
-            hint: 'BYOK：模型与 Key 都由你自己提供',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -171,7 +170,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           Panel(
             title: '检索',
-            hint: '每次搜索要不要顺手让模型写一段答案',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -197,7 +195,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           Panel(
             title: '词表',
-            hint: '位置是检索质量的命脉',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -219,7 +216,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           Panel(
             title: '数据',
-            hint: '换机、重装靠它把记忆搬回去',
             child: ListRow(
               title: '备份与恢复',
               subtitle: '导出明文文件（不加密），也能从备份合并回来；Key 可选一起带走',
@@ -229,7 +225,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           Panel(
             title: '维护',
-            hint: '配置好 ASR 后用它把积压的语音一次补完',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[

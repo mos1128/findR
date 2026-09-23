@@ -22,10 +22,12 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../platform/app_paths.dart';
 import '../theme/tokens.dart';
 import '../ui/kit.dart';
 import 'image_compress.dart';
@@ -121,10 +123,51 @@ class _ComposerState extends State<Composer> {
 
   bool get _vision => _visionOverride ?? widget.visionDefault;
 
+  static bool _cachedVoiceMode = false;
+  static bool _modeLoaded = false;
+  bool _voiceMode = false;
+
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onTextChanged);
+    _voiceMode = _cachedVoiceMode;
+    if (!_modeLoaded) {
+      unawaited(_loadModePref());
+    }
+  }
+
+  Future<void> _loadModePref() async {
+    _modeLoaded = true;
+    try {
+      if (!AppPaths.ready) return;
+      final file = File('${AppPaths.documents.path}/composer_mode.txt');
+      if (await file.exists()) {
+        final val = (await file.readAsString()).trim();
+        final isVoice = val == 'voice';
+        _cachedVoiceMode = isVoice;
+        if (mounted && _voiceMode != isVoice) {
+          setState(() => _voiceMode = isVoice);
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _toggleInputMode() {
+    final next = !_voiceMode;
+    if (next) {
+      _focus.unfocus();
+    } else {
+      _focus.requestFocus();
+    }
+    setState(() => _voiceMode = next);
+    _cachedVoiceMode = next;
+    try {
+      if (AppPaths.ready) {
+        final file = File('${AppPaths.documents.path}/composer_mode.txt');
+        unawaited(file.writeAsString(next ? 'voice' : 'text'));
+      }
+    } catch (_) {}
   }
 
   void _onTextChanged() => _refreshCanSubmit();
@@ -369,8 +412,8 @@ class _ComposerState extends State<Composer> {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
-    // 录完一条继续留着键盘 —— 连着记几笔是常态，每存一条就收一次很烦
-    if (mounted) _focus.requestFocus();
+    // 录完一条继续留着键盘 —— 连着记几笔是常态，每存一条就收一次很烦（语音模式下不弹出键盘）
+    if (mounted && !_voiceMode) _focus.requestFocus();
   }
 
   // ── UI ─────────────────────────────────────────────────
@@ -387,59 +430,75 @@ class _ComposerState extends State<Composer> {
       ),
       builder: (sheetContext) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: Spacing.two),
+          padding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.two, Spacing.four, Spacing.four),
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  Spacing.five,
-                  Spacing.two,
-                  Spacing.five,
-                  Spacing.three,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        '加素材',
-                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.text),
-                      ),
-                    ),
-                    Text(
-                      '已有内容会一起带上',
-                      style: TextStyle(fontSize: 11.5, color: c.textMuted),
-                    ),
-                  ],
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: Spacing.three),
+                  decoration: BoxDecoration(
+                    color: c.borderStrong,
+                    borderRadius: BorderRadius.circular(Radii.pill),
+                  ),
                 ),
               ),
-              ListRow(
-                leading: const Text('📷', style: TextStyle(fontSize: 20)),
-                title: '拍照 / 连拍',
-                subtitle: '张数不限，拍完可以接着拍',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  unawaited(_takePhoto());
-                },
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      '添加素材',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text),
+                    ),
+                  ),
+                  Text(
+                    '已有内容会一起带上',
+                    style: TextStyle(fontSize: 12, color: c.textMuted),
+                  ),
+                ],
               ),
-              ListRow(
-                leading: const Text('🖼️', style: TextStyle(fontSize: 20)),
-                title: '从相册选',
-                subtitle: '可多选，张数不限',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  unawaited(_openLibrary());
-                },
-              ),
-              ListRow(
-                leading: const Text('📄', style: TextStyle(fontSize: 20)),
-                title: '选文本文件',
-                subtitle:
-                    '${plainTextExtensions.join(' / ')} · 单个不超过 $maxPlainTextChars 字',
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  unawaited(_pickFile());
-                },
+              const SizedBox(height: Spacing.four),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: _AttachCard(
+                      icon: Icons.camera_alt_rounded,
+                      title: '拍照 / 连拍',
+                      subtitle: '不限张数 拍完接着拍',
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        unawaited(_takePhoto());
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: Spacing.two),
+                  Expanded(
+                    child: _AttachCard(
+                      icon: Icons.photo_library_rounded,
+                      title: '从相册选',
+                      subtitle: '支持多选 不限张数',
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        unawaited(_openLibrary());
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: Spacing.two),
+                  Expanded(
+                    child: _AttachCard(
+                      icon: Icons.description_rounded,
+                      title: '纯文本文件',
+                      subtitle: 'txt / md ≤8k字',
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        unawaited(_pickFile());
+                      },
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -458,10 +517,6 @@ class _ComposerState extends State<Composer> {
     return Container(
       decoration: BoxDecoration(
         color: c.surface,
-        border: Border(top: BorderSide(color: c.border)),
-        boxShadow: <BoxShadow>[
-          BoxShadow(color: c.shadow, blurRadius: 12, offset: const Offset(0, -3)),
-        ],
       ),
       child: SafeArea(
         top: false,
@@ -470,10 +525,10 @@ class _ComposerState extends State<Composer> {
             constraints: const BoxConstraints(maxWidth: maxContentWidth),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
-                Spacing.four,
                 Spacing.three,
-                Spacing.four,
+                Spacing.two + 2,
                 Spacing.three,
+                Spacing.two + 2,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -534,57 +589,66 @@ class _ComposerState extends State<Composer> {
                     const SizedBox(height: Spacing.two),
                   ],
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
+                      // 左1：微信式输入模式切换（话筒 / 键盘）
+                      _IconBox(
+                        icon: _voiceMode ? Icons.keyboard_alt_outlined : Icons.mic_none_rounded,
+                        active: _voiceMode,
+                        tooltip: _voiceMode ? '切换文字输入' : '切换语音输入',
+                        onPressed: widget.enabled && !_locked ? _toggleInputMode : null,
+                      ),
+                      const SizedBox(width: Spacing.two),
+                      // 中间：文字输入框（垂直居中）或「按住 说话」药丸条
+                      Expanded(
+                        child: !_voiceMode
+                            ? Container(
+                                constraints: const BoxConstraints(minHeight: 38),
+                                decoration: BoxDecoration(
+                                  color: c.surfaceAlt,
+                                  borderRadius: BorderRadius.circular(Radii.pill),
+                                ),
+                                child: TextField(
+                                  controller: _controller,
+                                  focusNode: _focus,
+                                  enabled: widget.enabled && !_locked,
+                                  minLines: 1,
+                                  maxLines: 4,
+                                  textAlignVertical: TextAlignVertical.center,
+                                  textInputAction: TextInputAction.send,
+                                  // 打字回车即存（需求六）
+                                  onSubmitted: (_) => unawaited(_submit()),
+                                  style: TextStyle(fontSize: 14, color: c.text),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    border: InputBorder.none,
+                                    hintText: widget.enabled ? '记一笔…（回车即存）' : '数据库还没就绪',
+                                    hintStyle: TextStyle(fontSize: 12.5, color: c.textMuted),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9.5),
+                                  ),
+                                ),
+                              )
+                            : _HoldToSpeakBar(
+                                recording: _recording,
+                                enabled: widget.enabled && !_locked,
+                                onDown: _startRecording,
+                                onUp: _stopRecording,
+                              ),
+                      ),
+                      const SizedBox(width: Spacing.two),
+                      // 右2：＋ 展开素材
                       _IconBox(
                         icon: _expanded ? Icons.close_rounded : Icons.add_rounded,
                         active: _expanded,
+                        tooltip: '添加素材',
                         onPressed: widget.enabled && !_locked ? _openAttachSheet : null,
                       ),
                       const SizedBox(width: Spacing.two),
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: c.surfaceAlt,
-                            borderRadius: BorderRadius.circular(Radii.lg),
-                            border: Border.all(color: c.border),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: Spacing.three,
-                            vertical: Spacing.one,
-                          ),
-                          child: TextField(
-                            controller: _controller,
-                            focusNode: _focus,
-                            enabled: widget.enabled && !_locked,
-                            minLines: 1,
-                            maxLines: 5,
-                            textInputAction: TextInputAction.send,
-                            // 打字回车即存（需求六）
-                            onSubmitted: (_) => unawaited(_submit()),
-                            style: TextStyle(fontSize: 14.5, color: c.text),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              hintText: widget.enabled ? '记一笔…（回车即存）' : '数据库还没就绪',
-                              hintStyle: TextStyle(fontSize: 14, color: c.textMuted),
-                              contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: Spacing.two),
+                      // 右1（最右侧）：存按钮（逻辑终点）
                       _SaveButton(
                         enabled: widget.enabled && _canSubmit,
                         loading: _sending,
                         onPressed: () => unawaited(_submit()),
-                      ),
-                      const SizedBox(width: Spacing.two),
-                      _MicButton(
-                        recording: _recording,
-                        enabled: widget.enabled && !_locked,
-                        onDown: _startRecording,
-                        onUp: _stopRecording,
                       ),
                     ],
                   ),
@@ -612,33 +676,95 @@ class _ShootingHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    return Row(
-      children: <Widget>[
-        Expanded(
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: 6),
+      decoration: BoxDecoration(
+        color: c.surfaceAlt,
+        borderRadius: BorderRadius.circular(Radii.md),
+        border: Border.all(color: c.border.withValues(alpha: 0.7)),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.camera_enhance_rounded, size: 15, color: c.record),
+          const SizedBox(width: Spacing.two),
+          Expanded(
+            child: Text(
+              count == 1 ? '已拍 1 张：全貌 → 局部 → 特写' : '已拍 $count 张（不限张数）',
+              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.textSecondary),
+            ),
+          ),
+          FindrButton(
+            title: '再拍一张',
+            variant: FindrButtonVariant.ghost,
+            compact: true,
+            expand: false,
+            onPressed: enabled ? () => unawaited(onAdd()) : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 底部展开的素材选项卡片。
+class _AttachCard extends StatelessWidget {
+  const _AttachCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = FindrColors.of(context);
+    return Material(
+      color: c.surfaceAlt,
+      borderRadius: BorderRadius.circular(Radii.lg),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Radii.lg),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.two, vertical: Spacing.three),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Radii.lg),
+            border: Border.all(color: c.border),
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: c.record.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 22, color: c.record),
+              ),
+              const SizedBox(height: Spacing.two),
               Text(
-                '已拍 $count 张（不限张数）',
-                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.textSecondary),
+                title,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.text),
               ),
               const SizedBox(height: 2),
               Text(
-                count == 1 ? '接着拍局部，必要时再来一张特写' : '第一张拍全貌 → 再拍局部 → 最后特写',
-                style: TextStyle(fontSize: 11, height: 1.35, color: c.textMuted),
+                subtitle,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10.5, color: c.textMuted),
               ),
             ],
           ),
         ),
-        const SizedBox(width: Spacing.two),
-        FindrButton(
-          title: '再拍一张',
-          variant: FindrButtonVariant.secondary,
-          compact: true,
-          expand: false,
-          onPressed: enabled ? () => unawaited(onAdd()) : null,
-        ),
-      ],
+      ),
     );
   }
 }
@@ -862,32 +988,42 @@ class _Progress extends StatelessWidget {
 
 /// ＋：展开加素材。**就地展开（弹一层），不跳页** —— 需求六明确要求。
 class _IconBox extends StatelessWidget {
-  const _IconBox({required this.icon, this.onPressed, this.active = false});
+  const _IconBox({
+    required this.icon,
+    this.onPressed,
+    this.active = false,
+    this.tooltip,
+  });
 
   final IconData icon;
   final VoidCallback? onPressed;
   final bool active;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     final on = onPressed != null;
-    return Material(
+    Widget button = Material(
       color: c.surfaceAlt,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(Radii.lg),
-        side: BorderSide(color: active ? c.record : c.border),
+        borderRadius: BorderRadius.circular(Radii.pill),
+        side: BorderSide.none,
       ),
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(Radii.lg),
+        borderRadius: BorderRadius.circular(Radii.pill),
         child: SizedBox(
-          width: 46,
-          height: 46,
-          child: Icon(icon, size: 22, color: active ? c.record : (on ? c.textSecondary : c.textMuted)),
+          width: 38,
+          height: 38,
+          child: Icon(icon, size: 20, color: active ? c.record : (on ? c.textSecondary : c.textMuted)),
         ),
       ),
     );
+    if (tooltip != null) {
+      button = Tooltip(message: tooltip!, child: button);
+    }
+    return button;
   }
 }
 
@@ -902,20 +1038,25 @@ class _SaveButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
+    final active = enabled || loading;
     return Material(
-      color: enabled || loading ? c.record : c.surfaceAlt,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.lg)),
+      color: active ? c.record : c.surfaceAlt,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(Radii.pill),
+        side: BorderSide.none,
+      ),
       child: InkWell(
         onTap: enabled ? onPressed : null,
-        borderRadius: BorderRadius.circular(Radii.lg),
+        borderRadius: BorderRadius.circular(Radii.pill),
         child: SizedBox(
-          width: 56,
-          height: 46,
+          width: 44,
+          height: 38,
           child: loading
               ? Center(
                   child: SizedBox(
-                    width: 16,
-                    height: 16,
+                    width: 14,
+                    height: 14,
                     child: CircularProgressIndicator(strokeWidth: 2, color: c.recordText),
                   ),
                 )
@@ -923,7 +1064,7 @@ class _SaveButton extends StatelessWidget {
                   child: Text(
                     '存',
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: enabled ? c.recordText : c.textMuted,
                     ),
@@ -935,10 +1076,12 @@ class _SaveButton extends StatelessWidget {
   }
 }
 
-/// 长按麦克风。**用裸指针事件**，与 RN 的 `onPressIn / onPressOut` 对齐：
+/// 微信式「按住 说话」药丸条。
+///
+/// 用裸指针事件（Listener），与 RN 的 `onPressIn / onPressOut` 对齐：
 /// 按下即开始录、松开即结束。太短的由 recorder 判为误触丢掉。
-class _MicButton extends StatelessWidget {
-  const _MicButton({
+class _HoldToSpeakBar extends StatelessWidget {
+  const _HoldToSpeakBar({
     required this.recording,
     required this.enabled,
     required this.onDown,
@@ -959,17 +1102,45 @@ class _MicButton extends StatelessWidget {
       },
       onPointerUp: (_) => unawaited(onUp()),
       onPointerCancel: (_) => unawaited(onUp()),
-      child: Container(
-        width: 46,
-        height: 46,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        height: 38,
         decoration: BoxDecoration(
-          color: recording ? c.danger : (enabled ? c.record : c.surfaceAlt),
-          borderRadius: BorderRadius.circular(Radii.lg),
+          color: recording ? c.danger : c.surfaceAlt,
+          borderRadius: BorderRadius.circular(Radii.pill),
+          boxShadow: recording
+              ? <BoxShadow>[
+                  BoxShadow(
+                    color: c.danger.withValues(alpha: 0.35),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
         ),
-        child: Icon(
-          recording ? Icons.stop_rounded : Icons.mic_rounded,
-          size: 21,
-          color: enabled || recording ? c.recordText : c.textMuted,
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(
+              recording ? Icons.mic_rounded : Icons.mic_none_rounded,
+              size: 18,
+              color: recording
+                  ? Colors.white
+                  : (enabled ? c.textSecondary : c.textMuted),
+            ),
+            const SizedBox(width: Spacing.one),
+            Text(
+              recording ? '松开 结束' : '按住 说话',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: recording
+                    ? Colors.white
+                    : (enabled ? c.textSecondary : c.textMuted),
+              ),
+            ),
+          ],
         ),
       ),
     );

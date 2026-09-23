@@ -225,17 +225,8 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
   Widget? _composerNotice(RuntimeState? rt) {
     final online = ref.watch(onlineProvider).value ?? true;
     if (!online) {
-      // 需求 3.2 / 需求 77：存放物品的地方常常没信号，
-      // 要在**用户说完之前**就告诉他「先拍照或打字，稍后联网会自动补上」。
       return const Notice(
         text: '当前无网络：先拍照或打字，稍后联网会自动补上解析。',
-        tone: NoticeTone.warn,
-      );
-    }
-    if (rt == null) return null;
-    if (rt.asr == null) {
-      return const Notice(
-        text: '还没配置 ASR：语音会先存着，之后补一句话就能解析。',
         tone: NoticeTone.warn,
       );
     }
@@ -416,7 +407,7 @@ String? _adviceNote(AdviceResult? a, String cardId) {
 }
 
 /// 顶部「查」区：搜索框 + 设置入口 + 分类 Chip 栏。
-class _SearchBar extends StatelessWidget {
+class _SearchBar extends StatefulWidget {
   const _SearchBar({
     required this.controller,
     required this.onSubmit,
@@ -440,13 +431,17 @@ class _SearchBar extends StatelessWidget {
   final bool llmReady;
 
   @override
+  State<_SearchBar> createState() => _SearchBarState();
+}
+
+class _SearchBarState extends State<_SearchBar> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     return Container(
-      decoration: BoxDecoration(
-        color: c.searchSurface,
-        border: Border(bottom: BorderSide(color: c.border)),
-      ),
+      color: c.searchSurface,
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: maxContentWidth),
@@ -467,18 +462,17 @@ class _SearchBar extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: c.surfaceAlt,
                           borderRadius: BorderRadius.circular(Radii.pill),
-                          border: Border.all(color: c.border),
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: Spacing.four),
                         child: Row(
                           children: <Widget>[
-                            Icon(Icons.search_rounded, size: 17, color: c.search),
+                            Icon(Icons.search_rounded, size: 18, color: c.search),
                             const SizedBox(width: Spacing.two),
                             Expanded(
                               child: TextField(
-                                controller: controller,
+                                controller: widget.controller,
                                 textInputAction: TextInputAction.search,
-                                onSubmitted: (_) => onSubmit(),
+                                onSubmitted: (_) => widget.onSubmit(),
                                 style: TextStyle(fontSize: 14.5, color: c.text),
                                 decoration: InputDecoration(
                                   isDense: true,
@@ -489,68 +483,193 @@ class _SearchBar extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            if (controller.text.isNotEmpty)
+                            if (widget.controller.text.isNotEmpty)
                               GestureDetector(
-                                onTap: onClear,
-                                child: Icon(Icons.close_rounded, size: 17, color: c.textMuted),
+                                onTap: widget.onClear,
+                                child: Icon(Icons.close_rounded, size: 18, color: c.textMuted),
                               ),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(width: Spacing.two),
-                    IconButton(
-                      onPressed: onSettings,
-                      icon: const Icon(Icons.settings_outlined, size: 21),
-                      color: c.textSecondary,
-                      tooltip: '设置',
+                    Container(
+                      decoration: BoxDecoration(
+                        color: c.surfaceAlt,
+                        borderRadius: BorderRadius.circular(Radii.pill),
+                      ),
+                      child: IconButton(
+                        onPressed: widget.onSettings,
+                        icon: const Icon(Icons.settings_outlined, size: 20),
+                        color: c.textSecondary,
+                        tooltip: '设置',
+                        padding: const EdgeInsets.all(Spacing.two),
+                        constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: Spacing.two),
-                // 分类 Chip 栏。RN 那边是 `flexWrap: wrap`（分类一多就吃掉半屏），
-                // 这里改成**横向滚动**：一屏只见一行，分类再多也不挤走记忆流。
-                SizedBox(
-                  height: 32,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: categories.length + 2,
-                    separatorBuilder: (_, _) => const SizedBox(width: Spacing.two),
-                    itemBuilder: (_, i) {
-                      if (i == 0) {
-                        return FindrChip(
-                          label: '全部',
-                          dense: true,
-                          active: categoryFilter == null,
-                          onPressed: () => onCategory(null),
-                        );
-                      }
-                      if (i == categories.length + 1) {
-                        return FindrChip(label: '＋ 新建分类', dense: true, onPressed: onNewCategory);
-                      }
-                      final cat = categories[i - 1];
-                      return FindrChip(
-                        label: '${cat.emoji ?? ''}${cat.name}',
-                        dense: true,
-                        active: categoryFilter == cat.id,
-                        onPressed: () => onCategory(categoryFilter == cat.id ? null : cat.id),
-                      );
-                    },
-                  ),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOutCubic,
+                  alignment: Alignment.topCenter,
+                  child: !_expanded
+                      ? Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: SizedBox(
+                                height: 32,
+                                child: ShaderMask(
+                                  shaderCallback: (Rect bounds) {
+                                    return const LinearGradient(
+                                      begin: Alignment.centerLeft,
+                                      end: Alignment.centerRight,
+                                      colors: <Color>[
+                                        Colors.white,
+                                        Colors.white,
+                                        Colors.transparent,
+                                      ],
+                                      stops: <double>[0.0, 0.88, 1.0],
+                                    ).createShader(bounds);
+                                  },
+                                  blendMode: BlendMode.dstIn,
+                                  child: ListView.separated(
+                                    scrollDirection: Axis.horizontal,
+                                    padding: const EdgeInsets.only(right: Spacing.two),
+                                    itemCount: widget.categories.length + 2,
+                                    separatorBuilder: (_, _) => const SizedBox(width: Spacing.two),
+                                    itemBuilder: (_, i) {
+                                      if (i == 0) {
+                                        return FindrChip(
+                                          label: '全部',
+                                          dense: true,
+                                          active: widget.categoryFilter == null,
+                                          onPressed: () => widget.onCategory(null),
+                                        );
+                                      }
+                                      if (i == widget.categories.length + 1) {
+                                        return FindrChip(label: '＋ 新建分类', dense: true, onPressed: widget.onNewCategory);
+                                      }
+                                      final cat = widget.categories[i - 1];
+                                      return FindrChip(
+                                        label: '${cat.emoji ?? ''}${cat.name}',
+                                        dense: true,
+                                        active: widget.categoryFilter == cat.id,
+                                        onPressed: () => widget.onCategory(widget.categoryFilter == cat.id ? null : cat.id),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (widget.categories.isNotEmpty) ...<Widget>[
+                              const SizedBox(width: Spacing.two),
+                              Material(
+                                color: c.surfaceAlt,
+                                borderRadius: BorderRadius.circular(Radii.pill),
+                                child: InkWell(
+                                  onTap: () => setState(() => _expanded = true),
+                                  borderRadius: BorderRadius.circular(Radii.pill),
+                                  child: Container(
+                                    width: 32,
+                                    height: 32,
+                                    alignment: Alignment.center,
+                                    child: Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: c.textSecondary),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        )
+                      : Container(
+                          decoration: BoxDecoration(
+                            color: c.surface,
+                            borderRadius: BorderRadius.circular(Radii.md),
+                          ),
+                          padding: const EdgeInsets.all(Spacing.three),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: <Widget>[
+                                  Text(
+                                    '全部分类（${widget.categories.length}）',
+                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.textSecondary),
+                                  ),
+                                  GestureDetector(
+                                    onTap: () => setState(() => _expanded = false),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        Text('收起', style: TextStyle(fontSize: 12, color: c.textMuted)),
+                                        const SizedBox(width: 2),
+                                        Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: c.textMuted),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: Spacing.two),
+                              Wrap(
+                                spacing: Spacing.two,
+                                runSpacing: Spacing.two,
+                                children: <Widget>[
+                                  FindrChip(
+                                    label: '全部',
+                                    dense: true,
+                                    active: widget.categoryFilter == null,
+                                    onPressed: () => widget.onCategory(null),
+                                  ),
+                                  for (final cat in widget.categories)
+                                    FindrChip(
+                                      label: '${cat.emoji ?? ''}${cat.name}',
+                                      dense: true,
+                                      active: widget.categoryFilter == cat.id,
+                                      onPressed: () => widget.onCategory(widget.categoryFilter == cat.id ? null : cat.id),
+                                    ),
+                                  FindrChip(
+                                    label: '＋ 新建分类',
+                                    dense: true,
+                                    onPressed: widget.onNewCategory,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
                 ),
                 // 未配模型的提示条。
                 // ⚠️ **必须在正常文档流里**：RN 那边曾把它做成 `position:'absolute', top:8`，
                 // 正好盖住搜索框；而多数用户一开始都没配模型 ⇒ 搜索框被永久遮住，
                 // 表现为「找不到搜索入口」（真机反馈）。别再改回浮层。
-                if (!llmReady) ...<Widget>[
-                  const SizedBox(height: Spacing.three),
+                if (!widget.llmReady) ...<Widget>[
+                  const SizedBox(height: Spacing.two),
                   GestureDetector(
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(builder: (_) => const ProviderSettingsScreen()),
                     ),
-                    child: const Notice(
-                      text: '还没配置模型：内容都留在本地，随时能翻找和编辑。点这里填写 →',
-                      tone: NoticeTone.warn,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: c.surfaceAlt.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(Radii.pill),
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          Icon(Icons.info_outline_rounded, size: 14, color: c.textMuted),
+                          const SizedBox(width: Spacing.two),
+                          Expanded(
+                            child: Text(
+                              '还没配置模型：内容都留在本地，随时能翻找和编辑。点这里填写 →',
+                              style: TextStyle(fontSize: 11.5, color: c.textSecondary),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
@@ -639,23 +758,49 @@ class _AnswerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(Radii.lg),
-        border: Border.all(color: c.record, width: 1.5),
+        border: Border.all(color: c.record.withValues(alpha: 0.35), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: c.record.withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+          BoxShadow(
+            color: c.shadow,
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(Spacing.four),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Text(
-            tag,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.5,
-              color: c.record,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.two, vertical: 2),
+            decoration: BoxDecoration(
+              color: c.record.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(Radii.xs),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.auto_awesome_rounded, size: 12, color: c.record),
+                const SizedBox(width: 4),
+                Text(
+                  tag,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    color: c.record,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: Spacing.two),
-          Text(body, style: TextStyle(fontSize: 15, height: 1.5, color: c.text)),
+          Text(body, style: TextStyle(fontSize: 15, height: 1.55, color: c.text)),
           if (extra != null) ...<Widget>[
             const SizedBox(height: Spacing.two),
             Text(extra!, style: TextStyle(fontSize: 12.5, height: 1.45, color: extraColor)),

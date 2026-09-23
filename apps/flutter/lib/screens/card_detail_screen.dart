@@ -369,7 +369,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
               card.needsOrganize)
             Panel(
               title: '待办',
-              hint: '解决后角标即消失',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
@@ -426,7 +425,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                const SectionTitle('分类', hint: 'AI 自动归类，可随时更正'),
+                const SectionTitle('分类'),
                 const SizedBox(height: Spacing.three),
                 Wrap(
                   spacing: Spacing.two,
@@ -450,21 +449,62 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: Spacing.four),
-                const SectionTitle('位置', hint: '内容里说了就自动记，没说不强求'),
+                const SectionTitle('位置'),
                 const SizedBox(height: Spacing.two),
-                ListRow(
-                  title: card.pathNames ?? '还没记录位置',
-                  subtitle: card.pathNames != null
-                      ? (card.pathMatched == false
-                            ? '解析时新建的位置，不对可以改'
-                            : '解析时自动记录；点这里可以改到别处')
-                      : '解析这条卡片时如果提到了位置会自动记录；也可以现在手动选一个',
-                  onTap: () => _pickLocation(locations),
-                  right: Text(
-                    card.pathNames != null ? '修改' : '选择',
-                    style: TextStyle(fontSize: 13, color: c.record),
+                if (card.pathNames != null)
+                  Container(
+                    padding: const EdgeInsets.all(Spacing.three),
+                    decoration: BoxDecoration(
+                      color: c.record.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(Radii.md),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: <Widget>[
+                        const Text('📍', style: TextStyle(fontSize: 16)),
+                        const SizedBox(width: Spacing.two),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                card.pathNames!,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: c.record,
+                                ),
+                              ),
+                              if (card.pathMatched == false) ...<Widget>[
+                                const SizedBox(height: 2),
+                                Text(
+                                  '解析时新建的位置',
+                                  style: TextStyle(fontSize: 11.5, color: c.textMuted),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        FindrButton(
+                          title: '修改',
+                          variant: FindrButtonVariant.ghost,
+                          compact: true,
+                          expand: false,
+                          onPressed: () => _pickLocation(locations),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  ListRow(
+                    title: '还没记录位置',
+                    subtitle: '解析这条卡片时如果提到了位置会自动记录；也可以现在手动选一个',
+                    onTap: () => _pickLocation(locations),
+                    right: Text(
+                      '选择',
+                      style: TextStyle(fontSize: 13, color: c.record),
+                    ),
                   ),
-                ),
                 if (card.pathNames != null) ...<Widget>[
                   const SizedBox(height: Spacing.two),
                   Align(
@@ -487,7 +527,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
           // ── 卡片文字 ─────────────────────────────────────
           Panel(
             title: '卡片文字',
-            hint: '改完可以重新生成描述',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -495,9 +534,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   label: '口述原文',
                   controller: _transcript,
                   multiline: true,
-                  hint: '顶部「原文」显示的就是这里的内容',
-                  // 与 RN 同口径：改一下就落库。SQLite 本地写入是微秒级，
-                  // 而「编辑丢了」是不可接受的 —— 宁可多写几次。
                   onChanged: (v) => _patch(CardPatch(transcript: v)),
                 ),
                 const SizedBox(height: Spacing.four),
@@ -704,16 +740,22 @@ class _StepRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: Spacing.two),
+    return Container(
+      margin: const EdgeInsets.only(bottom: Spacing.two),
+      padding: const EdgeInsets.symmetric(horizontal: Spacing.two, vertical: Spacing.one),
+      decoration: BoxDecoration(
+        color: step.done ? c.surfaceAlt.withValues(alpha: 0.4) : c.surfaceAlt,
+        borderRadius: BorderRadius.circular(Radii.md),
+      ),
       child: Row(
         children: <Widget>[
           InkWell(
             onTap: onToggle,
+            borderRadius: BorderRadius.circular(Radii.sm),
             child: Padding(
               padding: const EdgeInsets.all(Spacing.one),
               child: Icon(
-                step.done ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                step.done ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
                 size: 20,
                 color: step.done ? c.success : c.textMuted,
               ),
@@ -726,7 +768,7 @@ class _StepRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 14,
                 height: 1.4,
-                color: c.text,
+                color: step.done ? c.textMuted : c.text,
                 decoration: step.done ? TextDecoration.lineThrough : null,
                 decorationColor: c.textMuted,
               ),
