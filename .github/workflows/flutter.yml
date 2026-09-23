@@ -193,6 +193,24 @@ jobs:
             fi
           done
 
+      # INTERNET 权限的「release-only」陷阱：debug/profile 清单里 Flutter 模板自带它，
+      # 所以 `flutter run` / 冒烟测试一切正常；而 release 走 main 清单，一旦漏声明，
+      # 所有域名解析失败（Failed host lookup），且只有装到真机才暴露 —— 2026-09-23 实测踩过。
+      # 没有任何插件会替你声明 INTERNET，所以只能对着**产物**断言，在构建期就拦住。
+      - name: 断言合并清单里有 INTERNET 权限
+        working-directory: apps/flutter
+        run: |
+          set -euo pipefail
+          apk="$(ls build/app/outputs/flutter-apk/*.apk | head -1)"
+          python3 - "$apk" <<'PY'
+          import sys, zipfile
+          blob = zipfile.ZipFile(sys.argv[1]).read('AndroidManifest.xml')
+          token = 'android.permission.INTERNET'
+          found = token.encode() in blob or token.encode('utf-16-le') in blob
+          print('INTERNET 已合并进 APK 清单:', found)
+          sys.exit(0 if found else 1)
+          PY
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
