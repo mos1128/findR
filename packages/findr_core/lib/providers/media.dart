@@ -22,7 +22,7 @@ final class ImageData {
   final String mime;
 }
 
-/// core 需要的全部文件能力。由 App 侧实现（`apps/` 里接文件系统），core 只调用。
+/// core 需要的全部文件能力。由 App 侧实现（仓库根的 `lib/platform/` 里接文件系统），core 只调用。
 abstract interface class MediaIo {
   /// 读成 inline base64（视觉模型要的形态）。
   Future<ImageData> imageData(String rel);

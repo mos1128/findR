@@ -13,7 +13,7 @@
 ///    anthropic / capabilities / factory**）+ `settings.dart` + `util/base64` + `util/utf8`
 /// 4. ✅ `pipeline/` 录入流程编排（capture / edit / queue / ingest）+ `cards/badges` + `media/paths`
 /// 5. ✅ `backup/` `.findrpack` 导出/导入（crc32 / format / zip / manifest / pack）
-/// 6. ⬜ UI（在 `apps/flutter/`，**按新设计写**，别照抄 RN 界面）
+/// 6. ✅ UI（在**仓库根**的 `lib/`，**按新设计写**，别照抄 RN 界面）
 ///
 /// 三条硬约束：
 ///

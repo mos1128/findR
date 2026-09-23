@@ -1,12 +1,16 @@
 name: findr_core
-description: findR 的核心逻辑（纯 Dart，零 Flutter 依赖）—— 由 packages/core 的 TS 实现逐块翻译而来。
+description: findR 的核心逻辑（纯 Dart，零 Flutter 依赖）—— 录入流水线、检索、备份格式与本地 SQLite。
 version: 0.1.0
 publish_to: 'none'
+
+# 本包是仓库根那个 pub workspace 的成员：不单独 pub get，
+# 也不在 packages/findr_core 下生成 pubspec.lock / .dart_tool —— 这两份只留在仓库根。
+# 在仓库根跑一次 `flutter pub get` 就会把它一起解析。
+resolution: workspace
 
 environment:
   sdk: ^3.13.4
 
-# Add regular dependencies here.
 dependencies:
   sqlite3: ^3.6.0
   # providers/ 联网层：`http` 是 Dart 官方的 HTTP 客户端，对应 TS 侧的 `fetch`。

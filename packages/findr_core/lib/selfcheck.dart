@@ -6,7 +6,7 @@
 /// | 层 | 载体 | 验的是什么 |
 /// |---|---|---|
 /// | 1 · 本地纯 Dart | `test/selfcheck_test.dart`（`dart test`）| **我们写的 SQL 与 trigram 语法**对不对 |
-/// | 2 · Flutter/真机 | App 里的自检屏 + `apps/flutter/test/`（`flutter test`）| **打进包的那份 SQLite** 带不带 FTS5 |
+/// | 2 · Flutter/真机 | App 里的自检屏 + 仓库根的 `test/`（`flutter test`）| **打进包的那份 SQLite** 带不带 FTS5 |
 ///
 /// 两处共用同一份逻辑，才不会出现「自检屏写漏了一项」这种不对称。
 ///

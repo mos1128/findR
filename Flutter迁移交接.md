@@ -3,10 +3,11 @@
 > **本文件是新会话的第一份必读，也是唯一权威。**
 > 历史：2026-09-21 从 React Native (Expo) 迁到 Flutter；**2026-09-23 迁移收尾 ——
 > 旧版 RN / TS 代码已整块删除**（`apps/mobile` + `packages/core` + pnpm/tsconfig 工具链），
-> RN 期的《开发交接.md》也一并删除。
+> RN 期的《开发交接.md》也一并删除。**同日还把 Flutter 工程从 `apps/flutter/` 提到了仓库根**，
+> 并启用了 Dart 官方的 pub workspaces（见 §4.1）。
 > ⚠️ **需要查旧实现**：`git show ad93100:<路径>`（`ad93100` = 删除前最后一个提交）。
 > Dart 代码里大量注释写着「逐字对应 `packages/core/src/xxx.ts`」—— 那些是**移植出处**，
-> 源文件已不在工作区，别去 `lib/` 外面找。
+> 源文件已不在工作区，别去仓库外面找。
 
 ---
 
@@ -25,16 +26,17 @@
 | 5 个开工决策 | ✅ 定案（§4）|
 | **旧版 RN / TS 代码** | ❌ **2026-09-23 整块删除**（`apps/mobile` + `packages/core` + pnpm / tsconfig 工具链 + RN 的《开发交接.md》），**用户拍板，不是误删**。要查旧实现：`git show ad93100:<路径>` |
 | Flutter SDK | ✅ 3.47.5 stable / Dart 3.13.4；本机已 `scoop hold` 冻结版本（§7）|
-| 骨架 | ✅ `apps/flutter/`（applicationId `com.findr.app.dev`）+ `packages/findr_core/` |
+| 骨架 | ✅ **Flutter 工程就在仓库根**（applicationId `com.findr.app.dev`）+ `packages/findr_core/`；两者用 **pub workspaces** 统一解析（2026-09-23 调整，见 §4.1）|
 | **命门（FTS5 + trigram）** | ✅ 第 1 层（`dart test`）· ✅ 中间层（`flutter test`，Flutter 工具链下 native assets 真编出了 SQLite）· ✅ **第 2 层（真机，2026-09-22 用户实测：自检两组全绿）** ⇒ **三层全部通过，整套检索方案成立** —— 见 §6.1 |
 | **core 翻译** | ✅ **译完**：5,394 / 5,429 行 ≈ 99.4%（余下 35 行是 TS 的 `src/index.ts` 桶文件，Dart 用 `findr_core.dart` 代替）⇒ 过程明细见 §6.2 |
 | **应用层接线** | ✅ **7 个模块全写完**（约 1,000 行）：`app_paths` · `db` · `media` · `device_selfcheck` · `secure` · `backup` · `runtime` —— 见 §6.3。**UI 之前再无接线欠账** |
 | 自检屏（真机载体） | ✅ 分两组：**核心**（FTS5 命门，优先跑在真实库文件上）+ **设备层**（PRAGMA / 外键 / 嵌套事务 / 媒体往返 / 打包往返）。**入口已从 `main.dart` 挪到「设置 → 维护」**（`main.dart` 的 `home` 现在是记忆流主页）⇒ **APK 装好，进设置点「自检」即可验命门第 2 层** |
-| 验收网 | `dart analyze` / `flutter analyze` 均无问题 · `dart test` **296 通过** · `flutter test` **90 通过**。⚠️ **TS 侧的 `pnpm check` 基线已随 TS 代码一起废除**，别再去找它 |
+| 验收网 | `dart analyze` / `flutter analyze` 均无问题 · `dart test` **290 通过** · `flutter test` **90 通过**。⚠️ **TS 侧的 `pnpm check` 基线已随 TS 代码一起废除**，别再去找它。⚠️ core 从 296 降到 290 是删掉评测样本结构测试的结果，**不是测试被削弱**（见下一行）|
+| **离线跑分线** | ❌ **2026-09-23 整条废弃**（用户拍板）：原先在本机网关上对着 20 条自造样本算出的那 8 个准确率 / 延迟指标，**不再作为验收手段** —— 样本是自己推演的、模型跑在本地、评分口径也是自己定的，跟真机实际使用差得远。**模型好不好用，靠用户自己用出来。** 样本 `test/fixtures/samples.dart` 与其结构测试已删，口径变更记在 `测试计划.md` 开头 |
 | `findr_core` 依赖 | `sqlite3 ^3.6.0`（DB）+ **`http ^1.2.0` / `http_parser ^4.0.0`（`providers/` 联网，对应 TS 的 `fetch`）**|
 | app 依赖 | `findr_core` · `path_provider` · `flutter_riverpod` · `http` · `http_parser` · `flutter_secure_storage` · `share_plus` · `file_picker` · `package_info_plus` · **`image`**（压缩到 WebP）· **`image_picker`**（拍照/相册）· **`record`**（录音，m4a/AAC）· **`audioplayers`**（回放）· **`connectivity_plus`**（无网提示）|
 | CI | ✅ `.github/workflows/flutter.yml` **唯一一条流水线**（`checks` + `apk`；**版本写死 3.47.5**）。`apk` 每次都对**产物本身**断言 `libsqlite3.so` 含 `fts5`/`trigram`、合并清单含 `INTERNET`，最后发 `flutter-dev-latest`（当前包约 22.2MB）|
-| 品牌素材 | ✅ RN 的图标 / 启动图已搬到 `apps/flutter/assets/branding/`（**尚未接入**，属发布收尾那一步；参数也记在那边了）|
+| 品牌素材 | ✅ RN 的图标 / 启动图已搬到 `assets/branding/`（**尚未接入**，属发布收尾那一步；参数也记在那边了）|
 | **界面 + UI 重构** | ✅ 界面写完（22 个文件，**没照抄 RN**；`flutter test` 8 → 83）· ✅ **UI 重构一版（2026-09-23，用户真机验收通过）**：配色换冷灰系、卡片改阴影浮起、录入口重写成微信式输入栏 —— 明细见 §6.3。**拍照 / 连拍 / 相册 / 长按录音 / 音频回放 / 全屏相册左右滑全部接上** |
 
 ### 0.2 「一期 = 安卓版」的全部剩余（2026-09-23 更新）
@@ -44,15 +46,15 @@
 
 | 组 | 项 | 状态 |
 |---|---|---|
-| **A 验收** | **真机最小验收 7 条**（`测试计划.md` §**三.1**）| ✅ **2026-09-23 全部走完**（用户逐个回报：①~⑦ 全过）。第一条就撞出一个 release-only 的真 bug（缺 `INTERNET` 权限 ⇒ 域名解析失败，已修 + CI 加闸，见 §6.3）。<br>⚠️ **只剩一条待复验**：2026-09-23 新增「备份带上 API Key」，**下次装新包时要重走 ⑥⑦**（换机后 Key 应自动恢复）。明细与逐条结果见 `最小验收清单.md` |
-| | **`需求.md` §十 的 8 个验收指标** | ✅ **已跑完（2026-09-22，助手在电脑上跑的，用户零参与）**：本机 `127.0.0.1:7788` 网关 + `claude-opus-5`，20 条样本。可解析率 / 位置判定 / path 命中 / 分类路由 **均 100%**、ask 16.7%、L1 召回 94.4%、P1 P95 6.0s ⇒ **全部达标，唯一未达标的是 L1 延迟**（中位数 3.47s、P95 14.7s，目标 P95 ≤3s；⚠️ 不阻塞，见下）。明细见 `测试计划.md` **§四.1** |
+| **A 验收** | **真机最小验收 7 条**（`测试计划.md` §**一.1**）| ✅ **2026-09-23 全部走完**（用户逐个回报：①~⑦ 全过）。第一条就撞出一个 release-only 的真 bug（缺 `INTERNET` 权限 ⇒ 域名解析失败，已修 + CI 加闸，见 §6.3）。<br>⚠️ **只剩一条待复验**：2026-09-23 新增「备份带上 API Key」，**下次装新包时要重走 ⑥⑦**（换机后 Key 应自动恢复）。明细与逐条结果见 `最小验收清单.md` |
+| | ~~`需求.md` §十 的 8 个验收指标~~ | ❌ **2026-09-23 用户拍板：这条不做了**。原先那批数（可解析率 100% / ask 16.7% / 召回 94.4% / L1 延迟 P95 14.7s）是在本机网关 + 20 条自造样本上跑出来的，**跟真机实际使用差得远 ⇒ 不作为验收手段**。模型好不好用靠用户自己用出来，见 §0.1「离线跑分线」与 `测试计划.md` 开头 |
 | | M1 验收（三类卡各一张 · 飞行模式素材不丢）| ⚠️ 属最小验收 ② ④ |
 | | M3 验收（位置改名后检索仍命中）| ✅ 不算欠账：纯 core 逻辑，`dart test` 覆盖（原 16 步第 8 步已从最小清单砍掉）|
 | | M4 验收（换机：导出 → **卸载** → 重装 → 导入）| ✅ 属最小验收 ⑦，**已过**（2026-09-23）。⚠️ 带 Key 的那版还没上过真机，下次复验 |
 | **B 功能欠账** | **后台自动补跑**（M2 明列：技术设计说「Android 的 BackgroundFetch 推到 M2」）| ⬜ **没做**。现状只有「App 回前台时补跑」（`memory_stream_screen.dart:62`）。⚠️ 技术设计自己标了 **best-effort、验收不依赖** |
 | | **gemini 适配器**（M2 明列）| ⬜ **没做**。`core/providers/` 只有 `anthropic` / `openai_compat` / `fake`。**只有你打算用 Gemini 才需要** |
 | **C UI 重构** | 重构一版 | ✅ **2026-09-23 完成，且用户已在真机上验收通过**（配色 / 组件库 / 三主界面 + 录入口改微信式输入栏，明细见 §6.3 末段）|
-| **D 发布** | **应用图标 + 启动图** | ⬜ **现在还是 Flutter 模板默认**（`mipmap-*/ic_launcher.png` 441~1443 字节）。✅ **素材已备好**：`apps/flutter/assets/branding/`（`icon.png` · `android-icon-{foreground,background,monochrome}.png` · `splash-icon.png`，**参数与两种接入方式写在该目录的 README 里**）|
+| **D 发布** | **应用图标 + 启动图** | ⬜ **现在还是 Flutter 模板默认**（`mipmap-*/ic_launcher.png` 441~1443 字节）。✅ **素材已备好**：`assets/branding/`（`icon.png` · `android-icon-{foreground,background,monochrome}.png` · `splash-icon.png`，**参数与两种接入方式写在该目录的 README 里**）|
 | | **换正式签名** | ⬜ 现在 release 签 **debug 证书**（`android/app/build.gradle.kts:38`，CI 里还有一道 Guard 挡模板漂移）|
 | | 版本号 | 🟡 现为 `0.1.0+1`（与 RN 的 `0.1.0` 一致）—— 正式发前定 |
 | | 正式发版方式 | ⬜ 未定 |
@@ -173,7 +175,7 @@ D 组 = **应用图标 / 启动图 · 换正式签名 · 定版本号 · 定发�
 
 **迁移面**：26 个依赖，其中 **17 个 `expo-*` 模块**要逐个找 Flutter 替代。
 
-**这不是"重新设计"，是"翻译 + 换壳"。** 当时有 181 个 TS 用例当验收网（如今是 Dart 侧 296 + 90），译错了会立刻被抓住 ⇒
+**这不是"重新设计"，是"翻译 + 换壳"。** 当时有 181 个 TS 用例当验收网（如今是 Dart 侧 290 + 90），译错了会立刻被抓住 ⇒
 **迁移风险比行数看起来低**。
 
 ⚠️ 有个工具迁移后**没用了**：`.workbuddy/tools/probe-hbc-strings.py`（解析 Hermes 字节码字符串表）——
@@ -187,38 +189,45 @@ CI 里那两道产物级断言（`libsqlite3.so` 含 fts5/trigram、合并清单
 
 **这 5 个已经定了，别再重新讨论。** §4.1 / §4.2 由用户拍板，§4.3 / §4.4 / §4.5 按推荐执行。
 
-### 4.1 ✅ Flutter 工程放哪 —— **同仓 `apps/flutter/`**（用户定）
+### 4.1 ✅ Flutter 工程放哪 —— **同仓，且就在仓库根**（用户定；2026-09-23 收窄）
+
+原始理由（2026-09-21）：
 
 - 迁移期最大的需求是**随时对照 TS 源码** —— 同仓最方便，改一行 TS 就能旁边看 Dart
-- **旧 RN 版还能继续出货**（万一 Flutter 卡住，有退路）
-- `.github/workflows/` 里**加一个 flutter job，老的 android job 先留着**（别急着删）
+- **旧 RN 版还能继续出货**（万一 Flutter 卡住，有退路）—— 这条退路 2026-09-23 用不上了（§4.2）
+- `.github/workflows/` 里**加一个 flutter job，老的 android job 先留着** —— 老 job 也已删除
 
-**目录结构（用户 2026-09-21：「按最佳实践来」）**：
+**当前目录结构（2026-09-23 最终版）**：
 
 ```
-findR/
-├─ apps/
-│  ├─ mobile/                    ← 旧 RN 版【保留，只读对照，不再改】
-│  └─ flutter/                   ← V1 主工程（含 android/ windows/ macos/ ios/ 子目录）
-│     ├─ lib/
-│     │  ├─ ui/                  ← 新设计，**不照抄 RN 界面**
-│     │  └─ platform/            ← 相机 / 录音 / 安全存储 / 文件 / 分享（Flutter 插件实现）
-│     ├─ test/                   ← widget 测试
-│     └─ pubspec.yaml            ← 用 path 依赖引用 packages/findr_core
+findR/                             ← 仓库根就是 Flutter 工程本身
+├─ lib/                            ← UI + 平台接线（新设计，**不照抄 RN 界面**）
+│  ├─ platform/                    ← 相机 / 录音 / 安全存储 / 文件 / 分享（Flutter 插件实现）
+│  ├─ capture/ state/ screens/ theme/ ui/ selfcheck/
+├─ test/                           ← widget + 设备层测试（90 条）
+├─ android/                        ← V1 只有安卓
+├─ assets/branding/                ← 图标 / 启动图素材（D 组发布收尾用）
+├─ pubspec.yaml                    ← `findr_app`，**同时是 workspace 根**（里面写了 `workspace:`）
+├─ pubspec.lock · .dart_tool/      ← ✅ 全仓唯一一份（pub workspaces 的产物）
 ├─ packages/
-│  ├─ core/                      ← 旧 TS core【保留，它就是要翻译的规格说明书】
-│  └─ findr_core/                ← 新 Dart core（**纯 Dart，零 Flutter 依赖**）
-│     ├─ lib/{db,search,providers,parse,pipeline,backup,prompts,util}/
-│     ├─ test/                   ← 181 个用例译到这里
-│     └─ pubspec.yaml            ← 依赖只有两条线：`package:sqlite3`（DB）+ `package:http`（联网）
-└─ .github/workflows/            ← flutter.yml（新增）+ android.yml（老 job，先留着）
+│  └─ findr_core/                  ← 新 Dart core（**纯 Dart，零 Flutter 依赖**）
+│     ├─ lib/{db,search,providers,parse,pipeline,backup,prompts,util,media,cards}/
+│     ├─ test/                     ← 290 条，`dart test` 直接跑
+│     └─ pubspec.yaml              ← 声明 `resolution: workspace`；依赖 `package:sqlite3` + `package:http`
+└─ .github/workflows/flutter.yml   ← 唯一流水线
 ```
+
+> **为什么不再有 `apps/`**（2026-09-23）：`apps/` 是 RN 期的分层 —— 当时 `apps/mobile` 与
+> `apps/flutter` 并存，那层才有意义。RN 删掉后 `apps/` 下只剩一个孩子，这层就空了。
+> 现在只有一个 app，**仓库根直接就是它** —— 这正是 `flutter create .` 的默认形态，
+> 也是最常见的单 app 仓库样子。
+> ⚠️ 如果将来真要有第二个**独立** app（桌面端等），那时再搬回 `apps/` + `packages/` 两层也不迟。
 
 **三条关键设计点（别改）：**
 
 1. **Dart core 做成独立 package，不要塞进 app 的 `lib/` 下** —— 它是纯 Dart，
    可以用 `dart test` 直接跑，不必起 Flutter 环境、不被 widget 测试拖慢；
-   **V2/V3 桌面版复用同一个 core**，不用复制；也与现有 `apps/` + `packages/` 结构对称。
+   **V2/V3 桌面版复用同一个 core**，不用复制。
 2. **数据库依赖只有一层**：`findr_core` 依赖 **`package:sqlite3` 3.x**，就这一条。
    它**自带预编译 SQLite** ⇒ **app 端不用再补任何 native 库依赖**，
    **连本机的 `sqlite3.dll` 都不用准备**。（此前「core 用 sqlite3 + app 加 `sqlite3_flutter_libs`」
@@ -228,9 +237,17 @@ findR/
 3. **名字用 `findr_core` 而不是 `core_dart`** —— Dart 包名必须 snake_case，
    且这样能与当年的 `packages/core`（TS 老版）一眼区分（那个包已于 2026-09-23 删除）。
 
-**另外两条工程约定**：
-`.gitignore` 用 Flutter 工程自带的（**别把 `build/`、`.dart_tool/` 提交进来**）；
-**CI 里的 Flutter 版本号写死成与本地相同的具体版本**（不要写 `channel: stable`，见 §7.1.1）。
+**工程约定（2026-09-23 更新）：**
+
+- **依赖用 Dart 官方的 pub workspaces 统一解析**（`dart.dev/tools/pub/workspaces`，Dart 3.6+ 起）：
+  根 pubspec 声明 `workspace: [packages/findr_core]`，成员包声明 `resolution: workspace`。
+  ⇒ 全仓**只有一份 `pubspec.lock` 和 `.dart_tool/`**（都在仓库根）；在根跑一次
+  `flutter pub get` 就把两边都解析了，`findr_core` 也不必再写 `path:` 依赖、按名字引用即可。
+  - ⚠️ **必须用 `flutter pub get`**，不是 `dart pub get` —— app 带 Flutter SDK 依赖，纯 dart 的 pub 解析不了。
+  - ⚠️ pub get 会**自动删掉**成员包里「游荡的」`pubspec.lock` / `.dart_tool/`，**别手动建回去**。
+- `.gitignore` **只有仓库根一份**（Flutter 模板的条目已并进去）；
+  `build/`、`.dart_tool/`、`android/local.properties`、`*.iml`、`.idea/` 都不进版本库。
+- **CI 里的 Flutter 版本号写死成与本地相同的具体版本**（不要写 `channel: stable`，见 §7.1.1）。
 
 ### 4.2 ✅ 旧 RN / TS 项目怎么处理 —— **2026-09-23 整块删除**（用户改判）
 
@@ -240,7 +257,7 @@ findR/
   而且**删除 ≠ 丢失** —— 源码完整躺在 git 历史里（删除前最后一个提交 `ad93100`，
   `git show ad93100:<路径>` 可取回）。
 - 删除范围：`apps/mobile` · `packages/core` · pnpm / tsconfig 工具链 · RN 的《开发交接.md》。
-  ⚠️ **只有图标素材被抢救出来**，留在 `apps/flutter/assets/branding/`（发布收尾要用，见 §0.2 D 组）。
+  ⚠️ **只有图标素材被抢救出来**，留在 `assets/branding/`（发布收尾要用，见 §0.2 D 组）。
 - ⚠️ **副作用**：Dart 代码里 60 多处「逐字对应 `packages/core/src/xxx.ts`」的注释，
   现在指向的是**历史出处**而不是活文件 —— 这是有意保留的（它记录了移植来源与对照行数），
   **不是漏改**，别再顺着这些路径去找文件。
@@ -301,7 +318,7 @@ findR/
 | `技术设计.md` | 数据模型、算法、判定标准 |
 | `场景分析.md` | 各字段的使用场景 |
 | `prompt设计.md` | 提示词设计（落地在 `findr_core/lib/prompts/templates.dart`）|
-| `测试计划.md` | 验收标准与实测指标 |
+| `测试计划.md` | 真机验收步骤（最小验收 7 条 + 完整 16 步 + 备份专项）|
 | `最小验收清单.md` | 真机最小验收 7 条（**已全过**，下次只需复验 ⑥⑦）|
 | **本文件** | Flutter 时代的交接权威（铁律 / 环境坑 / 用户口径都在这里）|
 
@@ -366,7 +383,7 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 
 **中间层 · Flutter 工具链 —— ✅ 已通过（2026-09-22，本轮新增）**
 
-`apps/flutter/test/self_check_smoke_test.dart`（`flutter test`）。它比第 1 层多验了**一件关键的事**：
+`test/self_check_smoke_test.dart`（`flutter test`）。它比第 1 层多验了**一件关键的事**：
 `package:sqlite3` 的 **Dart build hooks 真的在 Flutter 工具链下跑起来了**，产物是它自己那份
 预编译 SQLite，而不是退化去开系统库。实测证据（同一份自检，值也与第 1 层一致 ⇒ 同源）：
 
@@ -397,7 +414,7 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 
 | 需要的东西 | 状态 |
 |---|---|
-| 真机上跑的自检屏 | ✅ `apps/flutter/lib/selfcheck/self_check_screen.dart`。**入口在「设置 → 维护」**（`main.dart` 的 `home` 早已换成记忆流主页，不再是自检屏）|
+| 真机上跑的自检屏 | ✅ `lib/selfcheck/self_check_screen.dart`。**入口在「设置 → 维护」**（`main.dart` 的 `home` 早已换成记忆流主页，不再是自检屏）|
 | 能装到真机的 APK | ✅ CI 的 `apk` 作业已多次实测出包（第九轮 **22.1MB**）。本机没装 Android SDK，出包只能走 CI |
 | 产物级断言 | ✅ 该作业会从 APK 里抽出 SQLite 的 `.so`，断言二进制里**含 `fts5` 与 `trigram`**（模块按名注册，名字串会留在二进制里）。第九轮实测：`fts5` 出现 **38** 次、`trigram` **1** 次 |
 
@@ -411,7 +428,7 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
 
 | 顺序 | 模块 | 状态 |
 |---|---|---|
-| 1 | 骨架 | ✅ `apps/flutter/`（Flutter 3.47.5，`android`，`com.findr.app.dev`）+ `packages/findr_core/`（纯 Dart，依赖 `sqlite3`）|
+| 1 | 骨架 | ✅ **仓库根就是 Flutter 工程**（Flutter 3.47.5，`android`，`com.findr.app.dev`）+ `packages/findr_core/`（纯 Dart，依赖 `sqlite3`）。2026-09-23 从 `apps/flutter/` 提到根 |
 | 2 | `db/` 那一层 | ✅ 全部译完（2026-09-21）|
 | 3 | `search/` | ✅ 全部译完（2026-09-22，含 `builder`）；顺带把它依赖的 `parse/` `prompts/` `providers/types` 一并译掉 |
 | 4 | `providers/` 联网层 + `settings` + `util/` | ✅ 全部译完（2026-09-22）|
@@ -521,7 +538,7 @@ TS 侧「≥3 字走 `MATCH`、更短的走 `LIKE` 降级」这条设计**照搬
    - `makeLlmAdapter` 遇到 `gemini`/`fake` 显式抛 `UnsupportedError`：
      TS 那边是 `switch` 漏空返回 `undefined`，然后在调用点崩成「undefined 不是函数」。
 
-**下一块（UI）的要点**：core 已译完，**只剩 UI 没动**。UI 在 `apps/flutter/`，
+**下一块（UI）的要点**：core 已译完，**只剩 UI 没动**。UI 在仓库根的 `lib/`，
 **按新设计写，别照抄 RN 界面**（用户还没动手重构 UI —— 这是换栈白拿的好处，见 §1）。
 
 动手之前的两件前置，**都已在 2026-09-22 办完**：
@@ -557,15 +574,15 @@ UI 侧待办的口径（都写在 §5 与需求里，别漏）：
   **猜错比空着更糟** ⇒ 即使做，也必须是**用户点一下才应用**，绝不能默认自动填。
 - ⚠️ 出网口径不变：**只往用户自填的 `baseUrl` 发请求**，别引入任何我们自己的后端。
 
-**验收方式**：UI 没有 TS 侧的对照测试网，只能靠**真机手动过一遍**（`测试计划.md` 的场景清单
-+ `test/fixtures/samples.dart` 那 20 条样本可以当录入素材）。**别靠"看起来对了"。**
+**验收方式**：UI 没有 TS 侧的对照测试网，只能靠**真机手动过一遍**（按 `测试计划.md` 的步骤走）。
+**别靠"看起来对了"。**
 
 ✅ **那笔债已还**：`P2Output` 等的手写校验已随 `parse/schema.dart` 落地（上面第 2 条）。
 （`migrate_test` 里造旧库用的两处原始 SQL **不是债**：一处在填「要删的列」、一处要带
 `needs_confirm = 1` —— 那些列已从仓储的列清单里摘掉，手写 SQL 正是被测的事实本身。
 其余造数据与断言都已走仓储，与 TS 同源。）
 
-### 6.3 应用层（`apps/flutter/`）进度
+### 6.3 应用层（仓库根 `lib/`）进度
 
 （历史对照）RN 那边应用层是 `apps/mobile/src/`：`platform/`（接线）+ `app/`（路由与页面）+ `ui/` + `capture/` —— **该目录已于 2026-09-23 删除**。
 Flutter 这边**从 `platform/` 开始接**，因为那部分是**与界面设计无关**的 —— 任何界面都得有它。
@@ -710,7 +727,7 @@ release 包所有域名解析失败**（`Failed host lookup`，第一台真机�
 3. ⚠️ **自检要能被反复点击**：临时表先 `DROP ... IF EXISTS`、探针文件跑完即删、
    跑完把库里的 `__findr_*` 清干净。它是个「随时可以点开看看」的屏，不是一次性脚本。
 
-**设备层已从「只能上真机才知道」变成有自动化覆盖**：`apps/flutter/test/device_selfcheck_test.dart`
+**设备层已从「只能上真机才知道」变成有自动化覆盖**：`test/device_selfcheck_test.dart`
 （6 个用例）把沙盒根目录钉到临时目录上（`AppPaths.initWith`），于是真实库文件、媒体往返、
 整库打包往返都在 `flutter test` 里跑。其中一条专门验「检查不是空转」：
 内存库上 PRAGMA 那一项**必须**报错（journal_mode 是 memory 而非 wal）。
@@ -720,7 +737,7 @@ release 包所有域名解析失败**（`Failed host lookup`，第一台真机�
 
 **UI 重构（2026-09-23 完成，用户真机验收通过）**
 
-范围：**只动界面层**（`apps/flutter/lib` 的 `theme/` `ui/` `screens/` `capture/`），
+范围：**只动界面层**（仓库根 `lib/` 的 `theme/` `ui/` `screens/` `capture/`），
 **没碰** `packages/findr_core`、数据库 schema、`.findrpack` 格式。
 
 | 文件 | 改动 |
@@ -733,7 +750,7 @@ release 包所有域名解析失败**（`Failed host lookup`，第一台真机�
 | `capture/composer.dart` | **重头**：录入口重写成**微信式输入栏** —— 左1 话筒/键盘切换 · 中 输入框或「按住说话」药丸 · 右2 ＋素材 · 右1 存 |
 | `screens/settings/settings_screen.dart` | 删掉 5 条面板 hint 文案（视觉简化）|
 
-验收：三侧基线未破（core `analyze` 干净 + `test` 296 · app `analyze` 干净 + `test` 90）；
+验收：三侧基线未破（core `analyze` 干净 + `test` 290 · app `analyze` 干净 + `test` 90）；
 用户已在真机上过了一遍，确认可用。
 
 ⚠️ **这次没有新增测试**（`flutter test` 仍是 90 条，与重构前同数）——
@@ -865,14 +882,18 @@ release 包所有域名解析失败**（`Failed host lookup`，第一台真机�
   export NO_PROXY="127.0.0.1,localhost" no_proxy="127.0.0.1,localhost"
   ```
 
-- ⚠️ **给 `findr_core` 加了新依赖后，`apps/flutter` 的锁是陈旧的**（2026-09-22 踩到）：
-  `apps/flutter/pubspec.lock` 与 `.dart_tool/package_config.json` 是 `flutter create` 那次留下的，
-  **path 依赖新增的传递依赖不会自动补进来** ⇒ `flutter test` 编译 `findr_core` 时报
-  `Method not found: 'Request'.` / `Undefined name 'MediaType'` 一大片（看着像 core 写错了）。
-  **`flutter pub get` 一次即可**。⚠️ 注意 **`flutter analyze` 当时是「No issues found」**，
-  所以**「analyze 过了」不代表依赖是对的** —— 改完 core 的 pubspec 一律补跑 `pub get`。
-- **`flutter analyze` / `flutter test` 会连带分析 path 依赖的整个 `findr_core`** ⇒
-  在根目录层次改 core 之后，`apps/flutter` 侧也要跟着验一遍，别只看 `packages/findr_core`。
+- ⚠️ **给 `findr_core` 加了新依赖后，必须补跑 `flutter pub get`**（2026-09-22 踩到；换成 pub workspaces 后同样成立）：
+  当时 app 侧那份 `pubspec.lock` 是 `flutter create` 留下的，**path 依赖新增的传递依赖不会自动补进来**
+  ⇒ `flutter test` 编译 `findr_core` 时报 `Method not found: 'Request'.` / `Undefined name 'MediaType'`
+  一大片（看着像 core 写错了）。**`flutter pub get` 一次即可**。
+  ⚠️ 注意 **当时 `flutter analyze` 报的是「No issues found」**，
+  所以**「analyze 过了」不代表依赖是对的** —— 改完任一 pubspec 一律补跑 `pub get`。
+  📌 2026-09-23 起走 pub workspaces：全仓只有仓库根一份 `pubspec.lock` / `.dart_tool/`，
+  **只在仓库根跑 `flutter pub get`**。别再进 `packages/findr_core` 单独 pub get ——
+  那会造出「游荡的」锁文件，而下次 pub get 又会把它删掉，白忙。
+- **`flutter analyze` / `flutter test` 会连带分析整个 `findr_core`** ⇒
+  改完 core 之后**两侧都要验**：仓库根 `flutter analyze` + `flutter test`，
+  以及 `packages/findr_core` 里的 `dart analyze` + `dart test`（后者更快，先跑它）。
 - 📌 **`enable-native-assets` 不用管**：`flutter config --list` 显示 `(Not set)`，
   但 3.47.5 下**默认就是开的**（实测 `build/native_assets/` 有产物，见 §6.1）。
 - ⚠️ **`flutter build apk --target-platform android-arm64` 产出的是 `app-release.apk`**，

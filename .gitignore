@@ -1,8 +1,56 @@
-# 系统 / 编辑器
+# findR 仓库级忽略清单
+# 2026-09-23 起：Flutter 工程在仓库根，共享包在 packages/findr_core，两者用 pub workspaces 统一解析。
+# 本文件由「根目录的仓库级条目」+「Flutter 模板生成的条目」合并而来，以后只维护这一份。
+
+# ── 本仓库自己的规则 ─────────────────────────────────────────────
+# 临时工作目录（下 APK、导出证书等）；.workbuddy/memory 仍然要进版本库
+.workbuddy/tmp/
+.commandcode/
+
+# ── 系统 / 编辑器 ────────────────────────────────────────────────
 .DS_Store
 *.log
 .env*
-.commandcode/
+*.class
+*.pyc
+*.swp
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
 
-# 临时工作目录（下 APK、导出证书等）；.workbuddy/memory 仍然要进版本库
-.workbuddy/tmp/
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# VS Code 的 launch 配置值得进版本库，所以默认不忽略（Flutter 模板原样保留）
+#.vscode/
+
+# ── Flutter / Dart / Pub ────────────────────────────────────────
+# ⚠️ 用了 pub workspaces：pubspec.lock 与 .dart_tool/ 只在仓库根有一份，
+#    成员包（packages/findr_core）里不该再出现 —— pub get 会自动删掉那些「游荡」的副本。
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+
+# 符号化 / 混淆产物
+app.*.symbols
+app.*.map.json
+
+# Android Studio 放构建产物的位置
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Widget 预览
+.widget_preview/

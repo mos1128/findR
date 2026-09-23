@@ -1,0 +1,42 @@
+# findR 的 Flutter 应用（安卓）。它同时是 monorepo 的 workspace 根：
+#   - 本文件代表的 `findr_app` 就住在仓库根目录（lib / android / test / assets 都在这一层）
+#   - 共享逻辑在 `packages/findr_core`（纯 Dart，零 Flutter 依赖）
+# 两边的依赖由 pub workspaces 统一解析 ⇒ 全仓只有一份 pubspec.lock 和 .dart_tool/，
+# 在仓库根跑一次 `flutter pub get` 就够，不需要进 packages/findr_core 再 pub get。
+name: findr_app
+description: "findR —— 本地优先的口述记忆库：说一句、拍一张，剩下交给它整理。"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.4
+
+workspace:
+  - packages/findr_core
+
+dependencies:
+  audioplayers: ^6.8.1
+  connectivity_plus: ^7.3.1
+  file_picker: ^13.1.0
+  # workspace 内按「名字 + 版本约束」引用，pub 会自动解析到本地的 packages/findr_core。
+  # 不再写 `path: ../packages/findr_core` —— 那是 workspace 之前的写法，挪目录就会断。
+  findr_core: ^0.1.0
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.4.3
+  flutter_secure_storage: ^11.2.0
+  http: ^1.6.0
+  http_parser: ^4.1.2
+  image: ^4.10.1
+  image_picker: ^1.2.3
+  package_info_plus: ^10.2.1
+  path_provider: ^2.1.6
+  record: ^7.1.1
+  share_plus: ^13.3.0
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

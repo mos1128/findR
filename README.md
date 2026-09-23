@@ -1,6 +1,10 @@
-# findr_app —— Findr 的 Flutter 壳（安卓）
+# findr_app —— Findr 的 Flutter 工程（安卓）
 
-Findr（长程记忆助手）的**安卓客户端**。这里是**平台接线 + 界面**，纯逻辑不在这。
+Findr（长程记忆助手）的**安卓客户端**。仓库根就是它；`lib/` 里只放**平台接线 + 界面**，纯逻辑不在这。
+
+> **仓库结构**：根目录 = 这个 Flutter app，`packages/findr_core/` = 共享逻辑包。
+> 两者用 **Dart 官方的 pub workspaces** 统一解析 ⇒ 全仓只有一份 `pubspec.lock` / `.dart_tool/`，
+> **在仓库根跑一次 `flutter pub get` 就够**（别进 `packages/` 单独 pub get）。
 
 | 目录 | 放什么 |
 |---|---|
@@ -9,10 +13,11 @@ Findr（长程记忆助手）的**安卓客户端**。这里是**平台接线 + 
 | `lib/ui/` | 通用组件（`kit.dart` 基础件、卡片行、媒体查看、音频回放）|
 | `lib/screens/` | 页面：记忆流主页、卡片详情、设置（5 屏）+ 自检屏 |
 | `lib/state/` | Riverpod 状态 |
+| `lib/theme/` | 设计令牌（配色 / 圆角 / 间距）|
 | `assets/branding/` | 品牌素材（图标 / 启动图）—— **尚未接入**，见该目录的 README |
 
 **纯逻辑在 `packages/findr_core/`**（零 Flutter 依赖的纯 Dart 包：数据库 / 检索 / 模型调用 / 备份格式）。
-那边的测试是主验收网（296 条），这里的 widget 测试是补充（90 条）。
+那边的测试是主验收网（290 条，`dart test`），这里的 widget 测试是补充（90 条，`flutter test`）。
 
 ## 常用命令
 

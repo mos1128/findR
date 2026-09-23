@@ -42,9 +42,10 @@ jobs:
             || { echo "::error::Flutter 版本不是 3.47.5，请检查 flutter-version 是否被改动"; exit 1; }
 
       - name: 依赖解析
-        run: |
-          ( cd packages/findr_core && dart pub get )
-          ( cd apps/flutter && flutter pub get )
+        # pub workspaces（2026-09-23 起）：app 与 core 共用一份解析，在仓库根跑一次就够。
+        # ⚠️ 必须是 `flutter pub get` 而不是 `dart pub get` —— app 带 Flutter SDK 依赖，
+        #    纯 dart 的 pub 解析不了；在 member 目录里单独 pub get 也不再需要。
+        run: flutter pub get
 
       - name: core 静态分析
         working-directory: packages/findr_core
@@ -55,12 +56,10 @@ jobs:
         run: dart test
 
       - name: app 静态分析
-        working-directory: apps/flutter
         run: flutter analyze
 
       # 这一步会打印命门自检的七项明细，**日志本身就是证据**，出问题时直接看这里。
       - name: app 冒烟测试（含命门自检）
-        working-directory: apps/flutter
         run: flutter test --reporter expanded
 
   # ── 出包：构建 release APK，并对着**产物本身**断言命门 ─────────────────────────
@@ -117,9 +116,10 @@ jobs:
             || { echo "::error::Flutter 版本不是 3.47.5"; exit 1; }
 
       - name: 依赖解析
-        run: |
-          ( cd packages/findr_core && dart pub get )
-          ( cd apps/flutter && flutter pub get )
+        # pub workspaces（2026-09-23 起）：app 与 core 共用一份解析，在仓库根跑一次就够。
+        # ⚠️ 必须是 `flutter pub get` 而不是 `dart pub get` —— app 带 Flutter SDK 依赖，
+        #    纯 dart 的 pub 解析不了；在 member 目录里单独 pub get 也不再需要。
+        run: flutter pub get
 
       # 先跑一遍验收网：包还没出就先挂了，省得白等十分钟构建。
       - name: core 测试
@@ -129,13 +129,12 @@ jobs:
           dart test
 
       - name: app 冒烟测试（含命门自检）
-        working-directory: apps/flutter
         run: |
           flutter analyze
           flutter test --reporter expanded
 
       - name: Guard release signing config
-        working-directory: apps/flutter/android/app
+        working-directory: android/app
         run: |
           # 目前刻意沿用 debug 签名（可覆盖安装、数据保留）。Flutter 模板一旦变更会静默
           # 变成未签名，到真机上就是「解析包错误」，所以在这里挡住。
@@ -145,7 +144,6 @@ jobs:
           fi
 
       - name: Build release APK
-        working-directory: apps/flutter
         run: |
           # 只编 arm64-v8a：现代手机全是 arm64。Flutter 这边的开关是 --target-platform
           # （RN 那边是 -PreactNativeArchitectures，名字不同、作用一样）。
@@ -154,7 +152,6 @@ jobs:
           flutter build apk --release --target-platform android-arm64
 
       - name: 断言 APK 里那份 SQLite 带 FTS5 + trigram（命门的产物级证据）
-        working-directory: apps/flutter
         run: |
           set -euo pipefail
           echo "=== 产物目录 ==="
@@ -183,7 +180,7 @@ jobs:
 
           # FTS5 / trigram 是**按名字注册**的模块，名字串会留在二进制里，可以直接查。
           # ⚠️ 这只能证明「编进去了」，证明不了「运行时能跑」—— 后者由真机上的自检屏负责
-          #    （apps/flutter/lib/selfcheck/self_check_screen.dart）。
+          #    （lib/selfcheck/self_check_screen.dart）。
           for s in fts5 trigram; do
             n="$(grep -a -o -i "$s" "$so" | wc -l)"
             echo "「$s」在 $so 中出现 $n 次"
@@ -198,7 +195,6 @@ jobs:
       # 所有域名解析失败（Failed host lookup），且只有装到真机才暴露 —— 2026-09-23 实测踩过。
       # 没有任何插件会替你声明 INTERNET，所以只能对着**产物**断言，在构建期就拦住。
       - name: 断言合并清单里有 INTERNET 权限
-        working-directory: apps/flutter
         run: |
           set -euo pipefail
           apk="$(ls build/app/outputs/flutter-apk/*.apk | head -1)"
@@ -215,7 +211,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: findr-flutter-apk
-          path: apps/flutter/build/app/outputs/flutter-apk/*.apk
+          path: build/app/outputs/flutter-apk/*.apk
           retention-days: 7
           if-no-files-found: error
 
@@ -225,14 +221,13 @@ jobs:
           tag_name: flutter-dev-latest
           name: Findr 开发版 · Flutter（最新）
           body: |
-            Flutter 版（迁移中）的开发版 APK。**与 RN 版并排共存**：包名
-            `com.findr.app.dev`，碰不到 RN 版（`com.findr.app`）的数据。
+            findR 的开发版 APK（包名 `com.findr.app.dev`）。
 
             - 当前沿用 **debug 签名**（可覆盖安装、数据保留）。换正式 keystore 必须卸载重装，
-              本地记忆库会清空 —— 那一步推迟到功能做完 + UI 重构之后的正式版。
+              本地记忆库会清空 —— 那一步推迟到正式版（现有一期只剩发布收尾）。
             - 装好后**第一件事**：在自检屏上确认七项全绿。那是在真机上验证
               「打进 APK 的这份 SQLite 带 FTS5 + trigram」，是本方案的命门。
               只要有 ❌，**先别往下用**，把截图发我。
             - 备份文件（`.findrpack`）**当前是明文 ZIP**，谁拿到谁能读。
           prerelease: true
-          files: apps/flutter/build/app/outputs/flutter-apk/*.apk
+          files: build/app/outputs/flutter-apk/*.apk
