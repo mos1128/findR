@@ -1,7 +1,7 @@
-/// 记忆流的界面状态（列表 + 检索 + 答案）—— 对应 RN 的 `app/index.tsx` 里那一堆 useState。
+/// 记忆流的界面状态（列表 + 检索 + 答案）。
 ///
-/// **为什么把状态从 widget 里搬出来**：RN 那边这些状态散在组件里，于是「哪些搜索提示
-/// 该显示」这类判断和渲染缠在一起，只能靠读整屏代码才能确定行为。搬进 Notifier 之后
+/// **为什么把状态从 widget 里搬出来**：状态散在组件里时，「哪些搜索提示
+/// 该显示」这类判断会和渲染缠在一起，只能靠读整屏代码才能确定行为。搬进 Notifier 之后
 /// 那套口径有了单一出处，也能在 `flutter test` 里直接对状态断言（不必去点界面）。
 ///
 /// ⚠️ **这里不做检索本身** —— 分路、放宽、兜底全在 core 的 `search/service.dart`。
@@ -109,7 +109,7 @@ final class MemoryStreamState {
 
 const Object _unset = Object();
 
-/// 记忆流列表每次最多读多少张。与 RN 一致（100）。
+/// 记忆流列表每次最多读多少张。
 const int memoryStreamLimit = 100;
 
 final memoryStreamProvider =

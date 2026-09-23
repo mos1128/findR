@@ -1,4 +1,4 @@
-/// 检索编排 —— 逐字对应 `packages/core/src/search/service.ts`（193 行）。
+/// 检索编排。
 ///
 /// 这是「用户问一句话 → 拿到卡片」的总入口，把四件事串起来：
 /// P2 规划 → 本地字面检索（含逐级放宽）→ （推理题）整库裁决 → 字面兜底。
@@ -109,7 +109,6 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
       ...plan.synonyms,
     ]);
     final built = buildSearch(
-      // TS: `{ ...p2, synonyms: [...new Set([...synonyms, ...expanded])] }`
       p2: plan.withSynonyms(<String>{...plan.synonyms, ...expanded}.toList()),
       resolveCategoryId: (name) => resolveCategoryId(deps.db, name),
     );
@@ -135,7 +134,7 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
         }
       }
       // 放宽也救不回来 —— 说明约束不是问题，是真的没有
-      // （见 `search-relax.test.ts` 的最后一条用例）
+      // （放宽逻辑的回归用例见 `test/search/builder_test.dart`）
       return SearchResult(
         cards: const <MemoryCard>[],
         usedFallback: false,
@@ -147,9 +146,9 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
 
   // 走到这里 = 没配模型 / P2 调用失败 / P2 说听不懂 / 关键词为空 ⇒ 一律退回**字面兜底**。
   //
-  // 原来「P2 说听不懂」是直接 return 空 + unclear —— 于是「配了模型但模型没听懂」
-  // 比「压根没配模型」还不可用：同一件事两条路，而后者明明有兜底。
-  // 现在统一：听不懂也要按用户原话再字面搜一遍，搜不到再说搜不到。
+  // 「听不懂」也要按用户原话再字面搜一遍，搜不到再说搜不到 ——
+  // 否则「配了模型但模型没听懂」会比「压根没配模型」还不可用，
+  // 同一件事两条路，而后者明明有兜底。
   return SearchResult(
     cards: executeSearch(deps.db, buildRawSearch(query)),
     usedFallback: true,
@@ -202,7 +201,6 @@ Future<SearchResult> _adviseSearch(
     );
   }
 
-  // TS: `p2.scenario?.trim() || query`
   final trimmedScenario = (p2.scenario ?? '').trim();
   final scenario = trimmedScenario.isNotEmpty ? trimmedScenario : query;
 

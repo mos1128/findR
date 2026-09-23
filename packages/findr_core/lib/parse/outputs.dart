@@ -1,13 +1,13 @@
-/// 模型输出的数据形状 —— 对应 `packages/core/src/parse/index.ts` 里的 `P2OutputSchema`。
+/// 模型输出的数据形状。
 ///
 /// ⚠️ **本文件目前只有形状，没有校验。**
 ///
-/// TS 那边用 zod，每个字段都挂了 `.catch(...)`：字段缺失、类型不对、枚举值陌生，
+/// 每个字段都兜了默认值：字段缺失、类型不对、枚举值陌生，
 /// 一律**落到默认值**而不是让整次解析失败（模型输出不稳定，这是刻意的容错设计）。
-/// **Dart 没有 zod 等价物**（见 `Flutter迁移交接.md` §4），校验函数留到译 `parse/` 那一块时手写。
+/// 校验函数不引第三方 schema 库，全部手写。
 ///
 /// 所以此刻这里只定义「一份已经可信的 P2 输出长什么样」，供 `search/builder.dart` 消费。
-/// 默认值写在构造函数里，与 zod 的 `.catch()` 取值一致 —— 等校验函数落地时直接复用。
+/// 默认值写在构造函数里，与校验层的兜底取值一致 —— 两处必须同步改。
 library;
 
 /// 检索走哪条路（需求 5.3）。
@@ -57,9 +57,9 @@ enum TimeHint {
 
 /// 检索规划（P2 的输出）。
 ///
-/// 缺省值全部对齐 TS 里 zod 的 `.catch(...)`：
+/// 各字段的缺省值：
 /// `mode` ⇒ locate、`intent` ⇒ unknown、数组 ⇒ 空、`match_mode` ⇒ any。
-/// **`intent` 缺省成 unknown 很关键** —— 模型不认得这个字段时，行为与第十四版完全一致，不会更糟。
+/// **`intent` 缺省成 unknown 很关键** —— 模型不认得这个字段时会退回纯字面检索，不会更糟。
 final class P2Output {
   const P2Output({
     this.mode = SearchMode.locate,
@@ -94,7 +94,7 @@ final class P2Output {
 
   /// 只换 [synonyms]，其余原样。
   ///
-  /// 对应 TS 的 `{ ...p2, synonyms: [...] }`（`search/service.ts` 用别名扩展后的词表覆盖它）。
+  /// 别名扩展后的词表会覆盖这里的 `synonyms`。
   /// **刻意不做通用的 `copyWith`**：这里有一半字段可空，通用版得靠哨兵区分「不改」
   /// 与「改成 null」，而本场景只会改这一个非空字段 —— 多出来的灵活性只会多一处误用面。
   P2Output withSynonyms(List<String> synonyms) => P2Output(
@@ -112,13 +112,13 @@ final class P2Output {
   );
 }
 
-/// P1（录入整理）的输出 —— 对应 TS 的 `P1OutputSchema` 推出来的类型。
+/// P1（录入整理）的输出。
 ///
-/// 各字段的**缺省值就是 zod 的 `.catch(...)` 取值**（见 `parse/schema.dart`）：
+/// 各字段的**缺省值就是校验层的落默认值**（见 `parse/schema.dart`）：
 /// 字符串 ⇒ 空串、数组 ⇒ 空、`category`/`path` ⇒ null。
 ///
-/// ⚠️ 两个字段**没有 catch**（`path_matched` / `path_suggestion`）：类型不对会让
-/// **整次解析失败**，而不是落默认值。这是从 TS 原样带过来的行为，别"顺手"补上默认值。
+/// ⚠️ 两个字段**不做兜底**（`path_matched` / `path_suggestion`）：类型不对会让
+/// **整次解析失败**，而不是落默认值。这是有意保留的行为，别"顺手"补上默认值。
 final class P1Output {
   const P1Output({
     this.category,
@@ -168,7 +168,7 @@ final class P1Output {
   final String ask;
 }
 
-/// 裁决里「模型指向某张卡」的一次引用 —— 对应 TS 的 `AdviceRefSchema`。
+/// 裁决里「模型指向某张卡」的一次引用。
 ///
 /// 模型可以只回 id 字符串，也可以回 `{id, why}`；两种都收 ——
 /// 让「结构更完整」不成为一次解析失败的理由（[why] 缺省为空串）。
@@ -183,7 +183,7 @@ final class AdviceRef {
 ///
 /// 三档而不是二档：「必需 / 看情况」分开，是为了让「插线板」这类边界项能诚实表达成
 /// 「看情况，取决于目的地插座标准」。二分类会逼模型二选一 —— 要么误删对的那条，
-/// 要么为了保险全留下、退回成噪音（这正是第十四版之前的样子）。
+/// 要么为了保险全留下、退回成噪音。
 final class P4Output {
   const P4Output({
     this.picks = const <AdviceRef>[],

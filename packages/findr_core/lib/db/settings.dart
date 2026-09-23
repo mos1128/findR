@@ -5,7 +5,6 @@ import 'driver.dart';
 /// settings 表只存非机密项（JSON 值）；API Key 一律走安全存储，
 /// 导出备份也永不包含（技术设计四「Key 与配置分离」）。
 ///
-/// 逐字对应 `packages/core/src/db/settings.ts`（43 行）。
 
 T? getSetting<T>(SqliteDriver db, String key) {
   final row = db.prepare('SELECT value FROM settings WHERE key = ?').get([key]);

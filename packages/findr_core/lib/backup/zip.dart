@@ -1,9 +1,8 @@
-/// 最小 ZIP 读写（**只支持 STORE，不压缩**）—— 逐字对应
-/// `packages/core/src/backup/zip.ts`（232 行）。
+/// 最小 ZIP 读写（**只支持 STORE，不压缩**）。
 ///
 /// 为什么不用现成的 ZIP 包 / `dart:io` 的 gzip：
 ///   - 媒体（webp / m4a）本身已是压缩格式，deflate 在这里几乎不省字节，却要拖进来一个依赖；
-///   - core 的既定约束是**零平台依赖、能力全走注入**（TS 侧的理由是 Hermes 上没有 zlib；
+///   - core 的既定约束是**零平台依赖、能力全走注入**（不引第三方 zip 库：
 ///     Dart 侧 `dart:io` 其实有 zlib，但用了它就等于把 core 绑死在非 Web 平台）；
 ///   - STORE 是 ZIP 规范里最简单的一档，写+读不到 250 行，且产物是**标准 zip**，
 ///     用户拿 7-Zip 就能打开自检（调试价值）。
@@ -54,7 +53,7 @@ final class ZipReadEntry {
 
 /// 名字只走 ASCII 单字节编解码。
 ///
-/// TS 侧的理由是不用 `TextEncoder`（Hermes 上不保证存在）；Dart 侧的理由换了一个但同样成立：
+/// 不用平台自带的编码 API，理由：
 /// **文件名本来就不需要多字节**，而一旦允许非 ASCII，包内路径在不同 ZIP 工具下会出现编码歧义。
 Uint8List _encodeName(String name) {
   final out = Uint8List(name.length);
@@ -81,10 +80,10 @@ String _decodeName(Uint8List bytes) {
 
 /// ZIP 的 DOS 时间戳：秒只存偶数（2 秒精度），年份从 1980 起算。
 ///
-/// ⚠️ TS 用的是 `getHours()` / `getMonth()` 这些**本地时间**取值器 ⇒ 这里显式 `toLocal()`，
-/// 否则传进来一个 UTC 的 `DateTime` 会得到 UTC 的时分秒（Dart 的 `DateTime` 带 `isUtc` 标记，
-/// 与 JS 的 `Date` 不同）。这个时间戳只影响解压工具里显示的「修改时间」，
-/// 但它同样是**格式的一部分** —— 与 RN 版写出的包逐位对齐才好比对。
+/// ⚠️ 必须显式 `toLocal()` —— 这个字段按规范是**本地时间**，
+/// 否则传进来一个 UTC 的 `DateTime`（带 `isUtc` 标记）会得到 UTC 的时分秒。
+/// 这个时间戳只影响解压工具里显示的「修改时间」，
+/// 但它同样是**格式的一部分** —— 按标准实现，产物才能被通用解压工具打开。
 ({int time, int date}) _dosDateTime(DateTime d) {
   final local = d.toLocal();
   final time = ((local.hour << 11) | (local.minute << 5) | (local.second >> 1)) & 0xffff;

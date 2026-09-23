@@ -1,7 +1,7 @@
 /// 真机上的文件访问 —— core 那两个端口的设备实现。
 ///
-/// 对应 RN 的 `apps/mobile/src/platform/media.ts`，结构一模一样：上面是给两个端口共用的
-/// 小函数，下面分别是 `MediaIo`（面向「送模型」的读法：base64 / multipart）与
+/// 结构：上面是给两个端口共用的小函数，下面分别是 `MediaIo`
+/// （面向「送模型」的读法：base64 / multipart）与
 /// `MediaStorePort`（面向备份的「字节进字节出」）。
 ///
 /// 两个端口分开是有意的：接口形状不同，混成一个会让两边都别扭。
@@ -15,7 +15,7 @@ import 'package:http_parser/http_parser.dart';
 
 import 'app_paths.dart';
 
-/// 按后缀猜 MIME。与 RN 版同一张表 —— **别加 `default` 之外的猜测**，
+/// 按后缀猜 MIME。**别加这张表之外的猜测**，
 /// 多猜一种就等于多一个「本地能传、真机传不了」的不对称。
 String mimeFromRel(String rel) {
   final name = rel.split('/').last;
@@ -58,8 +58,7 @@ String mediaUri(String rel) => Uri.file(AppPaths.abs(rel)).toString();
 
 /// core 的 [MediaIo] 在设备端的实现。
 ///
-/// **`audioPart` 与 RN 不同的一点**：RN 的 FormData 只认 `{uri,name,type}` 且会忽略
-/// core 传进来的 filename；Dart 用 `MultipartFile.fromPath`，走的是**文件流**
+/// **`audioPart` 的两个性质**：用 `MultipartFile.fromPath`，走的是**文件流**
 /// （不把 m4a 整个读进内存），并且**尊重调用方给的 filename**
 /// —— core 的注释说得很清楚：服务端常靠后缀嗅探格式，名字不能由实现方随便定。
 final class DeviceMediaIo implements MediaIo {

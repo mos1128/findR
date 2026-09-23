@@ -1,12 +1,12 @@
-/// 录入流程的编排 —— 逐字对应 `packages/core/src/pipeline/capture.ts`（326 行）。
+/// 录入流程的编排。
 ///
 /// 一条链路：**草稿（纯 DB，不碰网络）→ 转写 → 理解（一次模型调用）→ 落库**。
 /// 所有失败都保持素材可重试，**绝不静默丢弃**（需求四、九）。
 ///
 /// Dart 侧的对应关系：
-/// - TS 的 union 类型（`UnderstandingResult` / `AdvanceOutcome`）⇒ sealed class + enum，
+/// - 结果类型用 sealed class + enum 表达，让 `switch` 穷尽，
 ///   下游 `switch` 是穷尽检查的；
-/// - TS 的 `deps: Pick<AdvanceDeps,'db'|'now'>`（结构化子类型）⇒ Dart 没有结构化类型，
+/// - 依赖用「只声明用到的那几项」的子集类型（没有结构化子类型可用），
 ///   所以 [createDraft] 直接收 `SqliteDriver` 与一个可选的时钟，**效果相同**：
 ///   建草稿不需要 llm / cfg，就不该逼调用方准备它们。
 library;
@@ -64,15 +64,15 @@ final class AdvanceDeps {
   final String Function()? idGen;
   final int? maxAnalyzeImages;
 
-  /// TS 到处写 `deps.now ?? (() => new Date())`，Dart 里由它统一兜住。
+  /// 统一兜住「没传时钟就用真实时间」。
   DateTime Function() get clock => now ?? DateTime.now;
 
-  /// TS 到处写 `deps.idGen ?? makeId`。
+  /// 统一兜住「没传 id 生成器就用默认的」。
   String Function() get idGenerator => idGen ?? makeId;
 
   /// 只换 [hotwords]，其余原样。
   ///
-  /// 对应 TS 的 `{ ...deps, hotwords }`（`pipeline/queue.ts` 的批量补转写用它注入热词）。
+  /// 在依赖副本上注入热词（批量补转写用它）。
   /// **刻意不做通用的 `copyWith`**：这里有十几项可选字段，通用版得靠哨兵区分
   /// 「不改」与「改成 null」，而本场景只会改这一个 —— 多出来的灵活性只会多一处误用面。
   AdvanceDeps withHotwords(List<String> hotwords) => AdvanceDeps(
@@ -259,7 +259,7 @@ Future<UnderstandingResult> runUnderstanding(
       : null;
   /*
     这里原有一个「待确认」标记 —— 置信度 < 0.6 / 分类选不出 / 本次新建了位置层级 → 打角标，
-    第二十版整条删除。删的理由：它只产出一个角标，既不阻挡入库、也不影响检索，
+    已经整条删除。删的理由：它只产出一个角标，既不阻挡入库、也不影响检索，
     而唯一的清除按钮只是把角标擦掉、并不修正任何数据，于是留下一个「看得见却无从下手」的提醒；
     四条触发条件里也只剩「模型新造了位置层级」有价值，而那件事本来就该在位置树上直接改。
     真要纠正，用户有直路：详情页点分类 chip、点位置行，或「重新整理」重跑一遍理解。
@@ -285,7 +285,7 @@ Future<UnderstandingResult> runUnderstanding(
       // ⚠️ 没给 path 时退回去用模型自报的 `pathMatched`，它一般是 `false` ⇒ 这一列**不为 null**。
       // 界面不受影响（`card_detail_screen.dart` 只在 `pathNames != null` 时才看它），但**统计口径必须当心**：
       // 算「path 命中率」时分母只能取「真的给出了 path」的样本，否则「正确地不给位置」会被算成没命中。
-      // （TS 侧 2026-09-22 首次实测就因此假跌到 38.9%，实为 7/7。）
+      // （曾因此把命中率误算成 38.9%，实为 7/7。）
       pathMatched: path != null ? path.created.isEmpty : out.pathMatched,
     ),
   );

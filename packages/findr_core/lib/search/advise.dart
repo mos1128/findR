@@ -1,4 +1,4 @@
-/// 推理题的裁决 —— 逐字对应 `packages/core/src/search/advise.ts`（104 行）。
+/// 推理题的裁决。
 ///
 /// 与 L2（`answer.dart`）的区别是根本性的，**不能合并**：
 ///

@@ -1,10 +1,10 @@
-/// 首页：记忆流 —— 对应 RN 的 `app/index.tsx`。
+/// 首页：记忆流。
 ///
-/// 版式是新画的（不复刻 RN），但**四条口径一个字都不能变**：
+/// **四条口径一个字都不能变**：
 ///
 /// 1. **上「查」下「记」两条链路强区分**：上面是中性冷灰的检索区，下面是品牌蓝的录入坞。
 ///    需求六明确说合并会丢数据，所以别为了「好看」把它们统一成一种材质。
-/// 2. **记忆流必须是滚动容器**。RN 那边曾经用普通 `View` 当列表容器，
+/// 2. **记忆流必须是滚动容器**。列表容器若不具备滚动能力，
 ///    卡片一多就只是「被下边缘挡住」而划不动（真机反馈：首页列表划不动）。
 ///    这里用 `CustomScrollView`，且内外边距全在 sliver 的 padding 上 ——
 ///    写在容器 `style` 上会把内容区压掉一圈，滚动时首尾卡片贴边。
@@ -79,7 +79,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     FocusScope.of(context).unfocus();
     final notifier = ref.read(memoryStreamProvider.notifier);
     await notifier.search(q);
-    // 需求 5.3：本地无结果时自动组织一次答案；第十四版起「每次搜索都自动组织」也走这里。
+    // 需求 5.3：本地无结果时自动组织一次答案；`autoAnswer` 开着时「每次搜索都自动组织」也走这里。
     // 没有模型就别触发 —— 那必然是一次失败请求。
     final s = ref.read(memoryStreamProvider).value;
     if (s == null) return;
@@ -216,10 +216,10 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
 
   /// 录入坞上方的提示条。
   ///
-  /// ⚠️ **这里曾经照着 RN 抄错了一条**：原来写的是「`autoAnswer` 开着就不提示没配 ASR」——
-  /// 但 `autoAnswer` 是**检索**侧的开关，跟 ASR 毫无关系，结果就是
+  /// ⚠️ **这里容易写错一条**：别把提示条件写成「`autoAnswer` 开着就不提示没配 ASR」——
+  /// `autoAnswer` 是**检索**侧的开关，跟 ASR 毫无关系，那样写的结果是
   /// 「打开了自动总结答案的用户，永远看不到自己其实没配 ASR」。
-  /// RN 那边的条件是 `offline || noAsr`，没有 `autoAnswer` 这一项。
+  /// 正确的条件只有 `offline || noAsr`，没有 `autoAnswer` 这一项。
   ///
   /// 离线排在前：它决定的是**当下能不能用**，比「缺个 ASR」更急。
   Widget? _composerNotice(RuntimeState? rt) {
@@ -641,7 +641,7 @@ class _SearchBarState extends State<_SearchBar> {
                         ),
                 ),
                 // 未配模型的提示条。
-                // ⚠️ **必须在正常文档流里**：RN 那边曾把它做成 `position:'absolute', top:8`，
+                // ⚠️ **必须在正常文档流里**：做成绝对定位（`position:'absolute', top:8`）会
                 // 正好盖住搜索框；而多数用户一开始都没配模型 ⇒ 搜索框被永久遮住，
                 // 表现为「找不到搜索入口」（真机反馈）。别再改回浮层。
                 if (!widget.llmReady) ...<Widget>[

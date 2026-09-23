@@ -36,7 +36,7 @@ flutter run                 # 需要连着设备
    （`android/app/src/main/AndroidManifest.xml`）。
    没有任何插件会替你带它，而 Flutter 模板在 `debug/`、`profile/` 清单里自带
    ⇒ **`flutter run` 一切正常、release 包装到真机后所有域名解析失败**
-   （`Failed host lookup`，2026-09-23 真机验收时踩到）。CI 里有一道产物级断言挡着。
+   （`Failed host lookup`，真机验收时踩到过）。CI 里有一道产物级断言挡着。
 
 2. **平台插件别放在首帧的关键路径上 `await`**
    （`package_info_plus` 这类在 widget test 宿主里永不返回，界面会一直转圈）。
@@ -44,4 +44,4 @@ flutter run                 # 需要连着设备
 
 ## 文档
 
-项目文档都在仓库根目录。**新会话第一份读 `Flutter迁移交接.md`**（唯一权威，含铁律与环境坑）。
+项目文档都在仓库根目录。**新会话第一份读 `开发指南.md`**（环境搭建、踩坑记录与铁律）。

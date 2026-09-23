@@ -3,8 +3,8 @@ import 'package:test/test.dart';
 
 import '../helpers.dart';
 
-/// 与 TS 的 `test/taxonomy.test.ts` 同源。
-/// （那个文件末尾的 settings 用例已由 `db/settings_test.dart` 覆盖，故不再重复。）
+/// 分类与位置树的验收网。
+/// （settings 相关用例见 `db/settings_test.dart`，此处不重复。）
 void main() {
   test('预设分类只在首次建库播种，删掉后重启不复活', () {
     final db = makeDb();
@@ -126,7 +126,7 @@ void main() {
     expect(deleteLocation(db, 'l3').ok, isTrue);
   });
 
-  test('位置改名后 refreshPathNames 让冗余串跟上（M3「改名后检索仍命中」）', () {
+  test('位置改名后 refreshPathNames 让冗余串跟上（改名后检索仍命中）', () {
     final db = makeDb();
     upsertLocation(db, const LocationNode(id: 'l1', parentId: null, name: '主卧', sort: 0));
     upsertLocation(db, const LocationNode(id: 'l2', parentId: 'l1', name: '衣柜', sort: 0));

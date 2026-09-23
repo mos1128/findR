@@ -1,14 +1,14 @@
-/// 卡片仓储 —— 逐字对应 `packages/core/src/db/repository.ts`（648 行，core 里最大的单文件）。
+/// 卡片仓储。
 ///
 /// 这一层是 core 与数据库的全部接触面：卡片的读写、分类与位置树的查询、
 /// 检索 SQL 的拼装、队列取卡。上层（pipeline / search / backup）都只通过它碰库。
 ///
-/// 翻译时保持了几处形状上的刻意对齐，为的是让后续对照阅读不必切换思维：
+/// 几处刻意保持的写法（改动前先想清楚为什么这么写）：
 ///
-/// - **参数一律包成列表**：Dart 没有变长参数，`db.prepare(sql).get(a, b)` ⇒ `.get([a, b])`。
-/// - **SQL 逐字搬**，包括 `ESCAPE '\'`、`IS ?`（而不是 `= ?`，为了能绑 null）、
+/// - **参数一律包成列表**：Dart 没有变长参数，写成 `.get([a, b])`。
+/// - **SQL 里的细节都是有意为之**，包括 `ESCAPE '\'`、`IS ?`（而不是 `= ?`，为了能绑 null）、
 ///   `bm25(cards_fts, 1.0, 3.0, 4.0, 2.0)` 的权重顺序。
-/// - **时间一律走 `isoUtc()`**：TS 那边是 `Date.toISOString()`，恒为 UTC 的
+/// - **时间一律走 `isoUtc()`**，恒为 UTC 的
 ///   `YYYY-MM-DDTHH:MM:SS.mmmZ` —— 这些字符串既是列值也是排序键，形状不能变。
 library;
 
@@ -21,11 +21,11 @@ import '../util/iso.dart';
 import 'driver.dart';
 import 'json.dart';
 
-/// 列清单。`needs_confirm` 已于第二十版从读写两侧移除（角标、按钮、置位逻辑全删）——
+/// 列清单。`needs_confirm` 已从读写两侧移除（角标、按钮、置位逻辑全删）——
 /// **表里的那一列保留不动**：SQLite 删列要重建整张表（见 `schema.dart` 顶部第 3 条），
 /// 而 `NOT NULL DEFAULT 0` 的残留列不写不读、零成本。老备份包带着它也能正常导入。
 ///
-/// TS 那边是从一个逗号串 `split(',')` 出这个列表；这里反过来**由列表拼串**，
+/// 这里**由列表拼串**，
 /// 好处是两者不会漂移（`_insertSql` / `_upsertSql` 都从这里长出来）。
 const List<String> cardColList = <String>[
   'id',
@@ -69,12 +69,12 @@ int computeBackoffMs(int retryCount) {
 
 final Random _rng = Random.secure();
 
-/// 对应 TS 的 `makeId()`（那里用 `crypto.randomUUID()`）。
+/// 生成卡片 id（随机 UUID）。
 ///
 /// Dart 侧不为此引包：用 `Random.secure()` 现场拼一个标准 v4 UUID —— 格式与
 /// `crypto.randomUUID()` 完全一致（8-4-4-4-12 的十六进制、版本位 4、变体位 10）。
 /// 格式必须一致的原因有两条：卡片 id 会进备份包（老包要能导进来），
-/// 也会进媒体文件路径（`media/paths.ts` 拿它拼目录名）。
+/// 也会进媒体文件路径（`media/paths.dart` 拿它拼目录名）。
 String makeId() {
   final bytes = List<int>.generate(16, (_) => _rng.nextInt(256));
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
@@ -99,9 +99,9 @@ Object? _stepsJson(Object? value) {
   return steps.map((s) => s.toJson()).toList();
 }
 
-/// 数据库行 → 领域对象。对应 TS 的 `rowToCard`。
+/// 数据库行 → 领域对象。
 ///
-/// 三处「TS 强转、这里显式判」的地方（行为已按最保守的方向对齐，各有注释）：
+/// 三处**显式判型**的地方（行为取最保守的方向，各有注释）：
 /// 未知 `status` 抛（NOT NULL + CHECK，读到别的就是数据坏了）；
 /// 未知/空 `source` 降级为 text；`vision_analyzed` / `path_matched` 保留三态（null 不是 false）。
 MemoryCard rowToCard(Map<String, Object?> row) => MemoryCard(
@@ -187,10 +187,9 @@ MemoryCard? getCard(SqliteDriver db, String id) {
   return row == null ? null : rowToCard(row);
 }
 
-/// P1 解析结果的落库字段。对应 TS 的 `ParsedCardFields`。
+/// P1 解析结果的落库字段。
 ///
-/// `ask` / `pathSuggestion` / `pathMatched` 在 TS 里是可选属性，这里用可空表达同一件事
-/// （缺省即 null）—— 落库时三者都写 null，与 TS 的 `f.ask ?? null` 等价。
+/// `ask` / `pathSuggestion` / `pathMatched` 用可空表达「没有」—— 落库时三者都写 null。
 final class ParsedCardFields {
   const ParsedCardFields({
     required this.categoryId,
@@ -328,7 +327,7 @@ void upsertLocation(SqliteDriver db, LocationNode node) {
 
 /// 判定码点是否属于「汉字」范畴。
 ///
-/// 刻意不用正则的 `\p{Script=Han}` —— TS 那边是因为 Hermes 对 Unicode property escape
+/// 刻意不用正则的 `\p{Script=Han}` —— 因为部分运行时对 Unicode property escape
 /// 的支持历来不稳（这条路径每次 P1 入库都会走到，一旦抛错整条录入链路就断了）。
 /// Dart 侧本可以用 `RegExp(r'\p{Script=Han}', unicode: true)`，但**继续用码点区间**：
 /// 一是两边行为必须逐字对齐（这条路径参与分类名匹配，判错就是路由错分类），
@@ -344,7 +343,7 @@ bool _isAsciiAlphanumeric(int cp) =>
 
 /// 只留汉字与 ASCII 字母数字，并转小写。
 ///
-/// ⚠️ 迭代用 `String.runes`（**码点**），与 TS 的 `for (const ch of s)` 同口径；
+/// ⚠️ 迭代用 `String.runes`（**码点**）而不是 UTF-16 码元；
 /// 若改用按 UTF-16 码元遍历的写法，扩展 B 区汉字（代理对）会被拆成两个半字符，
 /// 判不进 [_isHanCodePoint] 而被丢掉。
 String _normalizeCategoryName(String s) {
@@ -424,7 +423,7 @@ int _nextLocationSort(SqliteDriver db, String? parentId) {
 /// 为什么不是「失配就交给用户去建」：位置树本该由解析结果**增量长出来** ——
 /// 用户说「放在次卧的左侧床头柜了」，有就复用、没有就新建。让用户先去设置里手工把房间建好、
 /// 再回来点选，等于把「模型会产出什么词」这个无从预知的责任推给了用户；
-/// 而位置树一空，连选都没得选（旧实现就是这样把用户堵死的）。
+/// 而且位置树若一直是空的，用户连选都没得选。
 /// 用户仍然可以改（卡片里的「位置」一栏），但那从「必须」变成了「可选」。
 ///
 /// [created] 列出本次真正新建的层级名：界面据此标出「新位置」并让用户确认一次，
@@ -469,7 +468,6 @@ List<String> expandTermsByAliases(SqliteDriver db, List<String> terms) {
         )
         .get(<Object?>[t]);
     final entity = _strOrNull(row?['entity']);
-    // TS 是 `if (row?.entity && ...)` —— 空串同样不算命中
     if (entity != null &&
         entity.isNotEmpty &&
         !terms.contains(entity) &&
@@ -557,8 +555,7 @@ List<MemoryCard> executeSearch(SqliteDriver db, BuiltSearch s) {
     ..sort((a, b) {
       final byScore = a.score.compareTo(b.score);
       if (byScore != 0) return byScore;
-      // created_at 降序。TS 用 `a.createdAt < b.createdAt ? 1 : -1`（字符串比较），
-      // 两边完全相同时 TS 给 -1（顺序不定），这里给 0（稳定排序，顺序确定）——
+      // created_at 降序（字符串比较）。两边完全相同时给 0（稳定排序，顺序确定）——
       // 只在「同分且同一时刻」这种理论上不存在的组合上才有差别。
       return b.createdAt.compareTo(a.createdAt);
     });
@@ -566,10 +563,10 @@ List<MemoryCard> executeSearch(SqliteDriver db, BuiltSearch s) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 记忆流读取与卡片编辑（M1 编辑闭环）
+// 记忆流读取与卡片编辑
 // ─────────────────────────────────────────────────────────────
 
-/// [listCards] / [countCards] 的筛选条件。对应 TS 的 `ListCardsOptions`。
+/// [listCards] / [countCards] 的筛选条件。
 final class ListCardsOptions {
   const ListCardsOptions({
     this.limit,
@@ -591,7 +588,7 @@ final class ListCardsOptions {
   final bool includeArchived;
 }
 
-/// [listCards] 与 [countCards] 共用的 WHERE 构造（TS 里这段是抄了两遍的，这里收成一个）。
+/// [listCards] 与 [countCards] 共用的 WHERE 构造（收成一个，不抄两遍）。
 ({List<String> where, List<Object?> params}) _statusWhere(ListCardsOptions opts) {
   final where = <String>[];
   final params = <Object?>[];
@@ -603,7 +600,7 @@ final class ListCardsOptions {
     where.add("status <> 'archived'");
   }
   final categoryId = opts.categoryId;
-  // TS 写的是 `if (opts.categoryId)` —— 空串同样跳过
+  // 空串的 categoryId 同样跳过
   if (categoryId != null && categoryId.isNotEmpty) {
     where.add('category_id = ?');
     params.add(categoryId);
@@ -634,11 +631,11 @@ int countCards(SqliteDriver db, [ListCardsOptions opts = const ListCardsOptions(
 }
 
 /// 「用户能改哪些列」的白名单，顺序即 SQL 里 SET 子句的顺序
-/// （与 TS 的 `CARD_PATCH_COLUMNS` 对象字面量顺序一致，便于两边对照）。
+/// （顺序与 `CARD_PATCH_COLUMNS` 一致，便于对照）。
 ///
 /// **只写 patch 里出现过的键**：用 [unset] 表达「这次不动这一列」——
-/// 这是 TS 的 `key in patch` 在 Dart 里的等价物。
-/// 各字段期望的类型写在字段注释里（TS 靠 `Partial<...>` 的映射类型表达，Dart 这里用 Object? 承载）。
+/// 等价于「键在 patch 里就取它的值」。
+/// 各字段期望的类型写在字段注释里（用 Object? 承载「键不存在 = 不动这一列」）。
 final class CardPatch {
   const CardPatch({
     this.categoryId = unset,
@@ -707,7 +704,7 @@ void updateCardFields(SqliteDriver db, String id, CardPatch patch, DateTime now)
   void putTriBool(String col, Object? value) =>
       put(col, value == null ? null : ((value as bool) ? 1 : 0));
 
-  // 顺序与 TS 的 CARD_PATCH_COLUMNS 一致
+  // 顺序与 CARD_PATCH_COLUMNS 一致
   if (!identical(patch.categoryId, unset)) put('category_id', patch.categoryId);
   if (!identical(patch.entity, unset)) put('entity', patch.entity);
   if (!identical(patch.pathIds, unset)) putJson('path_ids', patch.pathIds);
@@ -731,7 +728,7 @@ void updateCardFields(SqliteDriver db, String id, CardPatch patch, DateTime now)
 /// 终态：本次录入既没有可送模型的图片、也没有文本（图片分析关闭 + 无文字）。
 /// 需求 5.1 允许用户坚持存为「纯图片卡片」—— `desc` 为空，只能靠分类和标签检索。
 ///
-/// 第二十版删掉了这里原先打的「待确认」：纯图片卡没有正文可核对，点一下
+/// 这里不再打「待确认」：纯图片卡没有正文可核对，点一下
 /// 「确认信息无误」也不改变任何数据，标记只是凭空多一个角标。分类想改随时能改。
 void markPlainCard(SqliteDriver db, String id, DateTime now) {
   db

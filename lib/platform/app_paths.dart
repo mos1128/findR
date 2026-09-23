@@ -2,7 +2,6 @@
 ///
 /// core 只存**相对路径**（`files/cards/202609/<id>/01.webp`，见 `media/paths.dart`），
 /// 绝对根目录一律在这里拼 —— 这样备份包才能跨设备还原（绝对路径里含沙盒前缀，换个安装就失效）。
-/// 口径与 RN 版 `apps/mobile/src/platform/media.ts` 里的 `absFile()` 一致。
 library;
 
 import 'dart:io';

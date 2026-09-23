@@ -1,7 +1,7 @@
 /// 迁移命门（FTS5 + trigram）的**可复用自检**。
 ///
 /// 为什么把它放在 core 而不是测试里：这套检查要跑**两次**，而且必须跑在**两个不同的层**上
-/// （`Flutter迁移交接.md` §6.1）：
+/// 见《开发指南.md》第六节：
 ///
 /// | 层 | 载体 | 验的是什么 |
 /// |---|---|---|
@@ -120,7 +120,7 @@ SelfCheckReport runCoreSelfCheck([SqliteDriver? db]) {
       }
 
       // ── 5. 短查询边界：2 字/1 字应当**返回空且不抛异常** ──
-      // 这决定了 TS 侧「>=3 字走 MATCH、更短走 LIKE 降级」这条设计能不能照搬。
+      // 这决定了「>=3 字走 MATCH、更短走 LIKE 降级」这条设计能不能成立。
       final short = <String>[];
       var shortOk = true;
       for (final q in const <String>['圆珠', '笔']) {
@@ -151,7 +151,7 @@ SelfCheckReport runCoreSelfCheck([SqliteDriver? db]) {
       // ⚠️ 只数**预设**分类，不能数 `COUNT(*)`：自检会跑在**用户用过的真实库**上，
       // 那里用户自己加过分类（需求允许自由增删改，预设也可能被删）。
       // 数全部就会必然报错 —— 那是最糟的一种失败：**假阳性**，会把人往错方向带。
-      // 判据「至少有一条预设」与 RN 版 `platform/selfcheck.ts` 同口径。
+      // 判据是「至少有一条预设分类」。
       final presets = conn
           .prepare('SELECT COUNT(*) AS n FROM categories WHERE is_preset = 1')
           .get()!['n'];

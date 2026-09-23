@@ -1,7 +1,7 @@
 /// Flutter 侧的冒烟测试。
 ///
 /// ⚠️ **它不等于命门第 2 层**。第 2 层必须在**真机**上跑 `SelfCheckScreen` 才作数
-/// （`Flutter迁移交接.md` §6.1）—— 这里跑的仍是 `flutter_tester`，只是把
+/// （见《开发指南.md》第六节）—— 这里跑的仍是 `flutter_tester`，只是把
 /// 「界面能起来 + core 能调通 + **那份 SQLite 在 Flutter 工具链下也能开**」串一遍。
 ///
 /// 它真正的价值：

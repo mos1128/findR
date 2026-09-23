@@ -1,11 +1,12 @@
-/// 模型配置页 —— 对应 RN 的 `app/settings/provider.tsx`。
+/// 模型配置页。
 ///
-/// 一个页面管两个槽位（主 LLM / ASR），用顶部的 Chip 切换 —— 与 RN 一致。
+/// 一个页面管两个槽位（主 LLM / ASR），用顶部的 Chip 切换。
 /// 两者的字段几乎重合（地址 / 模型名 / Key），分成两页只会让「我到底该配哪个」更绕。
 ///
 /// 三条口径：
 ///
-/// 1. **Key 只写进系统密钥库**，不入库、不进备份；输入框留空 = 不改动已存的那把。
+/// 1. **Key 只写进系统密钥库**，不入 DB；输入框留空 = 不改动已存的那把。
+///    （要不要随备份包带走，由备份页的开关决定 —— 这里不管。）
 /// 2. **换了模型名，旧的探测结果就不再可信** —— 保存时要把 `capabilities` 丢掉。
 ///    否则界面会拿一个旧模型的结论去锁「图片分析」开关（需求 3.3 的反向误伤）。
 /// 3. **「不支持」与「没测出来」必须分开说**。后者不是否定的证据，
@@ -325,7 +326,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                   placeholder: currentKey != null && currentKey.isNotEmpty
                       ? '已保存（${maskApiKey(currentKey)}），留空则不变'
                       : 'sk-...',
-                  hint: '只写入系统密钥库，不入库、不进备份',
+                  hint: '只写入系统密钥库，不入数据库',
                 ),
               ],
             ),

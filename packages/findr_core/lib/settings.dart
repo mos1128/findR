@@ -1,15 +1,15 @@
-/// 设置项的**唯一权威定义** —— 逐字对应 `packages/core/src/settings.ts`（138 行）。
+/// 设置项的**唯一权威定义**。
 ///
 /// DB 的 `settings` 表只存这里列出的非机密项；API Key 只进 SecureStore（键 `llm` / `asr`），
 /// **导出备份永不包含**（技术设计四）。
 ///
-/// 第十九版删掉了 `pipeline` 键（它只装「低置信确认阈值」这一个值）；第二十版连阈值本身
-/// 带整条「待确认」功能一起删了。老安装的 settings 表里会残留一行没人读的 `pipeline` JSON
+/// 历史上有个 `pipeline` 键（只装「低置信确认阈值」），它连整条「待确认」功能一起删掉了。
+/// 老安装的 settings 表里会残留一行没人读的 `pipeline` JSON
 /// —— **无害，不做迁移**；它也不再进备份包（白名单里没有了），老备份包里带来的那一行
 /// 导入时照旧插进表，同样没人读。
 ///
-/// ⚠️ **Dart 侧与 TS 的结构性差异（本节最重要的一条）**：
-/// TS 那边 `getSetting<LlmSettings>(db, key)` 是**结构类型直接当类型用**，
+/// ⚠️ **本节最重要的一条**：
+/// 不能「结构类型直接当类型用」，
 /// 缺字段就是 `undefined`；`{...DEFAULTS, ...(stored ?? {})}` 是**浅合并**。
 /// Dart 没有结构类型，所以这里为每个设置项写了显式的 `fromJson`，
 /// 并**逐字复刻浅合并的语义**（`containsKey` 判断，键在就取它、哪怕值是 null）。
@@ -30,11 +30,11 @@ abstract final class SettingsKeys {
 
   /// 全部键名 —— **备份导出的白名单就按它走**（`backup/manifest.dart` 的 `publicSettings`）。
   ///
-  /// 对应 TS 的 `Object.values(SETTINGS_KEYS)`。
+  /// 全部设置键。
   ///
   /// ⚠️ **新增设置项时必须加进这里**：导出的方向是「只放白名单里的」，不是
   /// 「过滤掉看起来像密钥的」—— 所以漏掉一条的后果是**不导出**，而不是泄露。
-  /// 老安装里可能还残留着已从白名单删掉的键（如第十九版的 `pipeline`），
+  /// 老安装里可能还残留着已从白名单删掉的键（如 `pipeline`），
   /// 那正是「删掉即不再外带」这条机制在起作用。
   static const List<String> all = <String>[llm, asr, capture, search];
 }
@@ -52,17 +52,17 @@ final class CapabilityCache {
   });
 
   /// 纯文本连通性：跑通就说明「地址 / Key / 模型名」这几样没配错，
-  /// 图片与音频失败就只剩「能力缺失」一种解释。第十二版新增，旧缓存里没有这一项。
+  /// 图片与音频失败就只剩「能力缺失」一种解释。旧缓存里可能没有这一项。
   final bool? text;
   final String? textDetail;
 
   final bool vision;
   final String visionDetail;
 
-  /// 图片能力的完整结论，用来在 UI 上区分「不支持」与「没测出来」。第十二版新增。
+  /// 图片能力的完整结论，用来在 UI 上区分「不支持」与「没测出来」。
   final CapabilityStatus? visionStatus;
 
-  /// ⚠️ **写它的人必须用 `util/iso.dart` 的 `isoUtc()`**（TS 侧是 `new Date().toISOString()`），
+  /// ⚠️ **写它的人必须用 `util/iso.dart` 的 `isoUtc()`** ——
   /// 与库里其余时间列同口径。
   final String probedAt;
 
@@ -104,7 +104,7 @@ final class CapabilityCache {
 
 /// 主 LLM 的配置。
 ///
-/// 第十八版删掉了 `authStyle` —— 认证头已改为适配器自动适配（见 `providers/types.dart`）。
+/// 认证头由适配器自动适配，不是可配项（见 `providers/types.dart`）。
 /// 老安装里存的 `authStyle` 键会留在 JSON 里但**被忽略**，无需迁移、不影响覆盖安装。
 final class LlmSettings {
   const LlmSettings({
@@ -115,7 +115,7 @@ final class LlmSettings {
     this.capabilities,
   });
 
-  /// TS 的类型是 `'anthropic' | 'openai-compat'`（一个更窄的 union）。
+  /// 取值只有 `'anthropic'` / `'openai-compat'` 两种情况。
   /// Dart 侧直接复用 [ProviderType]，由 `makeLlmAdapter` 在运行时挡掉 gemini/fake
   /// —— 类型层面的收窄在 Dart 里要再建一个枚举，不值那个复杂度。
   final ProviderType providerType;
@@ -138,8 +138,8 @@ final class LlmSettings {
     if (map == null) return null;
     return LlmSettings(
       // 值不合规时退回 openai-compat：它是「用户自填 baseUrl 的兼容端点」这条主路径的协议，
-      // 也是设置页的默认项。**注意这与 TS 不同** —— 那边未知值会让 switch 漏空、
-      // 返回 undefined 后在调用点崩掉；这里退化成可用配置，最多是协议选错（用户在设置页看得见）。
+      // 也是设置页的默认项。**别改成「未知值就报错」** —— 那会让读坏值的用户直接崩；
+      // 退化成可用配置更安全，最多是协议选错（用户在设置页看得见）。
       providerType: ProviderType.fromWireOr(map['providerType'], ProviderType.openaiCompat),
       model: map['model'] is String ? map['model'] as String : '',
       baseUrl: map['baseUrl'] is String ? map['baseUrl'] as String : null,
@@ -201,7 +201,7 @@ const CaptureSettings defaultCaptureSettings = CaptureSettings(
   maxAnalyzeImages: 6,
 );
 
-/// 检索行为开关（第十四版新增）。
+/// 检索行为开关。
 ///
 /// [autoAnswer] 是把 L2 从「手动点」改成「自动补」的开关，默认**关**。
 /// 关的理由不是省钱（单次多花的 token 换算下来约 0.17 分，可忽略），而是两条：
@@ -222,7 +222,7 @@ final class SearchSettings {
 
 const SearchSettings defaultSearchSettings = SearchSettings(autoAnswer: false);
 
-/// 浅合并：**键在就用它的值（哪怕值是 null）**，键不在才用默认值。对齐 TS 的 `{...DEFAULTS, ...stored}`。
+/// 浅合并：**键在就用它的值（哪怕值是 null）**，键不在才用默认值。
 bool _mergeBool(Map<String, Object?>? stored, String key, bool fallback) {
   if (stored == null || !stored.containsKey(key)) return fallback;
   final value = stored[key];

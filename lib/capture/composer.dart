@@ -1,9 +1,9 @@
-/// 底部录入条 —— 对应 RN 的 `capture/Composer.tsx`（383 行）。
+/// 底部录入条。
 ///
 /// **这是「记」的唯一入口**（需求六）：打字 / 拍照 / 相册 / 文本文件 / 长按语音全在这一条里，
 /// 不再有「两个按钮通到同一个页面」那种事。
 ///
-/// 与 RN 版比，版式是新画的：底部做成一整块「坞」（圆角 + 上浮阴影），
+/// 版式：底部做成一整块「坞」（圆角 + 上浮阴影），
 /// 打字框与「存」不再分成两个视觉单元 —— 「记」是**一条**链路，
 /// 界面上就不该长得像两个并列的功能。
 ///
@@ -17,7 +17,7 @@
 ///    压一张 1600px 要几百毫秒，攒到按「存」时再压，用户会盯着一个转圈怀疑是不是卡了。
 ///    代价是选图后要等一小会儿 —— 所以那段时间有明确的「正在处理 2/5」。
 /// 3. **录音按键用裸指针事件**（`Listener`），不是 `onLongPress`。
-///    与 RN 的 `onPressIn/onPressOut` 对齐：按下即录、松开即结束，
+///    语义等价于「按下即录、松开即结束」：
 ///    太短由 [shouldDiscardRecording] 判为误触丢掉，**不弹窗、不生成空卡**。
 library;
 
@@ -664,8 +664,8 @@ class _ComposerState extends State<Composer> {
 
 /// 拍摄引导 + 计数（需求 173：**张数不限、给出构图引导、不做硬性截断**）。
 ///
-/// RN 那边这两句话在应用内取景器的顶栏上；我们用的是系统相机，
-/// 所以它们落在录入坞上 —— 拍完回来就在眼前，接着拍点右边那颗。
+/// 用的是系统相机，所以这两句话落在录入坞上 ——
+/// 拍完回来就在眼前，接着拍点右边那颗。
 class _ShootingHint extends StatelessWidget {
   const _ShootingHint({required this.count, required this.onAdd, required this.enabled});
 
@@ -1078,8 +1078,7 @@ class _SaveButton extends StatelessWidget {
 
 /// 微信式「按住 说话」药丸条。
 ///
-/// 用裸指针事件（Listener），与 RN 的 `onPressIn / onPressOut` 对齐：
-/// 按下即开始录、松开即结束。太短的由 recorder 判为误触丢掉。
+/// 用裸指针事件（Listener）：按下即开始录、松开即结束。太短的由 recorder 判为误触丢掉。
 class _HoldToSpeakBar extends StatelessWidget {
   const _HoldToSpeakBar({
     required this.recording,

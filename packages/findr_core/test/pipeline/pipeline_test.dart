@@ -1,14 +1,13 @@
-/// 录入流水线的编排 —— 逐字对应 `packages/core/test/pipeline.test.ts`（618 行 / 31 个用例）。
+/// 录入流水线的编排。
 ///
 /// 这一层是「草稿 → 转写 → 理解 → 落库」的完整闭环，也是需求四/九的验收网：
 /// **任何失败都必须保持素材可重试，绝不静默丢弃。**
 ///
-/// Dart 侧的对应关系（与 TS 的差异都在注释里标出）：
-/// - TS 的 `FakeLLMAdapter` ⇒ Dart 的 `FakeLlmAdapter`（同一个队列语义，队列空即抛错）；
-/// - TS 的 `MediaIO` 里 `audioPart` 返回 `Blob` / `{uri,name,type}` ⇒ Dart 返回具体
-///   `http.MultipartFile`（见 `lib/providers/media.dart` 的说明）；
-/// - TS 的 `{kind:'file', rel, mime}` ⇒ Dart 用 `AudioFileRef` 类型本身表达「文件直传」，
-///   所以断言改成类型 + 字段，而不是判字符串 union。
+/// 几个替身的约定：
+/// - `FakeLlmAdapter` 是队列语义：按顺序取，队列空即抛错；
+/// - `MediaIo.audioPart` 返回具体的 `http.MultipartFile`
+///   （见 `lib/providers/media.dart` 的说明）；
+/// - 音频用 `AudioFileRef` 类型本身表达「文件直传」，所以断言是类型 + 字段。
 library;
 
 import 'dart:convert';
@@ -21,10 +20,10 @@ import 'package:test/test.dart';
 
 import '../helpers.dart';
 
-/// 与 TS 的 `const CFG` 同源：假 Provider，只用来占位（真调用全被 FakeLlmAdapter 接住）。
+/// 假 Provider，只用来占位（真调用全被 FakeLlmAdapter 接住）。
 const ProviderConfig cfG = ProviderConfig(providerType: ProviderType.fake, model: 'fake');
 
-/// 与 TS 的 `const NOW = new Date('2026-03-01T12:00:00.000Z')` 同源。
+/// 固定的「现在」，让断言不依赖真实时钟。
 final DateTime clockNow = DateTime.parse('2026-03-01T12:00:00.000Z');
 
 /// 媒体端口的替身 —— **图片 base64 带上路径名**，好断言「送进模型的是哪一张」。
@@ -51,8 +50,7 @@ final class _StubMedia implements MediaIo {
   Future<void> removeCardMedia(List<String> relPaths) async {}
 }
 
-/// 一条预置的转写响应。TS 里是 `{ text?: string; error?: string }` 匿名对象，
-/// Dart 用具名小类，读起来更清楚（也让 `const` 列表可用）。
+/// 一条预置的转写响应（用具名小类，读起来更清楚，也让 `const` 列表可用）。
 final class AsrResp {
   const AsrResp({this.text, this.error});
 
@@ -60,7 +58,7 @@ final class AsrResp {
   final String? error;
 }
 
-/// 脚本化假 ASR —— 与 TS 的 `FakeAsr` 同源：按队列返回，队列空或带 error 即抛错。
+/// 脚本化假 ASR：按队列返回，队列空或带 error 即抛错。
 final class FakeAsr implements AsrProviderAdapter {
   FakeAsr([List<AsrResp> responses = const <AsrResp>[]]) {
     _queue.addAll(responses);
@@ -81,7 +79,7 @@ final class FakeAsr implements AsrProviderAdapter {
   }
 }
 
-/// 一条合法的 P1 模型输出（默认值即 TS 的 `p1()`）。
+/// 一条合法的 P1 模型输出（默认字段值即模型正常会回的样子）。
 String p1([Map<String, Object?> over = const <String, Object?>{}]) => jsonEncode(<String, Object?>{
   'category': '物品存取',
   'entity': '备用手电筒',
@@ -98,7 +96,7 @@ String p1([Map<String, Object?> over = const <String, Object?>{}]) => jsonEncode
   ...over,
 });
 
-/// 与 TS 的 `deps()` 同源：只传关心的那几项，其余取默认（clock 固定、media 用替身）。
+/// 拼依赖：只传关心的那几项，其余取默认（clock 固定、media 用替身）。
 AdvanceDeps deps({
   required SqliteDriver db,
   required LlmProviderAdapter llm,
@@ -325,7 +323,7 @@ void main() {
     expect(card.status, CardStatus.active);
     expect(card.desc, isNull);
     expect(card.needsOrganize, false);
-    // 唯一该带的是「未分析」（有图但没送过模型）；「待确认」已于第二十版删掉
+    // 唯一该带的是「未分析」（有图但没送过模型）；「待确认」已删掉
     expect(cardBadges(card), [CardBadge.unanalyzed]);
     expect(card.visionAnalyzed, false);
     expect(card.images, hasLength(1));
@@ -353,7 +351,7 @@ void main() {
   test('解析成功即入库：低置信 / 分类选不出 / 新建了位置层级，都不再打扰用户', () async {
     final db = makeDb();
 
-    // 第二十版删掉了「待确认」整条功能，而这三条正是它当初的触发条件 —— 现在一律照常入库、不挂角标。
+    // 「待确认」整条功能已删，而这三条正是它当初的触发条件 —— 现在一律照常入库、不挂角标。
     createDraft(db, const CaptureInput(source: SourceKind.text, text: 'a'), id: 'low');
     await advanceCard(
       deps(db: db, llm: FakeLlmAdapter([p1(<String, Object?>{'confidence': 0.3})])),

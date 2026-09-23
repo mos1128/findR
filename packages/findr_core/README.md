@@ -2,7 +2,7 @@
 
 findR 的**纯 Dart 核心逻辑** —— 零 Flutter 依赖，可以 `dart test` 直接跑，不必起 Flutter 环境。
 
-它同时被 V1 的安卓 app（仓库根那个 Flutter 工程）和将来的 V2 / V3 桌面版复用，所以刻意不碰
+它被仓库根的安卓 app 使用，也打算给将来的桌面版复用，所以刻意不碰
 任何 UI 或平台 API：**所有文件 IO、网络、安全存储都由调用方注入**。
 
 ## 里面有什么
@@ -12,7 +12,7 @@ findR 的**纯 Dart 核心逻辑** —— 零 Flutter 依赖，可以 `dart test
 | `db/` | SQLite 驱动抽象、schema 与迁移、仓储、设置、分类与位置树 |
 | `search/` | FTS5 + LIKE 混合检索、别名扩展、L1 定位、L2 答案组织、L3 建议裁决 |
 | `providers/` | 模型调用（anthropic / OpenAI 兼容 / SSE 流 / 能力探测 / 假 Provider 供测试）|
-| `parse/` | 模型输出的手写校验（替代 TS 侧的 zod）|
+| `parse/` | 模型输出的手写容错校验 |
 | `pipeline/` | 录入流水线编排（capture / edit / queue / ingest）|
 | `backup/` | `.findrpack` 备份格式（crc32 / format / zip / manifest / pack）|
 | `prompts/` | Prompt 模板与渲染注入 |

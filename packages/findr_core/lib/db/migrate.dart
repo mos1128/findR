@@ -30,7 +30,7 @@ final int schemaVersion = _migrations.length;
 
 /// 读出库存的 schema_version（未建库返回 0）。备份导出用它给 manifest 打标。
 ///
-/// ⚠️ 与 TS 的唯一差别：那里用 `Number(row.value)`，读出坏值会得到 NaN（后续比较全 false，
+/// ⚠️ 刻意不做宽松的数字转换：读出坏值会得到一个非数字（后续比较全 false，
 /// 等于「什么都不迁、只把版本号覆写掉」）。这里 `int.tryParse` 失败一律当 0，
 /// 也就是**宁可重跑一遍迁移**。安全性来自 v1 全 `IF NOT EXISTS`、v2 也可重复执行 —— 已由
 /// `test/db/migrate_test.dart` 的幂等用例钉住。

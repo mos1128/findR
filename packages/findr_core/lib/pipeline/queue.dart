@@ -1,13 +1,13 @@
-/// 串行重试队列 —— 逐字对应 `packages/core/src/pipeline/queue.ts`（119 行）。
+/// 串行重试队列。
 ///
 /// 触发点：录入完成、App 回前台、设置变更。
 /// 用**模块级锁**防重入：回前台与录入完成可能同一瞬间各触发一次，
 /// 并发跑同一批卡会造成重复的模型调用与竞争写入。
 ///
-/// ⚠️ **Dart 侧偏离 TS 的一处**：TS 的 `QueueDeps extends AdvanceDeps`（再加一个 `vision`），
+/// ⚠️ **依赖形状有一处讲究**：`QueueDeps` 在 `AdvanceDeps` 基础上再加一个 `vision`，
 /// Dart 没有结构化子类型，硬造一个包装类会让每个调用点都多一层解包。
 /// 这里把那个字段提成 [runQueue] 的具名参数 —— 语义完全一样，调用点更短。
-/// 而 TS 里 `retryAllTranscriptions` 的 `{...deps, hotwords}` 由
+/// 而 `retryAllTranscriptions` 的 `{...deps, hotwords}` 由
 /// [AdvanceDeps.withHotwords] 承担（与 `P2Output.withSynonyms` 同一个套路）。
 ///
 /// 模块级状态就是库级变量 `_running`。`dart test` 每个测试文件跑在独立 isolate 里，
@@ -48,7 +48,7 @@ const int _maxPerRun = 50;
 
 bool _running = false;
 
-/// 仅供测试重置模块级锁（对应 TS 的 `__resetQueueLock`）。
+/// 仅供测试重置模块级锁。
 void resetQueueLockForTest() => _running = false;
 
 /// 跑一轮队列。

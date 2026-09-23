@@ -1,7 +1,6 @@
-/// 打开真机上的库文件 —— 对应 RN 的 `apps/mobile/src/platform/db.ts`。
+/// 打开真机上的库文件。
 ///
-/// 那一层在 RN 侧做的是「op-sqlite → core 的同步 SqliteDriver」适配；
-/// Dart 侧这层适配已经在 core 里了（`db/driver_sqlite3.dart`，含嵌套事务走 SAVEPOINT 与
+/// 驱动层适配已经在 core 里了（`db/driver_sqlite3.dart`，含嵌套事务走 SAVEPOINT 与
 /// `attachPragmas` 里的 `WAL` + `foreign_keys`），所以这里只剩「路径怎么来」这一件事。
 library;
 
@@ -9,9 +8,8 @@ import 'package:findr_core/findr_core.dart';
 
 import 'app_paths.dart';
 
-/// 与 RN 版同名（`apps/mobile/src/platform/db.ts` 的 `DB_NAME`）。
-/// 同名只为了将来对照备份/迁移方便 —— 两个 App 的沙盒本来就是分开的
-/// （Flutter 版 applicationId 是 `com.findr.app.dev`）。
+/// 库文件名（applicationId 是 `com.findr.app.dev`）。
+/// **改名等于把用户已有的库撇在一边**（沙盒里会新开一个空库），没有迁移方案之前别动。
 const String dbFileName = 'findr.sqlite';
 
 /// 打开库文件（不存在则创建），PRAGMA 由 `Sqlite3Driver.open` 挂好。

@@ -1,12 +1,12 @@
-/// 领域类型 —— 逐字对应 `packages/core/src/types.ts`（81 行）。
+/// 领域类型。
 ///
-/// 相对 TS 的三处收紧，都写在下面对应位置的注释里：
+/// 三处刻意收紧的写法，都写在下面对应位置的注释里：
 ///
 /// 1. **字符串联合类型改成 enum**（`'pending_transcript' | ...` ⇒ [CardStatus]），
 ///    落库与进备份包一律走 `.wire` —— 那些字面值是格式的一部分，改不得；
 /// 2. `source` 是唯一没有 `NOT NULL` 的枚举列 ⇒ 读出空值/怪值时**降级为 text 而不是抛**；
 /// 3. [MemoryCard.copyWith] 用哨兵区分「不改这一列」与「把这一列改成 null」
-///    （TS 的 `{ ...card, categoryId: null }` 直接表达得了，Dart 的可空形参不行）。
+///    （「把字段显式置空」在可空形参上表达不出来）。
 library;
 
 /// 区分「没传这个参数」与「显式传了 null」。
@@ -21,7 +21,7 @@ final class _Unset {
 
 /// 卡片生命周期。
 ///
-/// TS 侧是字符串联合类型，运行期就是裸字符串；这里用 enum 换编译期检查。
+/// 用 enum 换编译期检查（裸字符串没有这层保障）。
 enum CardStatus {
   pendingTranscript('pending_transcript'),
   pending('pending'),
@@ -56,7 +56,7 @@ enum SourceKind {
   /// 与 [CardStatus.fromWire] 不同，这里**回退而不是抛**：
   ///
   /// `cards.source` 只有 CHECK 没有 `NOT NULL`，而 SQLite 的 CHECK 对 NULL 求值为 NULL（放行），
-  /// 所以空值是真可能的（老备份包、迁移中间态）。TS 那边会把这个 null 原样带到下游
+  /// 所以空值是真可能的（老备份包、迁移中间态），下游必须接住 null
   /// （表现为「既不是 voice 也不是 photo」）；这里显式落到 [text] —— 效果相同，但类型是干净的。
   static SourceKind fromWire(Object? value) {
     for (final kind in values) {
@@ -73,7 +73,7 @@ final class StepItem {
   final String text;
   final bool done;
 
-  /// 逐项构造而非 `parseJsonArray<StepItem>`：TS 那边是直接强转（元素是什么就当什么），
+  /// 逐项构造而非整体强转（元素是什么就当什么），
   /// 这里把「字段缺失/类型不对」收成默认值，坏元素不至于让整张卡片读不出来。
   factory StepItem.fromJson(Map<String, Object?> json) =>
       StepItem(text: (json['text'] ?? '').toString(), done: json['done'] == true);
@@ -96,7 +96,7 @@ final class StepItem {
 /// 关于「卡片长什么样」，这里刻意**只有 `categoryId` 一个组织维度**：
 /// 早期版本还有 `structureType`（item/todo/procedure）与三个业务状态，用来决定字段必填性和
 /// 卡片强调色。真机验证后确认这套东西对检索零影响、又逼着用户理解一套模型自己的概念，
-/// 已于 2026-09-18 整体移除（见 `db/schema.dart` 的 v2 迁移）。
+/// 已整体移除 —— 见 `db/schema.dart` 的 v2 迁移。
 ///
 /// 代价与替代：原来「物品必须有位置」靠 `structureType === 'item'` 判定，现在改成**由内容驱动**
 /// —— 模型在内容确实提到存放位置时才填 `path`，确实是一串步骤时才填 `steps`，
@@ -151,7 +151,7 @@ final class MemoryCard {
   /// 位置失配时模型给出的完整路径猜测，供用户点选或新建。
   final String? pathSuggestion;
 
-  /// 本次 path 是否命中已有位置树（测试计划指标依据）。
+  /// 本次 path 是否命中已有位置树（「path 命中率」指标的统计依据）。
   final bool? pathMatched;
 
   final SourceKind source;
@@ -162,8 +162,8 @@ final class MemoryCard {
   final String updatedAt;
 
   /// 浅拷贝 + 覆盖若干列。**凡是要「显式置 null」的列必须传 `null`**，
-  /// 不传就是保持原值 —— 这是 TS 的 `{ ...card, categoryId: null }` 在 Dart 里的等价物
-  /// （`backup/manifest.ts` 靠它清掉导入后已不存在的外键引用）。
+  /// 不传就是保持原值（与「显式置空」区分开）
+  /// （`backup/manifest.dart` 靠它清掉导入后已不存在的外键引用）。
   MemoryCard copyWith({
     String? id,
     CardStatus? status,
@@ -223,8 +223,8 @@ final class MemoryCard {
 
 /// 分类：用户唯一的组织桶，也是 P1 自动路由的目标池。
 ///
-/// 以前每个分类还绑一个 `structureType` 来推导卡片形状，现已随 v2 迁移去掉 ——
-/// 分类就是分类，卡片是「东西 / 待办 / 流程」由内容自己决定。
+/// 分类**只有名字与 Emoji**，不再绑定任何结构类型（v2 迁移已去掉 `structureType`）——
+/// 卡片是「东西 / 待办 / 流程」由内容自己决定。
 final class Category {
   const Category({
     required this.id,
@@ -261,7 +261,7 @@ final class LocationNode {
 /// 别名表的一行。
 ///
 /// 目前 core 内部只用 SQL 直接读写别名（`expandTermsByAliases` / `findLocationIdUnder`），
-/// 这个类型是给上层与测试用的形状，与 TS 的 `AliasEntry` 一致。
+/// 这个类型是给上层与测试用的形状。
 final class AliasEntry {
   const AliasEntry({
     required this.id,

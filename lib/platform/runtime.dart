@@ -1,5 +1,4 @@
-/// 应用运行时 —— core 与界面之间的那一层。对应 RN 的
-/// `apps/mobile/src/platform/runtime.tsx`（React Context 版）。
+/// 应用运行时 —— core 与界面之间的那一层。
 ///
 /// 职责只有三件：
 ///   1. 把「设置 + Key + 库连接」拼成一个**不可变快照**（[RuntimeState]）交给界面；
@@ -46,7 +45,7 @@ final class RuntimeState {
   final CaptureSettings capture;
   final SearchSettings search;
 
-  /// Key 只在内存里过一手，**从不进 DB、从不进备份包**。
+  /// Key 只在内存里过一手，**从不进 DB**。
   final String? llmKey;
   final String? asrKey;
 

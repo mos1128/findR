@@ -1,6 +1,5 @@
-// 对应 TS 的 `packages/core/src/db/json.ts`（36 行，仓库里没有它自己的测试文件）。
 // 这两个函数是所有 JSON 列的咽喉：`tags` / `images` / `path_ids` / `steps` 全靠它们，
-// 译错的表现是「卡片能存进去但读出来是空」，所以单独押一层。
+// 写错的表现是「卡片能存进去但读出来是空」，所以单独押一层。
 
 import 'package:findr_core/findr_core.dart';
 import 'package:test/test.dart';
@@ -31,9 +30,9 @@ void main() {
     expect(parseJsonArray<String>(''), isNull);
   });
 
-  test('parseJsonArray：是 JSON 但不是数组时返回 null（比 TS 收紧的一处）', () {
-    // TS 的 `JSON.parse(...) as T[]` 会把这个对象当成数组返回，等下游 .map() 才炸。
-    // 这里显式判掉 —— 坏值一律当「没有值」，与 listSettings 同口径。
+  test('parseJsonArray：是 JSON 但不是数组时返回 null', () {
+    // 显式判掉 —— 坏值一律当「没有值」，别把类型错误漏到下游的 .map() 里才炸。
+    // 与 listSettings 同口径。
     expect(parseJsonArray<String>('{"a":1}'), isNull);
     expect(parseJsonArray<String>('123'), isNull);
   });

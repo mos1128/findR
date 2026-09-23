@@ -1,14 +1,13 @@
 import 'package:findr_core/findr_core.dart';
 import 'package:test/test.dart';
 
-/// `parse/` 的验收网 —— 对应 `packages/core/test/parse.test.ts`（7 个用例），
-/// 另加一组 TS 那边没明写、但**行为上必须一致**的用例：
-/// **哪些字段的失败会让整次解析作废**（zod 的 `.catch()` 边界，见 `parse/schema.dart` 文件头）。
+/// `parse/` 的验收网。
+/// 重点盯**哪些字段的失败会让整次解析作废**（兜底边界，见 `parse/schema.dart` 文件头）——
+/// 那是这条路上最容易被「顺手补默认值」改坏的一条。
 ///
 /// 这一层值得多押几分：它是「模型输出 → 我们的数据结构」的唯一关口，
 /// 而模型的 JSON 永远不守规矩。
 ///
-/// 与 TS 的 `const Simple = z.object({ a: z.number() })` 同源：
 /// 只认 `{a: number}` 的最小校验器，用来单独验「抽取 + 修复」这两步。
 num? _simpleSchema(Object? json) {
   if (json is Map && json['a'] is num) return json['a'] as num;
@@ -51,7 +50,7 @@ void main() {
 
     test('fixJson：吃尾逗号，不动正常内容', () {
       expect(fixJson('{"a": 1,}'), '{"a": 1}');
-      // `,\s*` 会把逗号与它后面的空白**一起吃掉**再换成 `}`/`]` —— 与 TS 的正则同行为
+      // `,\s*` 会把逗号与它后面的空白**一起吃掉**再换成 `}`/`]`
       expect(fixJson('[1, 2, ]'), '[1, 2]');
       expect(fixJson('{"a": 1}'), '{"a": 1}');
     });
@@ -88,7 +87,7 @@ void main() {
       expect(r, isA<ParseFailure<P1Output>>());
     });
 
-    test('confidence 越界算失败 ⇒ 落 null（zod 的 .min(0).max(1)）', () {
+    test('confidence 越界算失败 ⇒ 落 null', () {
       final ok = parseModelJson('{"entity":"x","confidence":0.86}', P1OutputSchema.tryParse);
       expect((ok as ParseOk<P1Output>).value.confidence, 0.86);
 
@@ -133,7 +132,7 @@ void main() {
       expect(v.aspects, isEmpty);
     });
 
-    test('数组里混进非字符串 ⇒ 整档落空数组（zod 的 .catch 挂在数组上）', () {
+    test('数组里混进非字符串 ⇒ 整档落空数组（兜底挂在数组上）', () {
       final r = parseModelJson(
         '{"keywords":["护照",123],"path_prefix":["主卧",7]}',
         P2OutputSchema.tryParse,
@@ -235,7 +234,7 @@ void main() {
       expect(v.answer, 'ok');
     });
 
-    test('顶层不是对象 ⇒ 失败（zod 的 z.object 对数组/标量都拒绝）', () {
+    test('顶层不是对象 ⇒ 失败（数组/标量都拒绝）', () {
       expect(parseModelJson<P4Output>('[1,2,3]', P4OutputSchema.tryParse), isA<ParseFailure<P4Output>>());
       expect(parseModelJson<P4Output>('"just a string"', P4OutputSchema.tryParse), isA<ParseFailure<P4Output>>());
     });

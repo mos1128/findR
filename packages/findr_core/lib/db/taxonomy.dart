@@ -1,4 +1,4 @@
-/// 分类与位置树的增删改 —— 逐字对应 `packages/core/src/db/taxonomy.ts`（174 行）。
+/// 分类与位置树的增删改。
 ///
 /// 分类是「用户唯一的组织桶」，位置树是「东西放在哪」的层级结构。两者都是在设置里
 /// 手工维护的对象，因此这里的删除动作都带拒绝理由 —— **静默删掉会让卡片的引用指向空洞**
@@ -95,7 +95,7 @@ List<LocationNode> listLocationChildren(SqliteDriver db, String? parentId) => db
     )
     .toList();
 
-/// 位置删除被拒的原因。对应 TS 里联合类型的 `reason` 字面量。
+/// 位置删除被拒的原因（`reason` 字面量）。
 enum DeleteLocationRejection {
   hasChildren('has_children'),
   referencedByCards('referenced_by_cards');
@@ -104,7 +104,7 @@ enum DeleteLocationRejection {
   final String wire;
 }
 
-/// 删除位置的结果。对应 TS 的 `DeleteLocationResult`：
+/// 删除位置的结果：
 /// **成功不带原因，失败必带原因与计数**（界面直接拿它说人话）。
 final class DeleteLocationResult {
   const DeleteLocationResult.ok() : ok = true, reason = null, count = 0;
@@ -119,7 +119,7 @@ final class DeleteLocationResult {
 }
 
 /// 删除位置节点。**有子节点或被任何卡片引用时拒绝** ——
-/// M1 不做 reparent / 合并，静默删掉会让卡片的 `path_ids` 指向空洞。
+/// 不做 reparent / 合并，静默删掉会让卡片的 `path_ids` 指向空洞。
 DeleteLocationResult deleteLocation(SqliteDriver db, String id) {
   final children = db
       .prepare('SELECT COUNT(*) AS n FROM locations WHERE parent_id = ?')
@@ -185,8 +185,8 @@ int refreshPathNames(SqliteDriver db, DateTime now) {
 
 /// 位置树深度（根为 1）。
 ///
-/// ⚠️ 与 TS 一样**不设环检测**：位置树的父子关系由 `ensurePath` 单向增长，
-/// 正常路径下不可能成环。这里保持与规格同形，不引入 TS 没有的防护。
+/// ⚠️ **不设环检测**：位置树的父子关系由 `ensurePath` 单向增长，
+/// 正常路径下不可能成环。这里保持与规格同形，不引入额外防护。
 int _depthOf(Map<String, LocationNode> byId, LocationNode node) {
   var d = 1;
   LocationNode? cur = node;

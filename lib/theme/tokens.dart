@@ -1,5 +1,4 @@
-/// Findr 的设计令牌 —— **这一版是重新设计的**（Flutter 迁移的附赠好处：
-/// 不必继承 RN 的版式，见 `Flutter迁移交接.md` §1）。
+/// Findr 的设计令牌。
 ///
 /// 设计原则（承接需求六，但换一套做法）：
 ///
@@ -245,7 +244,7 @@ final class FindrColors extends ThemeExtension<FindrColors> {
   }
 }
 
-/// 间距。沿用 RN 那套倍率（2 / 4 / 8 / 16 / 24 / 32），因为它已经够用且没人需要重学。
+/// 间距。倍率（2 / 4 / 8 / 16 / 24 / 32）已够用，不必再发明一套。
 abstract final class Spacing {
   static const double half = 2;
   static const double one = 4;
@@ -273,7 +272,7 @@ abstract final class Radii {
 
 /// 内容最大宽度。
 ///
-/// RN 那条 800 的限制在手机上没有作用，但**桌面端（V2/V3）必须留着** ——
+/// 这条 800 的限制在手机上没有作用，但**桌面端必须留着** ——
 /// 否则窗口一拉宽，卡片会被拉成一行超长的字，读起来非常难受。
 const double maxContentWidth = 800;
 

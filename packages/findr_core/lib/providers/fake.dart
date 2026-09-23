@@ -1,10 +1,10 @@
-/// 脚本化假 Provider —— 逐字对应 `packages/core/src/providers/fake.ts`（22 行）。
+/// 脚本化假 Provider。
 ///
 /// 按队列返回预置响应，**队列空时抛错**（模拟调用失败）。测试与骨架期都靠它：
 /// `advise` / `answer` / `service` 的用例全是用它把模型这一层控住的。
 ///
 /// ⚠️ 它同时记录每一次请求（[requests]），所以「模型到底看到了什么」是可断言的事实 ——
-/// 这正是 `advise.test.ts` 里「裁决时模型真的看到了库存」那条用例的押注点。
+/// 这正是 `test/search/advise_test.dart` 里「裁决时模型真的看到了库存」那条用例的押注点。
 library;
 
 import 'types.dart';

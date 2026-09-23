@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
-/// 一条预置的假响应。与 TS `providers.test.ts` 的 `FakeResponse` 同形。
+/// 一条预置的假响应。
 final class FakeResponse {
   const FakeResponse({
     this.json,
@@ -29,11 +29,8 @@ final class FakeResponse {
   final int delayMs;
 }
 
-/// 假 `http.Client` —— 对应 TS 的 `fakeFetch`。
-///
-/// ⚠️ **比 TS 那版捕获的信息更多**：TS 的 `fetchFn` 只能拿到 `init.body`（FormData 对象），
-/// 断言 multipart 字段得靠 `form.get('x')`。Dart 这边直接把**原始的 `http.BaseRequest`**
-/// 存下来，于是 `MultipartRequest.fields` / `.files` 可以按名字断言，
+/// 假 `http.Client`：把**原始的 `http.BaseRequest`** 存下来，
+/// 于是 `MultipartRequest.fields` / `.files` 可以按名字断言，
 /// 比解析编码后的字节更稳（也顺带把「字段名到底是什么」这件事真正测到了）。
 ///
 /// 注意：`finalize()` 是**一次性**的，而且 `MultipartRequest` 正是在 `finalize()` 里

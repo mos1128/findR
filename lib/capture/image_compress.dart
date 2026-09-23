@@ -1,4 +1,4 @@
-/// 图片入库压缩 —— 对应 RN 的 `capture/compress.ts`（35 行）。
+/// 图片入库压缩。
 ///
 /// 只做一件事：**任意常见图片字节 → 长边 ≤1600px 的有损 WebP 字节**。
 /// 这是纯计算、不碰平台通道，所以能在 `flutter test` 里直接验，
@@ -21,13 +21,13 @@ const int maxLongEdge = 1600;
 /// **无损**，而 `quality` 在无损模式下**被完全忽略**。
 ///
 /// 也就是说只写 `encodeWebP(x, quality: 80)` 会得到一个「参数看着对了、
-/// 其实是无损」的 WebP：体积可能是 RN 版的两倍以上，而且**一点报错都不会有**。
+/// 其实是无损」的 WebP：体积可能翻倍以上，而且**一点报错都不会有**。
 /// 这不是猜的 —— 包自己的源码注释就写着：
 /// 「`encodeWebP(image, quality: 40)` on its own does nothing at all:
 /// pass `lossless: false` first.」
 ///
 /// 另：WebP 的 quality 与 JPEG 的 quality **不是同一把尺子**（同一注释里也写了），
-/// 所以这个 80 只是「照搬 RN 的 0.8 这个意图」，不是「与 JPEG 80 等画质」。
+/// 所以这个 80 只是「大致等同于 JPEG 0.8 的意图」，不是「与 JPEG 80 等画质」。
 const int webpQuality = 80;
 
 /// 无损/有损分水岭。见 [webpQuality]。
@@ -113,7 +113,7 @@ CompressResult compressToWebp(Uint8List source) {
 
   final longEdge = upright.width >= upright.height ? upright.width : upright.height;
   final scaled = longEdge > maxLongEdge
-      // 只给长边，另一边由它按比例算 —— 与 RN 一样，避免自己算出个差一像素的比值
+      // 只给长边，另一边由它按比例算 —— 避免自己算出个差一像素的比值
       ? (upright.width >= upright.height
             ? img.copyResize(upright, width: maxLongEdge, interpolation: img.Interpolation.average)
             : img.copyResize(upright, height: maxLongEdge, interpolation: img.Interpolation.average))

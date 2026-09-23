@@ -1,22 +1,21 @@
-/// 纯 Dart 的 UTF-8 编解码 —— 逐字对应 `packages/core/src/util/utf8.ts`（64 行）。
+/// 纯 Dart 的 UTF-8 编解码。
 ///
 /// ⚠️ **为什么不直接用 `dart:convert` 的 `utf8.encode` / `utf8.decode`**：
-/// 与 [base64ToBytes] 同一个判断 —— TS 那份不用的理由是 Hermes，Dart 这边没这个理由，
-/// 但这段代码的**真实职责是「备份 manifest 的字节布局必须可证一致」**（TS 原注释：
-/// 「备份 manifest 里全是中文，这条路必须稳」）。逐字搬 = 行为可证相同，代价只有 60 行。
+/// 与 [base64ToBytes] 同一个判断 ——
+/// 但这段代码的**真实职责是「备份 manifest 的字节布局必须可证一致」**
+/// —— 备份 manifest 里全是中文，这条路必须稳。手写 = 行为可证相同，代价只有 60 行。
 ///
-/// **一处必须在 Dart 侧补上的等价物**：JS 读越界的数组元素得到 `undefined`，
-/// 而 `undefined & 0x3f` 在 JS 里是 `0` —— 也就是说 TS 那份遇到**截断的字节序列**时
-/// 会静默按 0 补齐、继续解出乱码，而不是报错。Dart 直接下标会抛 `RangeError`，
-/// 所以这里用 [_byteAt] 把「越界当 0」显式表达出来，保持同样的宽容语义。
+/// **一处必须显式处理的宽容语义**：遇到**截断的字节序列**时，这里会
+/// 静默按 0 补齐、继续解出乱码，而不是报错。Dart 直接下标会抛 `RangeError`，
+/// 所以这里用 [_byteAt] 把「越界当 0」显式表达出来。
 library;
 
 import 'dart:typed_data';
 
-/// JS 的 `bytes[i]`：越界得到 `undefined`，参与位运算时等于 0。
+/// 越界读当 0（而不是抛 `RangeError`）。
 int _byteAt(Uint8List bytes, int index) => index < bytes.length ? bytes[index] : 0;
 
-/// 编码成 UTF-8 字节。代理对（emoji 等 4 字节字符）按 JS 的 `charCodeAt` 语义合并两个码元。
+/// 编码成 UTF-8 字节。代理对（emoji 等 4 字节字符）按两个码元合并处理。
 Uint8List utf8Encode(String input) {
   final out = <int>[];
   for (var i = 0; i < input.length; i++) {

@@ -1,8 +1,8 @@
 /// schema —— DDL 内容与《技术设计.md》第三节一致（PRAGMA 与连接参数由驱动层负责）。
 ///
-/// **逐字搬自 `packages/core/src/db/schema.ts`**，一字未改（v1 已冻结，见下方迁移纪律）。
+/// **v1 条目已冻结**，见下方迁移纪律。
 ///
-/// 以「一条 DDL = 一个数组元素」拆分而非整段多语句字符串：TS 侧是因为 op-sqlite 的原生
+/// 以「一条 DDL = 一个数组元素」拆分而非整段多语句字符串：原生 `execute`
 /// execute 只执行多语句字符串的第一条，逐条 exec 才能让 better-sqlite3 与 op-sqlite 行为一致。
 /// Dart 侧 `package:sqlite3` 没有这个限制，但**数组形状保留**：一是 v1 的历史已冻结，
 /// 二是逐条执行能把报错定位到具体语句（迁移写错时报错信息会直接指出是哪一条）。
@@ -63,9 +63,9 @@ const List<String> schemaV1Statements = <String>[
   // ask / path_suggestion / path_matched 承接 P1 输出中无法从其他列推导的信息：
   //   ask             —— 非空时记忆流展示补问入口（需求 5.1 轻量追问补偿），用户编辑后清空即「最多一次」
   //   path_suggestion —— 位置失配时模型的猜测，供用户点选或新建（需求四「匹配不到才让用户点选或新建」）
-  //   path_matched    —— 本次 path 是否命中已有位置树，测试计划「path 命中率 ≥ 80%」的统计依据
+  //   path_matched    —— 本次 path 是否命中已有位置树，「path 命中率 ≥ 80%」的统计依据
   //
-  // needs_confirm 是**已退役的残留列**（第二十版整条删掉「待确认」功能，见 pipeline/capture.ts）：
+  // needs_confirm 是**已退役的残留列**（「待确认」功能整条已删）：
   // 保留不动是因为 SQLite 删列必须重建整张表（见本文件顶部第 3 条），而它
   // NOT NULL DEFAULT 0、读写两侧都已摘除，留在那里零成本；老备份包带着它也能正常导入。
   r'''CREATE TABLE IF NOT EXISTS cards (
@@ -231,7 +231,7 @@ END''',
 
 /// 预设分类，只在首次建库时写入，避免删掉的预设分类重启复活。
 ///
-/// v2 起不再绑定结构类型 —— 三个预设仍与「东西 / 待办 / 流程」这三类日常记忆对应，
+/// 分类不绑定结构类型 —— 三个预设与「东西 / 待办 / 流程」这三类日常记忆对应，
 /// 但那只是名字与 Emoji 的暗示，不再有任何字段约束含义。用户可自由增删改。
 const List<String> seedStatements = <String>[
   r'''INSERT OR IGNORE INTO categories (id, name, emoji, description, sort, is_preset) VALUES

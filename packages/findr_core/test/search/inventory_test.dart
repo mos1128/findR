@@ -3,13 +3,12 @@ import 'package:test/test.dart';
 
 import '../helpers.dart';
 
-/// 库存清单的**排序** —— 对应 `packages/core/test/inventory-rank.test.ts`（6 个用例）
-/// 加上 `advise.test.ts` 里那三条库存摘要用例。
+/// 库存清单的**排序**（6 个用例），加上库存摘要那三条。
 ///
 /// 起因：用户问「物品加得很多以后，岂不是一次性把一大堆物品的信息传给大模型」。
 /// 定位题不受影响（它只发命中片段），但推理题的清单确实随库增长 ——
-/// 而查下来真正的毛病不是 token 上界，是**排序依据**：
-/// 原来走 `listCards`（`ORDER BY created_at DESC`），把「最近的 200 条」当成了
+/// 而真正的毛病不是 token 上界，是**排序依据**：
+/// 走 `listCards`（`ORDER BY created_at DESC`）等于把「最近的 200 条」当成
 /// 「最相关的 200 条」。库一大，清单就被无关的新卡占满，
 /// **去年记的护照正好被截在 200 之外** —— 那恰恰是这条链路存在的唯一理由。
 void main() {
@@ -25,7 +24,7 @@ void main() {
 
   /// 严格递增的时间戳：让「时间倒序」这件事在测试里是确定的。
   ///
-  /// 与 TS 的 `new Date(Date.UTC(2026, 5, 1, 0, index)).toISOString()` 同源 ——
+  /// 造一条逐分钟递增的时间戳 ——
   /// 月份 0-based（5 = 六月），且**分秒超出范围会自动进位**（两边都一样）。
   String at(int index) => isoUtc(DateTime.utc(2026, 6, 1, 0, index));
 
@@ -137,7 +136,7 @@ void main() {
   });
 
   group('库存摘要', () {
-    /// 与 `advise.test.ts` 的 `seed()` 同源：库里有 护照 / 螺丝刀 / 插线板 / 剃须刀。
+    /// 与 `advise_test.dart` 的 `seed()` 同源：库里有 护照 / 螺丝刀 / 插线板 / 剃须刀。
     void seed(SqliteDriver db) {
       for (final c in [
         passport,

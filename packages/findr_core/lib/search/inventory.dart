@@ -1,16 +1,16 @@
-/// 库存清单与相关性打分 —— 逐字对应 `packages/core/src/search/inventory.ts`（190 行）。
+/// 库存清单与相关性打分。
 ///
 /// 这一层回答的是「用户库里有什么」，供推理题（advise）逐条裁决。
 /// 为什么必须有它：推理题的答案**不在库里**（「出国 → 护照」是世界知识），
 /// 而模型从始至终看不到库存 ⇒ 它只能答「没找到」。这份清单就是补上那个缺失的输入。
 ///
-/// **十七版起多了一步：先排序，再截断。** 原先直接用 `listCards`
-/// （`ORDER BY created_at DESC`），把「最近的 200 条」当成了「最相关的 200 条」——
-/// 而「最近」与「这个场合用不用得上」零相关。库一大，清单会被无关的新卡占满，
+/// **顺序是：先排序，再截断。** 直接用 `listCards`（`ORDER BY created_at DESC`）
+/// 等于把「最近的 200 条」当成「最相关的 200 条」，而「最近」与「这个场合用不用得上」
+/// 零相关 —— 库一大，清单会被无关的新卡占满，
 /// **去年记的护照正好被截在 200 之外**，那恰恰是这条链路存在的唯一理由。
 ///
 /// 退化情形值得记一笔：若 [terms] 一个词都没碰上（例如 P2 判错了情景），所有分数都是 0
-/// ⇒ 顺序退化成纯按时间倒序 = 改动前的行为，**不会比原来更差**。
+/// ⇒ 顺序退化成纯按时间倒序，**不会比不做排序更差**。
 /// 这也正是这里不需要「保底给最近 N 条」配额的原因。
 library;
 
@@ -88,7 +88,7 @@ final class _CardFields {
   final String path;
   final String body;
 
-  /// 按 TS 的 `fields[key]` 取值。**键名就是格式的一部分**（见 [_fieldWeights]）。
+  /// 按键名取值。**键名就是格式的一部分**（见 [_fieldWeights]）。
   String operator [](String key) => switch (key) {
     'entity' => entity,
     'tags' => tags,
@@ -111,7 +111,7 @@ _CardFields _fieldsOf(MemoryCard card, String? categoryName) => _CardFields(
 /// 「证件」出现在实体名或标签上，基本就是在说这张卡就是证件；
 /// 出现在 desc 里则可能只是顺带提一句。
 ///
-/// 用 Map 而不是数组：Dart 的 Map 保持插入顺序，与 TS 那个对象数组的字面量顺序一致。
+/// 用 Map 而不是数组：Map 保持插入顺序，遍历顺序因此是确定的。
 const Map<String, int> _fieldWeights = <String, int>{
   'entity': 6,
   'tags': 4,
@@ -127,7 +127,7 @@ const Map<String, int> _fieldWeights = <String, int>{
 /// 这类通用名词，命中率最高），**长句按 2 字滑窗切成 n-gram**
 /// （「出国旅游需要带什么」切出「出国」「旅游」…，「旅游」才有机会真的碰到某张卡的 desc）。
 ///
-/// ⚠️ 长度一律用 Dart 的 `String.length`（UTF-16 码元数）—— 与 JS 的 `String.length` 同口径。
+/// ⚠️ 长度一律用 Dart 的 `String.length`（UTF-16 码元数）—— 这是既定口径。
 List<String> relevanceTerms(List<String?> inputs) {
   final out = <String>{};
   final splitter = RegExp(r'[^\p{Script=Han}\p{L}\p{N}]+', unicode: true);
@@ -213,7 +213,6 @@ Inventory buildInventory(SqliteDriver db, {int? limit, List<String?>? terms}) {
         ? (categoryName[categoryId] ?? '未分类')
         : '未分类';
     final path = _oneLine(card.pathNames, _pathChars);
-    // TS: `oneLine(desc) || oneLine(transcript) || '（无简述）'`
     final descBrief = _oneLine(card.desc, _descChars);
     final transcriptBrief = _oneLine(card.transcript, _descChars);
     final brief = descBrief.isNotEmpty

@@ -3,8 +3,7 @@ import 'package:test/test.dart';
 
 /// `search/builder.dart` 的验收网。
 ///
-/// TS 侧没有对应的独立测试文件（`relaxations` 由 `search-relax.test.ts` 经 service 间接覆盖），
-/// 这里直接打这一层：它是「模型输出 → SQL 条件」的翻译关口，
+/// 直接打这一层：它是「模型输出 → SQL 条件」的关口，
 /// 译错了上层全都错，而它本身是纯函数、测起来便宜。
 void main() {
   String? noCategories(String name) => null;

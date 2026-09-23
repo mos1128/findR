@@ -1,4 +1,4 @@
-/// 备份打包 / 解包 —— 逐字对应 `packages/core/src/backup/pack.ts`（167 行）。
+/// 备份打包 / 解包。
 ///
 /// 层次从里到外：
 ///   `manifest.json` + `files/*`  →  ZIP（STORE）  →  容器头  →  `.findrpack`
@@ -21,7 +21,7 @@ import 'manifest.dart';
 import 'types.dart';
 import 'zip.dart';
 
-/// 包内清单文件名 —— **这就是格式的一部分**，改不得（RN 版写出的包按这个名字找）。
+/// 包内清单文件名 —— **这就是格式的一部分**，改不得（读取侧按这个名字找）。
 const String manifestName = 'manifest.json';
 
 final class BackupDeps {
@@ -150,9 +150,8 @@ final class ImportResult {
 
 /// 浅层校验 + 转成强类型清单。
 ///
-/// ⚠️ 相对 TS 的一处必要偏差：TS 的 `validateManifest` 只是**判完再原样返回那个对象**
-/// （JS 里 JSON 对象本来就能当 `BackupManifest` 用），Dart 没有这种鸭子类型，
-/// 所以这里顺便完成 `fromJson` 转换。**校验规则与报错文案逐条对齐 TS**。
+/// ⚠️ 这里**顺便完成 `fromJson` 转换**：判完就返回强类型对象，而不是把入参原样退回。
+/// **校验规则与报错文案是既定契约** —— 老备份包要能导入、坏包的报错要能被用户看懂。
 BackupManifest validateManifest(Object? value) {
   if (value is! Map) throw const FormatException('备份清单不是对象');
   final m = value.cast<String, Object?>();

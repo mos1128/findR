@@ -1,6 +1,6 @@
-/// 能力探测 —— 逐字对应 `packages/core/src/providers/capabilities.ts`（211 行）。
+/// 能力探测。
 ///
-/// 探测的种类**只有 text 与 vision 两项** —— 语音那条探测已于 2026-09-19 删除：
+/// 探测的种类**只有 text 与 vision 两项** —— 语音那条探测已删除：
 /// 它测的是「chat 的 `input_audio` 内容块能不能用」（需求 3.2 的模式 1），
 /// 而那条路从来没有被任何业务代码走过。一个不控制任何功能的探测项，
 /// 只会给用户多一句看不懂的结论、多一次请求。**语音转写请直接探测 ASR 槽。**
@@ -23,7 +23,7 @@ enum CapabilityKind { text, vision }
 /// 为什么必须有 [unknown]：思考型模型（DeepSeek 的 thinking 模式**默认开启**）会先输出
 /// 一段思维链再给正文，两者共用 `max_tokens` 预算；额度不够时正文可以是空的，
 /// 但端点其实完全支持这种输入。此时把结果说成「不支持」是**假阴性** ——
-/// 用户会以为自己配错了（第十二版就栽在这里）。
+/// 用户会以为自己配错了。
 ///
 /// [wire] 是落进 `CapabilityCache.visionStatus` 的字面值，**改不得**。
 enum CapabilityStatus {
@@ -105,7 +105,7 @@ String _explainUnsupported(int status, String body) {
 
 /// 把异常归类成四态结论。
 ///
-/// ⚠️ **Dart 侧用真类型判**（`is HttpStatusException`），TS 那边是鸭子类型
+/// ⚠️ **用真类型判**（`is HttpStatusException`），而不是看字段形状
 /// （`typeof (e as {status?}).status === 'number'`）。全仓只有 [HttpStatusException]
 /// 带 `status`，所以两者结果一致；Dart 这样写还能让分析器盯着，改坏了编译就不过。
 CapabilityResult _classify(Object e) {
@@ -155,8 +155,8 @@ CapabilityResult _classify(Object e) {
     );
   }
 
-  // TS 是 `e instanceof Error ? e.message : String(e)`。Dart 里所有对象都有 toString()，
-  // 且异常本身就是 Exception/Error ⇒ 这条分支不再需要区分，直接 toString()。
+  // Dart 里所有对象都有 toString()，且异常本身就是 Exception/Error ⇒
+  // 不用再按类型分支，直接 toString()。
   return CapabilityResult(ok: false, status: CapabilityStatus.error, detail: e.toString());
 }
 
@@ -248,7 +248,7 @@ Future<ProbedCapabilities> probeLlm(LlmProviderAdapter adapter, ProviderConfig c
     // ⚠️ `vision: false` 会经 apps 侧的 `visionSupported()` **锁死「图片分析」开关**
     // （需求 3.3 的置灰锁定），所以**只有「端点明确否定」才允许置 false**：
     // 「没测出来」（unknown）不是否定的证据，不能拿它去关用户的功能 ——
-    // 这正是第十二版要消灭的那类误判，别让它从后门回来。
+    // 这正是必须消灭的那类误判，别让它从后门回来。
     vision: vision.status != CapabilityStatus.unsupported,
     visionDetail: vision.detail,
     visionStatus: vision.status,

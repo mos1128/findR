@@ -5,12 +5,11 @@ import 'package:test/test.dart';
 
 import '../helpers.dart';
 
-/// `settings.dart` 在 TS 侧**没有专门的测试文件**（它被间接覆盖），
-/// 所以这一份是**净增的验收网** —— 正因为它是「设置项的唯一权威定义」，
+/// `settings.dart` 的验收网 —— 它是「设置项的唯一权威定义」，
 /// 读错一个字段的后果是用户改了设置却不生效。
 ///
-/// ⚠️ 重点盯的是**浅合并的语义**（`{...DEFAULTS, ...stored}`）：
-/// TS 那边是对象展开，Dart 这边是手写的 `containsKey` 判断。
+/// ⚠️ 重点盯的是**浅合并的语义**（`{...DEFAULTS, ...stored}`），
+/// 实现上是手写的 `containsKey` 判断。
 /// 最容易写错的一处：**键存在但值是 null 时不能再退回默认值** ——
 /// `visionLast: null` 是有意义的状态（「用户还没手动切过」），不是「缺这个字段」。
 void main() {
@@ -46,7 +45,7 @@ void main() {
     });
 
     test('认证头不再是可配项：老安装残留的 authStyle 被忽略，不报错', () {
-      // 第十八版删掉了 authStyle；老数据里它还在 JSON 里，读的时候必须无视
+      // authStyle 已删；老数据里它还在 JSON 里，读的时候必须无视
       setSetting(db, SettingsKeys.llm, {
         'providerType': 'openai-compat',
         'baseUrl': 'http://host',
@@ -58,7 +57,7 @@ void main() {
       expect(read.providerType, ProviderType.openaiCompat);
     });
 
-    test('值不合规的 providerType 退回 openai-compat（有意偏离 TS，见代码注释）', () {
+    test('值不合规的 providerType 退回 openai-compat（有意为之，见代码注释）', () {
       setSetting(db, SettingsKeys.llm, {'providerType': 'bogus', 'model': 'm'});
       expect(readLlmSettings(db)!.providerType, ProviderType.openaiCompat);
     });
@@ -138,7 +137,7 @@ void main() {
   });
 
   group('转写设置', () {
-    test('写读往返，且落库 JSON 仍带 providerType（与 TS 形状一致）', () {
+    test('写读往返，且落库 JSON 仍带 providerType（形状是契约）', () {
       writeAsrSettings(db, const AsrSettings(baseUrl: 'http://host', model: 'whisper-1'));
       final read = readAsrSettings(db)!;
       expect(read.model, 'whisper-1');
@@ -290,7 +289,7 @@ void main() {
       );
     });
 
-    test('设置里出现不可能用到的协议时显式报错（TS 那边是返回 undefined 后崩）', () {
+    test('设置里出现不可能用到的协议时显式报错', () {
       expect(
         () => makeLlmAdapter(const LlmSettings(providerType: ProviderType.gemini, model: 'm')),
         throwsA(isA<UnsupportedError>()),
@@ -302,8 +301,8 @@ void main() {
     });
   });
 
-  group('与 TS 的 JSON 形状对齐', () {
-    test('Dart 写出的 LLM 设置能被 TS 侧的字段名读到（快照比对）', () {
+  group('落库 JSON 形状（契约）', () {
+    test('写出的 LLM 设置字段名与快照一致', () {
       const value = LlmSettings(
         providerType: ProviderType.openaiCompat,
         baseUrl: 'http://192.168.1.9:7788',

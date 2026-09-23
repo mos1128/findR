@@ -1,4 +1,4 @@
-/// 备份（`.findrpack`）—— 逐字对应 `packages/core/test/backup.test.ts`（380 行 / 17 个用例）。
+/// 备份（`.findrpack`）—— 导出/导入全链路，17 个用例。
 ///
 /// 这一层是「用户把文件拿走、再拿回来」的唯一通道，所以容错要求比别处高一档：
 /// **任何校验失败都必须在写库/写文件之前抛掉**，绝不能出现「导入一半」。
@@ -26,7 +26,7 @@ final String audio = audioRelPath(at, 'c2');
 final Uint8List imgBytes = Uint8List.fromList(<int>[1, 2, 3, 4, 5, 250, 251]);
 final Uint8List audioBytes = Uint8List.fromList(<int>[9, 8, 7, 6]);
 
-/// 一侧的「数据库 + 媒体库」组合（对应 TS 的 `Side`）。
+/// 一侧的「数据库 + 媒体库」组合。
 final class Side {
   const Side({required this.deps, required this.media});
 
@@ -272,7 +272,7 @@ void main() {
       expect(settings.containsKey('tracking_id'), isFalse);
       // 这条断言现在比加密时代更重要：文件是明文的，白名单一旦漏了就是直接泄露
       expect(containsBytes(exported.bytes, utf8Encode('sk-LEAK-CANARY-1234567890')), isFalse);
-      // Key 走 `apiKeys` 那条单独通道（2026-09-23 起），**不是** settings。
+      // Key 走 `apiKeys` 那条单独通道，**不是** settings。
       // 「不传就不带」这条必须守住：默认不带，才谈得上界面上的开关有意义。
       expect(manifest.containsKey('apiKeys'), isFalse);
     });
@@ -287,7 +287,7 @@ void main() {
   });
 
   // ─────────────────────────────────────────────────────────────
-  // 备份：随包带走 API Key（2026-09-23 需求变更）
+  // 备份：随包带走 API Key
   //
   // 这一组钉的是「通道本身的开关」：**默认不带，只有调用方显式传了才带**。
   // 界面上那个「带上 Key」的勾选框，靠的就是这里。
@@ -493,7 +493,7 @@ void main() {
         'visionLast': false,
         'maxAnalyzeImages': 6,
       });
-      // 第十九版前的残留：老安装的 settings 表里还留着一行没人读的 pipeline
+      // 老安装的残留：settings 表里可能还留着一行没人读的 pipeline
       setSetting(src.deps.db, 'pipeline', <String, Object?>{'confirmThreshold': 0.9});
       final exported = await exportFrom(src);
 

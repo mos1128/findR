@@ -5,17 +5,17 @@ import 'package:test/test.dart';
 
 import '../helpers.dart';
 
-/// 推理题（advise）通道 —— 对应 `packages/core/test/advise.test.ts`。
+/// 推理题（advise）通道。
 ///
-/// 用户 2026-09-20 报告的「无脑搜索」：库里有 护照 / 螺丝刀 / 插线板 / 剃须刀，
+/// 一个典型的「无脑搜索」现场：库里有 护照 / 螺丝刀 / 插线板 / 剃须刀，
 /// 问「我去国外玩应该会用到哪些东西」。期望返回 护照、剃须刀
 /// （插线板视插座标准而定，应进 maybe 而不是被删掉或全留）。
 ///
-/// 这个场景在旧实现里**必然 0 条**：P2_SYSTEM 原来明令「绝不假设库里存在什么物品」，
+/// 这个场景靠「更好的关键词」是解不掉的：P2_SYSTEM 明令「绝不假设库里存在什么物品」，
 /// 所以「护照」这两个字永远不会进入关键词；而「旅游」与「护照」零字面重叠，
 /// 本地 FTS/LIKE 也永远匹配不上。**缺的输入是库存本身，不是更好的关键词。**
 ///
-/// 两处不在本文件：TS 的「P2 缺 mode 缺省为 locate」已由 `parse/parse_test.dart` 覆盖，
+/// 两处不在本文件：「P2 缺 mode 缺省为 locate」已由 `parse/parse_test.dart` 覆盖，
 /// 三条「库存摘要」用例已由 `search/inventory_test.dart` 覆盖 —— 这里不重复。
 final passport = makeCard(
   id: 'passport',

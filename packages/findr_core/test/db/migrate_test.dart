@@ -1,4 +1,4 @@
-// 迁移测试 —— 逐条对应 TS 的 `packages/core/test/migrate.test.ts`。
+// 迁移测试。
 //
 // 这里**故意用冻结的 v1 DDL 手搓一个旧库**，而不是复用当前 schema —— 那才是真机上
 // 用户手里那个库的样子。v2 是一次重建（建新表 → 拷贝 → 删旧表 → 改名），
@@ -9,8 +9,8 @@
 //   - 触发器跟着重建，之后新插入的行也能被搜到；
 //   - PRAGMA foreign_keys 被恢复成 ON（v2 临时关过）。
 //
-// 造数据与断言都走仓储（`insertCard` / `getCard` / `listCategories` / `listLocations`），
-// 与 TS 同源 —— 这样「**仓储写入的列名与 v1 的 DDL 对得上**」这件事由这条路径本身押着。
+// 造数据与断言都走仓储（`insertCard` / `getCard` / `listCategories` / `listLocations`）
+// —— 这样「**仓储写入的列名与 v1 的 DDL 对得上**」这件事由这条路径本身押着。
 // 只有两处必须手写 SQL，各自注明了原因（都是「那一列已经从仓储的列清单里摘掉了」）。
 
 import 'package:findr_core/findr_core.dart';

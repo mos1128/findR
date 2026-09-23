@@ -1,10 +1,10 @@
-/// `.findrpack` 容器 —— 逐字对应 `packages/core/src/backup/format.ts`（58 行）。
+/// `.findrpack` 容器。
 ///
 /// 布局见《技术设计.md》第七节：
 ///
 ///   magic "FINDR"(5B) + format version u16 (=1) + 载荷（标准 ZIP，STORE 不压缩）
 ///
-/// ⚠️ **当前版本不做任何加密**（2026-09-20 决策）：载荷就是原样的 ZIP，
+/// ⚠️ **不做任何加密**：载荷就是原样的 ZIP，
 /// 拿到文件的人用任何解压工具都能直接读到全部记忆。所以导出/导入的界面必须
 /// 把这件事说清楚，别让用户以为它是加密的。
 ///
@@ -28,7 +28,7 @@ const int backupFormatVersion = 1;
 /// 容器头长度：5 字节 magic + 2 字节 u16 版本 = 7。
 const int backupHeaderLen = 5 + 2;
 
-/// 拼出容器头（默认写当前版本）。对应 TS 的 `encodeHeader`。
+/// 拼出容器头（默认写当前版本）。
 Uint8List encodeHeader([int formatVersion = backupFormatVersion]) {
   final out = Uint8List(backupHeaderLen);
   for (var i = 0; i < backupMagic.length; i++) {
@@ -66,7 +66,7 @@ Uint8List packContainer(Uint8List payload) {
   return out;
 }
 
-/// `.findrpack` 字节 → 载荷（**零拷贝视图**，与 TS 的 `subarray` 同语义）。
+/// `.findrpack` 字节 → 载荷（**零拷贝视图**）。
 ///
 /// 头不对 / 版本不认 / 文件被截断都会在这里抛错。
 Uint8List unpackContainer(Uint8List bytes) {

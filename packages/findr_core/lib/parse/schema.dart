@@ -1,28 +1,28 @@
-/// 模型输出的**容错校验** —— 手写替代 TS 的 zod（`packages/core/src/parse/index.ts`）。
+/// 模型输出的**容错校验** —— 手写，不引第三方 schema 库。
 ///
 /// 为什么要有这一层：模型的 JSON 永远不守规矩 —— 字段缺失、类型不对、枚举值陌生。
-/// TS 那边靠 zod 给**每个字段**挂 `.catch(默认值)`，让单点错误只影响那一个字段，
+/// 给**每个字段**兜一个默认值，让单点错误只影响那一个字段，
 /// 而不是让整次解析崩掉（崩掉就意味着用户白等一次调用）。
 ///
-/// ⚠️ **`.catch()` 的边界必须精确复刻**，因为「哪些字段失败会拖垮整次解析」是**行为**：
+/// ⚠️ **兜底与否的边界必须精确**，因为「哪些字段失败会拖垮整次解析」是**行为**：
 ///
 /// | 写法 | 失败时 |
 /// |---|---|
-/// | `z.string().catch('')` | 该字段落 `''`，**不影响别的字段** |
-/// | `z.string().nullish()` | **整次解析失败**（没有 catch 接住） |
+/// | 落默认值 | 该字段落 `''`，**不影响别的字段** |
+/// | 直接暴露失败 | **整次解析失败**（没有兜底接住） |
 ///
-/// 具体到我们的四个 schema，**没有 catch 的字段**是：
+/// 具体到我们的四个 schema，**不做兜底的字段**是：
 /// `P1Output.path_matched` / `.path_suggestion`、`P2Output.time_hint` / `.scenario` /
 /// `.normalized_query`。也就是说模型把 `time_hint` 写成 `"yesterday"` 时，
-/// 整条 P2 都作废、检索退回字面兜底 —— **这是 TS 的既有行为，别"顺手"补上默认值**。
+/// 整条 P2 都作废、检索退回字面兜底 —— **别「顺手」补上默认值**。
 ///
-/// Dart 没有 zod，但这里要的东西很有限：**取值 + 判型 + 落默认**，
+/// 手写校验要的东西很有限：**取值 + 判型 + 落默认**，
 /// 用 [tryParse] 返回 `null` 表达「整次失败」，其余用 `_caught` 逐字段兜。
 library;
 
 import 'outputs.dart';
 
-/// 等价于 zod 的一句 `.catch(默认值)`：**任何失败都落到 [fallback]**。
+/// **任何失败都落到 [fallback]**。
 T _caught<T>(T Function() body, T fallback) {
   try {
     return body();
@@ -31,7 +31,7 @@ T _caught<T>(T Function() body, T fallback) {
   }
 }
 
-/// 字段校验失败 —— 抛出去由 [tryParse] 的最外层接住（对应 zod 的 `safeParse` 失败）。
+/// 字段校验失败 —— 抛出去由 [tryParse] 的最外层接住。
 Never _fail(String field, Object? value) =>
     throw FormatException('字段 $field 校验失败：$value');
 
@@ -132,7 +132,7 @@ abstract final class P2OutputSchema {
         synonyms: _caught(() => _stringList(m['synonyms'], 'synonyms'), const <String>[]),
         category: _caught(() => _nullishString(m['category'], 'category'), null),
         pathPrefix: _caught(() => _nullishStringList(m['path_prefix'], 'path_prefix'), null),
-        // 以下三个**没有 catch**（TS 写的是 `.nullish()` 就收尾了）
+        // 以下三个**不做兜底**（类型不对就整次失败）
         timeHint: _nullishEnumOf(TimeHint.values, (x) => x.wire, m['time_hint'], 'time_hint'),
         matchMode: _caught(
           () => _enumOf(MatchMode.values, (x) => x.wire, m['match_mode'], 'match_mode'),

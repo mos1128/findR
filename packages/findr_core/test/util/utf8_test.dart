@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'package:findr_core/findr_core.dart';
 import 'package:test/test.dart';
 
-/// `util/utf8.dart` 是逐字搬的纯算法（理由见该文件头）。
+/// `util/utf8.dart` 的验收网（理由见该文件头）。
 ///
 /// ⚠️ **多数断言拿 `dart:convert` 当对照**（值必须一样），
-/// **唯一刻意不同的是「截断输入」那条**：TS 那边越界读数组得到 `undefined`、
-/// 参与位运算等于 0，于是它会**静默按 0 补齐**继续解；Dart 若不特别处理就抛 `RangeError`。
-/// 我们选择保住 TS 的宽容语义（备份包解析路上「崩掉」比「解出错字」更难收拾）。
+/// **唯一刻意不同的是「截断输入」那条**：越界读要**静默按 0 补齐**继续解；
+/// Dart 若不特别处理就抛 `RangeError`。我们选择保住宽容语义
+/// （备份包解析路上「崩掉」比「解出错字」更难收拾）。
 void main() {
   test('与 dart:convert 逐字对齐：中英文、标点、emoji', () {
     for (final text in [
@@ -37,7 +37,7 @@ void main() {
     expect(utf8Decode(bytes), '🎒');
   });
 
-  test('截断的字节序列按 0 补齐，不抛异常（对齐 JS 的 undefined→0）', () {
+  test('截断的字节序列按 0 补齐，不抛异常', () {
     // '圆' 是 3 字节，只给前两个
     final full = utf8Encode('圆');
     expect(full.length, 3);
@@ -48,7 +48,7 @@ void main() {
   });
 
   test('孤立的低代理码元不吞掉（不做非法序列修复）', () {
-    // 单个低代理码元 0xDC00：TS 那边会照原样编成 3 字节
+    // 单个低代理码元 0xDC00：照原样编成 3 字节，不做非法序列修复
     final bytes = utf8Encode('\udc00');
     expect(bytes.length, 3);
     expect(utf8Decode(bytes), '\udc00');

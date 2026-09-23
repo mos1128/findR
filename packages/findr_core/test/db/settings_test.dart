@@ -1,6 +1,5 @@
-// 对应 TS 的 `packages/core/test/` 里没有独立的 settings 测试
-// （settings 读写分散体现在 e2e / pipeline 用例中）。这里补一个，因为
-// 「机密项不进 settings 表」是安全口径的一部分，而读坏值不能炸是它的容错面。
+// 「机密项不进 settings 表」是安全口径的一部分，而读坏值不能炸是它的容错面，
+// 所以单独押一层。
 
 import 'package:findr_core/findr_core.dart';
 import 'package:test/test.dart';

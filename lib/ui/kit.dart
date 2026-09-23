@@ -1,4 +1,4 @@
-/// 基础组件 —— 这一版是**重新设计的**，不复刻 RN 的 `ui/kit.tsx`。
+/// 基础组件。
 ///
 /// 设计上只做三件事，其余交给 `theme/tokens.dart`：
 ///
@@ -14,7 +14,7 @@ import '../theme/tokens.dart';
 
 /// 页面外壳：把内容限制在 [maxContentWidth] 内并居中。
 ///
-/// 手机上看不出区别，桌面（V2/V3）上就是「不至于拉成一行超长的字」的保障。
+/// 手机上看不出区别，桌面上就是「不至于拉成一行超长的字」的保障。
 class ScreenBody extends StatelessWidget {
   const ScreenBody({
     super.key,
@@ -67,7 +67,7 @@ class ScreenBody extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: maxContentWidth),
       child: CustomScrollView(
         controller: controller,
-        // 打字时点列表不该收键盘乱跳（对应 RN 的 keyboardShouldPersistTaps="handled"）
+        // 打字时点列表不该收键盘乱跳
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         slivers: slivers,
       ),

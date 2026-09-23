@@ -1,7 +1,6 @@
 /// 网络连通性的**近似**判断。
 ///
-/// 对应 RN 的 `expo-network` + `useNetworkState()`（`app/index.tsx:217`
-/// 的 `const offline = network.isConnected === false`）。
+/// 用 `connectivity_plus` 的连通性状态做一版近似判断。
 ///
 /// ⚠️ **它只用来决定「要不要提前说一句」，绝不用来决定「能不能发请求」**。
 /// 插件给的是**无线电状态**（有没有连上 Wi-Fi / 蜂窝），不是「这个地址通不通」：

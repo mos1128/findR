@@ -1,12 +1,10 @@
-/// core 的文件访问端口 —— 逐字对应 `packages/core/src/providers/media.ts`（14 行）。
+/// core 的文件访问端口。
 ///
-/// core 自身**零文件 IO**：TS 侧 node 给 Blob、RN 给 `{uri,name,type}`，两边各自只认自己那种
-/// FormData part，所以 `audioPart` 的返回类型只能写 `unknown`。
+/// core 自身**零文件 IO**：平台侧给什么形状，就只认那种形状。
 ///
-/// **Dart 侧的偏离：`audioPart` 返回具体的 `http.MultipartFile`。**
-/// 理由：Dart 只有一个运行时，`unknown` 那种「谁实现谁负责转型」的洞没有必要保留；
+/// **`audioPart` 的返回类型是具体的 `http.MultipartFile`。**
 /// 返回真实类型后，调用点不用 `as`，端口实现方也能直接用 `MultipartFile.fromPath`
-/// （**走文件流，不把 m4a 整个读进内存** —— 这正是 TS 原注释要保住的性质）。
+/// （**走文件流，不把 m4a 整个读进内存** —— 这是必须保住的性质）。
 /// 代价是 `providers/` 这一层和 `package:http` 绑定了：可接受，它本来就叫 `providers`。
 library;
 

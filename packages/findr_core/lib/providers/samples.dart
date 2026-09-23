@@ -1,13 +1,12 @@
-/// 能力探测用的微型样本 —— 逐字对应 `packages/core/src/providers/samples.ts`（141 行）。
+/// 能力探测用的微型样本。
 ///
 /// 样本**运行时生成**而非往仓库里塞二进制：
 /// PNG 走「**存储型 deflate 块**」（= 声明「这段没压缩」，于是免于实现 deflate），
 /// WAV 是无损 PCM。两者都是确定性的 ⇒ 同样的输入永远得到同样的字节，
 /// 测试才能拿结构本身当断言（见 `test/providers/providers_test.dart`）。
 ///
-/// Dart 侧对应关系：
-/// - JS `DataView` 默认**大端**（PNG 用）⇒ Dart `ByteData.setUint32` 默认也是 `Endian.big`；
-/// - JS `DataView.setUint32(o, v, true)` 是**小端**（WAV 用）⇒ Dart 显式写 `Endian.little`。
+/// 字节序：PNG 用**大端**（`ByteData.setUint32` 默认即 `Endian.big`）；
+/// WAV 用**小端**，所以那里显式写 `Endian.little`。
 library;
 
 import 'dart:math' as math;

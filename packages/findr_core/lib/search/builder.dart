@@ -1,9 +1,9 @@
-/// 检索条件构造 —— 逐字对应 `packages/core/src/search/builder.ts`（186 行）。
+/// 检索条件构造。
 ///
 /// 这一层只做一件事：把「P2 的检索规划」翻译成 `BuiltSearch`（一组能直接喂给 SQL 的条件）。
 /// 它不碰数据库 —— 真正的执行在 `db/repository.dart` 的 `executeSearch` 里。
 ///
-/// 三个容易被忽略但必须保留的设计（原文注释都在 TS 那边，这里只留要点）：
+/// 三个容易被忽略但必须保留的设计：
 ///
 /// 1. **trigram 硬限制**：<3 字的词（「护照」「猫砂」）FTS 匹配不到，必须降级 LIKE
 ///    （见 [splitTerms]）。这不是优化，是正确性 —— 3 字以下是 trigram 的物理下限。
@@ -17,7 +17,7 @@ import '../parse/outputs.dart';
 import '../types.dart';
 import '../util/iso.dart';
 
-/// 一次检索的全部条件。TS 里是个 interface，这里补一个 [copyWith] 给 [relaxations] 用。
+/// 一次检索的全部条件。带 [copyWith] 供 [relaxations] 用。
 final class BuiltSearch {
   const BuiltSearch({
     required this.ftsExpr,
@@ -77,9 +77,9 @@ String escapeLike(String term) => term.replaceAllMapped(
 
 /// trigram 硬限制：<3 字的词 FTS 匹配不到，单独拎出来走 LIKE。
 ///
-/// ⚠️ 长度用 Dart 的 `String.length`（UTF-16 码元数），**与 JS 的 `String.length` 同口径**；
+/// ⚠️ 长度用 Dart 的 `String.length`（UTF-16 码元数），**这是既定口径**；
 /// 不要换成按字素簇计数的那套 API —— 两者对代理对（emoji 等）的答案不同，
-/// 换了就会在「≥3 字走 MATCH」这条分界线上和 TS 版分歧。
+/// 换了会移动「≥3 字走 MATCH」这条分界线。
 ({List<String> fts, List<String> like}) splitTerms(List<String> terms) {
   final clean = <String>[];
   for (final t in terms.map((t) => t.trim())) {
@@ -99,7 +99,7 @@ const Map<TimeHint, int> _timeHintMs = <TimeHint, int>{
   TimeHint.thisYear: 365 * 86400000,
 };
 
-/// TS 的 `new Date(now.getTime() - ms[hint]).toISOString()` —— 注意 `now` 的时区无关紧要
+/// 注意 `now` 的时区无关紧要
 /// （`getTime()` 是 epoch 毫秒），产出恒为 UTC 的 ISO 串。
 String? _sinceOf(TimeHint? hint, DateTime now) {
   if (hint == null) return null;
@@ -122,7 +122,7 @@ BuiltSearch? buildSearch({
       ? null
       : split.fts.map(quoteFts).join(p2.matchMode == MatchMode.all ? ' AND ' : ' OR ');
   final category = p2.category;
-  // TS 写的是 `p2.category ? ... : null`，空字符串同样算没有 ⇒ 这里一并判掉
+  // 空字符串的 category 同样算没有 ⇒ 这里一并判掉
   final categoryId = (category != null && category.isNotEmpty)
       ? resolveCategoryId(category)
       : null;

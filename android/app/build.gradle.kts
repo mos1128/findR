@@ -15,8 +15,8 @@ android {
     }
 
     defaultConfig {
-        // 与 RN 版（com.findr.app）刻意区分：Flutter 版作为独立 App 并排共存，
-        // 碰不到 RN 版的数据目录。用户 2026-09-21 拍板「用新包名」。
+        // 改 applicationId 等于换一个 App 身份：老安装的数据目录碰不到、
+        // 用户得重装。**没有迁移方案之前别动这一行。**
         // namespace 保持 com.findr.findr_app（那是代码包名，与 App 身份无关，别动）。
         applicationId = "com.findr.app.dev"
         // You can update the following values to match your application needs.

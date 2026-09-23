@@ -1,6 +1,6 @@
-// 驱动层测试 —— TS 侧没有对应文件（那边测的是 better-sqlite3 / op-sqlite 两个现成实现）。
+// 驱动层测试。
 //
-// Dart 侧的 `Sqlite3Driver` 是**我们自己新写的代码**，所以必须有押注：
+// `Sqlite3Driver` 是**我们自己写的代码**，所以必须有押注：
 //   - `exec` 能不能跑多语句（schema 里那三个 trigger 体带分号，靠的就是这个）；
 //   - `run` 的 changes / lastInsertRowid 对不对；
 //   - `transaction` 的提交、回滚、以及**嵌套**（内层走 SAVEPOINT）。

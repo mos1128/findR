@@ -1,4 +1,4 @@
-/// API Key 的安全存储 —— 对应 RN 的 `apps/mobile/src/platform/secure.ts`。
+/// API Key 的安全存储。
 ///
 /// Key **只进 Android Keystore / iOS Keychain**：DB 的 settings 与导出的备份都不含它
 /// （《技术设计.md》第四节）。这是机密性的第一道屏障；第二道是备份 manifest 的
@@ -15,7 +15,7 @@ enum ApiKeySlot {
 
   const ApiKeySlot(this.storageKey);
 
-  /// ⚠️ **与 RN 版逐字相同**（`apps/mobile/src/platform/secure.ts` 的 `SECURE_KEYS`）。
+  /// ⚠️ **这些名字是持久化契约，改不得**。
   /// 改名字就等于把用户已经存好的 Key 弄丢 —— 而且界面上只会显示「未配置」，
   /// 很难联想到是「名字改了」。
   final String storageKey;
@@ -45,7 +45,7 @@ final class SecureApiKeyStore implements ApiKeyStore {
     try {
       return await _storage.read(key: slot.storageKey);
     } catch (_) {
-      // 设备不支持安全存储时不该让整个 App 起不来（与 RN 版同口径）
+      // 设备不支持安全存储时不该让整个 App 起不来
       return null;
     }
   }
@@ -118,7 +118,7 @@ KeyRestorePlan planKeyRestore({
   return KeyRestorePlan(toWrite: toWrite, skipped: skipped);
 }
 
-/// 设置页只显示掩码（需求 3.6）。规则与 RN 版逐字相同。
+/// 设置页只显示掩码（需求 3.6）。
 String maskApiKey(String? key) {
   if (key == null || key.isEmpty) return '未配置';
   if (key.length <= 8) return '••••••';

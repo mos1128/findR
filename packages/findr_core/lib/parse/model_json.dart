@@ -1,4 +1,4 @@
-/// 从模型输出里抠出 JSON 并校验 —— 逐字对应 `packages/core/src/parse/index.ts` 的前 34 行。
+/// 从模型输出里抠出 JSON 并校验。
 ///
 /// 模型很爱做的两件事：把 JSON 包在 markdown 围栏里、在最后一个元素后面留个逗号。
 /// 这一层就是专门伺候这两个毛病的 —— **失败是常态，不是异常**，所以返回结果而不是抛。
@@ -6,7 +6,7 @@ library;
 
 import 'dart:convert';
 
-/// [parseModelJson] 的结果。TS 侧是 `{ ok: true; value } | { ok: false; error }` 的联合，
+/// [parseModelJson] 的结果。用「成功带值 / 失败带错」的联合表达，
 /// Dart 里用 sealed class：调用方 `switch` 时是穷尽的，不会漏掉失败分支。
 sealed class ParseResult<T> {
   const ParseResult();
@@ -47,7 +47,7 @@ String fixJson(String text) =>
 
 /// 抠 JSON → 解析 → 校验。[schema] 返回 `null` 表示「字段校验失败」。
 ///
-/// [schema] 的形状对应 zod 的 `z.ZodType<T>`：`P2Output` 传 [P2OutputSchema.tryParse]。
+/// [schema] 是一个「JSON → T?」的取值器：`P2Output` 传 [P2OutputSchema.tryParse]。
 ParseResult<T> parseModelJson<T>(String raw, T? Function(Object?) schema) {
   final extracted = extractJson(raw);
   if (extracted == null) return ParseFailure<T>('输出中未找到 JSON 对象');

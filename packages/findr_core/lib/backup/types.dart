@@ -1,23 +1,22 @@
-/// 备份（`.findrpack`）的容器与端口定义 —— 逐字对应
-/// `packages/core/src/backup/types.ts`（120 行）。
+/// 备份（`.findrpack`）的容器与端口定义。
 ///
 /// 两条硬约束来自《技术设计.md》第七节，改动前先读那一节：
 ///   1. **settings 走白名单** —— 导出侧只放 `settings_public`（见 manifest.dart），
 ///      不是「过滤掉看起来像密钥的」，而是「只放白名单里的」，**方向反过来才对**。
-///   2. **core 不直接依赖任何文件实现** —— RN 侧与 node 测试侧各自注入（见 [MediaStorePort]）。
+///   2. **core 不直接依赖任何文件实现** —— 由平台侧注入（见 [MediaStorePort]）。
 ///
-/// ⚠️ **API Key 可随包带走（2026-09-23 用户决定，属需求变更）**：见 [BackupManifest.apiKeys]。
+/// ⚠️ **API Key 可随包带走**：见 [BackupManifest.apiKeys]。
 /// 它**不在** settings 白名单里（白名单那条没动），而是单独一个可选字段，
 /// 由平台层在导出时显式传入 —— 这样「带不带」的开关留在界面上，core 不做默认。
 ///
-/// ⚠️ **当前不做加密**（2026-09-20 决策）：备份文件是明文 ZIP，谁拿到谁能读。
+/// ⚠️ **不做加密**：备份文件是明文 ZIP，谁拿到谁能读。
 /// 这里已经没有 CryptoPort 了；加密回归时按 `format.dart` 里写的那套（提 [backupFormatVersion]）
 /// 再加端口。**别提前把端口加回来放着** —— 没有调用方的接口只会腐烂。
 ///
 /// Dart 侧的两处对应关系：
-/// - TS 的 `MaybePromise<T>` ⇒ Dart 用 SDK 自带的 `FutureOr<T>`（`dart:async`），语义完全相同；
-/// - TS 的**可选方法** `exists?` ⇒ Dart 接口不支持可选成员，改成**可空的函数类型 getter**
-///   （为 null 即「未实现」）。调用点的判断方式与 TS 一模一样。
+/// - 「可能同步、可能异步」的返回用 SDK 自带的 `FutureOr<T>`（`dart:async`）表达；
+/// - 接口不支持可选方法 ⇒ `exists` 用**可空的函数类型 getter** 表达，
+///   为 null 即「未实现」。
 library;
 
 import 'dart:async';
@@ -143,8 +142,8 @@ final class BackupAlias {
 
   final String id;
 
-  /// TS 是 `'entity' | 'location'` 的字面量 union。
-  /// 这里保留 [String] 而不是 enum：`aliases.kind` 由 SQL 的 CHECK 约束把关，
+  /// 取值只有 `'entity'` / `'location'` 两种，但这里保留 [String] 而不是 enum：
+  /// `aliases.kind` 由 SQL 的 CHECK 约束把关，
   /// 而导入是要**原样还原**外来包里的值（真出现第三种，先照搬再用 SQL 报错，比静默丢弃好）。
   final String kind;
 
@@ -161,7 +160,7 @@ final class BackupAlias {
   };
 }
 
-/// 备份清单。JSON 键名与 TS 逐字段对齐 —— **这是跨版本/跨端互认的契约，改不得**。
+/// 备份清单。JSON 键名是**对外契约** —— 跨版本/跨端互认，改不得。
 final class BackupManifest {
   const BackupManifest({
     required this.format,
@@ -190,7 +189,7 @@ final class BackupManifest {
     aliases: _listOf(json['aliases'], BackupAlias.fromJson),
     settings: (json['settings'] as Map?)?.cast<String, Object?>() ?? <String, Object?>{},
     // ⚠️ **null 与空数组在这里语义不同**：老包可能压根没有 `media` 键
-    // （TS 的 `manifest.media?.length ?? mediaEntries.length` 正是靠这个区分），
+    // （「清单里有 media 字段」与「一个媒体都没有」正是靠这个区分），
     // 所以「键不存在」要保留成 null，不能塌成 `[]`。
     media: json.containsKey('media') ? _listOf(json['media'], MediaEntryMeta.fromJson) : null,
     // 老包没有这个键 ⇒ null（「没带 Key」），与「带了但为空」不是一回事。
@@ -219,7 +218,7 @@ final class BackupManifest {
 
   /// 随包带走的 API Key（**明文**，键名与 `ApiKeySlot.storageKey` 对齐）。
   ///
-  /// ⚠️ **2026-09-23 用户决定：换机后重填 Key 太麻烦，所以备份默认带走。**
+  /// ⚠️ **导出时默认带走 Key**（换机后不用重填）。
   /// 代价写在界面上（导出确认框 + 备份页红条）：**包是不加密的，带 Key 等于
   /// 把密钥明文交给任何拿到这个文件的人**。别在别处悄悄默认带上。
   ///
@@ -227,9 +226,9 @@ final class BackupManifest {
   /// core **不自己读 Key**（它在 Keystore 里，只有平台层够得着），只负责搬运。
   final Map<String, String>? apiKeys;
 
-  /// 回填媒体索引（`pack.ts` 写完文件后才能算出 size/crc32）。
+  /// 回填媒体索引（`pack.dart` 写完文件后才能算出 size/crc32）。
   ///
-  /// TS 那边是 `manifest.media = mediaMeta` 直接改字段；Dart 的 [BackupManifest] 不可变，
+  /// [BackupManifest] 不可变，改字段得走 `copyWith`，
   /// 所以换成「造一份新的」——语义相同，调用点更短。
   BackupManifest withMediaList(List<MediaEntryMeta> mediaList) => BackupManifest(
     format: format,
@@ -267,7 +266,7 @@ final class BackupManifest {
     'formatVersion': formatVersion,
     'schemaVersion': schemaVersion,
     'exportedAt': exportedAt,
-    // TS 那边 `appVersion` 为 undefined 时 `JSON.stringify` **直接省略这个键**。
+    // `appVersion` 为空时**直接省略这个键**（而不是写 null）。
     // Dart 的 `jsonEncode` 会把 null 写成 `"appVersion": null` ⇒ 显式省略，保持形状一致。
     if (appVersion != null) 'appVersion': appVersion,
     'cards': cards.map(cardToJson).toList(),
@@ -284,8 +283,7 @@ final class BackupManifest {
 
 /// 卡片 → manifest 里的 JSON 对象。
 ///
-/// TS 的 `MemoryCard` 就是普通对象，`JSON.stringify` 直接产出这些 camelCase 键 ⇒
-/// 这里逐字段列出，**键名/顺序都与 TS 的对象字面量一致**（顺序不影响解析，但便于比对）。
+/// 显式逐字段列出而不是走反射：**键名固定为 camelCase**（顺序不影响解析，但固定下来便于比对）。
 Map<String, Object?> cardToJson(MemoryCard c) => <String, Object?>{
   'id': c.id,
   'status': c.status.wire,
@@ -361,7 +359,7 @@ List<StepItem>? _steps(Object? raw) {
       .toList();
 }
 
-/// 导出结果报告。字段名与 TS 的 `ExportReport` 一致（界面直接拿来显示）。
+/// 导出结果报告（界面直接拿来显示）。
 final class ExportReport {
   const ExportReport({
     required this.cards,

@@ -1,4 +1,4 @@
-/// OpenAI 兼容协议适配器 —— 逐字对应 `packages/core/src/providers/openai-compat.ts`（195 行）。
+/// OpenAI 兼容协议适配器。
 ///
 /// 覆盖 OpenAI、DeepSeek、通义、火山、GLM、硅基流动等一切兼容端点。
 /// 图片走 `image_url` 的 data URI。**不发音频**：chat 的 `input_audio` 内容块只认 wav/mp3
@@ -44,7 +44,7 @@ final class OpenAICompatAdapter implements LlmProviderAdapter {
   /// [client] 传 null 就走真实网络；测试传假 client（见 `test/providers/`）。
   ///
   /// `timeoutMs` 写成 `int?` + 在初始化列表里 `?? 默认值`（而不是形参默认值），
-  /// 是为了与 TS 的 `opts.timeoutMs ?? 120_000` 语义**完全一致** —— 显式传 null 也走默认。
+  /// 是为了让「显式传 null」也落到默认值上，而不是被当成 0。
   OpenAICompatAdapter({http.Client? client, int? timeoutMs})
     : _client = client ?? http.Client(),
       _timeoutMs = timeoutMs ?? _defaultChatTimeoutMs;
@@ -141,7 +141,7 @@ String _filenameFor(TranscribeRequest req) {
 }
 
 /// mime → `MediaType`。解析不了就退回 `application/octet-stream` ——
-/// TS 那边只是给 Blob 挂个 `type`，永远不抛；Dart 的 `MediaType.parse` 会抛，所以必须兜住。
+/// `MediaType.parse` 遇到畸形值会抛（不像给对象挂个字符串那样无所谓），所以必须兜住。
 MediaType _mediaType(String mime) {
   try {
     return MediaType.parse(mime);

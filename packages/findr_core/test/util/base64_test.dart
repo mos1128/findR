@@ -3,11 +3,10 @@ import 'dart:convert';
 import 'package:findr_core/findr_core.dart';
 import 'package:test/test.dart';
 
-/// 对应 TS `providers.test.ts` 的第一条用例。
+/// `util/base64.dart` 的验收网（理由见该文件头）。
 ///
-/// 这一份是**逐字搬的纯算法**（理由见 `lib/util/base64.dart` 的文件头），
-/// 所以测试也要逐条对齐 —— 尤其是**宽容解码**那条，它是我们刻意不换成
-/// `base64Decode` 的唯一原因。
+/// 这一份是**手写的纯算法**，所以测试要逐条钉住行为 ——
+/// 尤其是**宽容解码**那条，它是我们刻意不换成 `base64Decode` 的唯一原因。
 void main() {
   test('编解码往返（含非 3 字节倍数）', () {
     for (final len in [0, 1, 2, 3, 4, 61, 256]) {

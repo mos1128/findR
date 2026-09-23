@@ -10,7 +10,7 @@ import 'package:test/test.dart';
 
 import '../helpers/fake_http.dart';
 
-/// 与 TS `providers.test.ts` 顶部的 `CFG` / `ANTHROPIC_CFG` 同源。
+/// 测试用的 Provider 配置（假地址，全部请求都会被假 client 接住）。
 const ProviderConfig testCfg = ProviderConfig(
   providerType: ProviderType.openaiCompat,
   baseUrl: 'http://192.168.1.9:7788',
@@ -284,7 +284,7 @@ void main() {
       );
     });
 
-    test('超时能生效（对应 TS 的 AbortController）', () async {
+    test('超时能生效', () async {
       final fake = FakeHttpClient([
         const FakeResponse(
           json: {
@@ -674,8 +674,8 @@ void main() {
     });
 
     test('正文为空但被接受了 ⇒ unknown，绝不是「不支持」', () async {
-      // 第十二版的教训：DeepSeek thinking 默认开启，max_tokens 给不够时正文就是空的，
-      // 但端点完全支持这种输入。旧代码把它说成「图片不支持」，用户白折腾了一晚上。
+      // 教训：DeepSeek thinking 默认开启，max_tokens 给不够时正文就是空的，
+      // 但端点完全支持这种输入。说成「图片不支持」会让用户白折腾一晚上。
       final fake = FakeHttpClient([
         const FakeResponse(
           json: {

@@ -1,4 +1,4 @@
-/// 提示词渲染 —— 逐字对应 `packages/core/src/prompts/render.ts`（138 行）。
+/// 提示词渲染。
 ///
 /// 这一层只做「往模板里注入变量」和「拼装 system / user 消息」，
 /// 语义（该说什么、不该说什么）全在 `templates.dart` 的字符串里。
@@ -7,7 +7,7 @@ library;
 import '../types.dart';
 import 'templates.dart';
 
-/// TS 的 `textOnly?: 'off' | 'unsupported'`。改成 enum 只为编译期少一次拼写事故。
+/// 用 enum 表达 `textOnly`（`off` / `unsupported`），只为编译期少一次拼写事故。
 enum TextOnlyMode {
   /// 用户选了「不分析图片」，图片仅作附件保存。
   off,
@@ -18,8 +18,8 @@ enum TextOnlyMode {
 
 /// 把 `{{key}}` 换成 [vars] 里的值，**找不到就换成空串**（不是留着占位符）。
 ///
-/// ⚠️ `\w` 在 JS 与 Dart 默认都是 ASCII 的 `[A-Za-z0-9_]`，两边一致；
-/// 占位符名里别用中文，否则两边行为会有分歧。
+/// ⚠️ `\w` 默认是 ASCII 的 `[A-Za-z0-9_]`；
+/// 占位符名里别用中文，否则会匹配不上（模板里会原样留着 `{{中文}}`）。
 String render(String template, Map<String, String> vars) =>
     template.replaceAllMapped(RegExp(r'\{\{(\w+)\}\}'), (m) => vars[m.group(1)!] ?? '');
 
@@ -50,7 +50,7 @@ String describeCardFields(MemoryCard card) {
     if (value != null && value.isNotEmpty) lines.add('- $label：$value');
   }
 
-  // TS 那一行是 `push('分类', card.categoryId ? undefined : undefined)` —— **恒为 no-op**，
+  // 这里不推「分类」那一行 —— 它**恒为 no-op**，
   // 两个分支都算不出值（注释写着「分类名由调用方按 id 解析，这里不注入」）。
   // 这里照实不注入，并把那行的意图留在这条注释里。
   push('实体名', card.entity);

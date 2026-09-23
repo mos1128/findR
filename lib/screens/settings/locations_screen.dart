@@ -1,8 +1,8 @@
-/// 位置树 —— 对应 RN 的 `app/settings/locations.tsx`。
+/// 位置树。
 ///
 /// 位置是**检索质量的命脉**：卡片的位置串（`path_names`）是冗余列，
 /// 按位置搜索靠的就是它。所以改名之后必须跟一次 `refreshPathNames`，
-/// 否则**按旧名字搜不到、按新名字也搜不到**（M3 的验收项）。
+/// 否则**按旧名字搜不到、按新名字也搜不到**。
 library;
 
 import 'package:findr_core/findr_core.dart';

@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 
 import '../helpers.dart';
 
-/// L2（答案组织）—— 对应 `packages/core/test/answer.test.ts`。
+/// L2（答案组织）的验收网。
 ///
 /// 这一层的硬约束是**只送命中片段、永不发全库**（需求 5.3）。
 /// 所以这里的用例大多在盯同一件事：**发出去的那段文本里有什么、没什么**。

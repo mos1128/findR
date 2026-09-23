@@ -1,10 +1,10 @@
-/// 共享 SSE 读取 —— 逐字对应 `packages/core/src/providers/sse.ts`（49 行）。
+/// 共享 SSE 读取。
 ///
 /// 网关常强制流式返回，两种协议的差异只在「从事件载荷里取哪段文本」。
 /// Anthropic 与 OpenAI 的 delta 结构完全不同，所以抽的是**读取骨架**而不是解析结果。
 ///
 /// Dart 侧的两处对应写法：
-/// - TS 的 `TextDecoder.decode(value, {stream:true})`（跨 chunk 保留半个多字节字符）
+/// - 流式解码（跨 chunk 保留半个多字节字符）
 ///   ⇒ Dart 用 `body.transform(Utf8Decoder(...))`，同样是**有状态的流式解码**；
 ///   注意**不能**用 `utf8.decode(chunk)` 逐块解 —— 一个中文字被切在 chunk 边界就会解成乱码。
 /// - `allowMalformed: true` 对应 `new TextDecoder()` 的默认行为（非法序列替换而非抛错）。

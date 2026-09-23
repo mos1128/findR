@@ -1,23 +1,23 @@
-/// 模型 Provider 的类型契约 —— 逐字对应 `packages/core/src/providers/types.ts`（84 行）。
+/// 模型 Provider 的类型契约。
 ///
-/// ⚠️ **本文件只立类型与契约，没有 HTTP 实现。** 实现（`openai-compat.ts` / `anthropic.ts` /
-/// `capabilities.ts` / `factory.ts` / `sse.ts`）留到译 `providers/` 那一块时补。
-/// 之所以现在就把它立起来：`search/` 的 service / advise / answer 都要拿
+/// ⚠️ **本文件只立类型与契约，HTTP 实现在同目录的其它文件里**
+/// （`openai_compat.dart` / `anthropic.dart` / `capabilities.dart` / `factory.dart` / `sse.dart`）。
+/// 之所以单独分出这一层：`search/` 的 service / advise / answer 都要拿
 /// [LlmProviderAdapter] 当参数类型，测试也要靠 `FakeLlmAdapter` 驱动。
 ///
-/// 两处**有意偏离 TS**（都写在下面对应位置）：
+/// 两处**有意保留的做法**（都写在下面对应位置）：
 ///
-/// 1. TS 的 union 类型（`Part` / `AudioRef`）改用 sealed class —— Dart 的惯用法，
-///    且下游 switch 时是穷尽检查的；
-/// 2. TS 的 `ChatRequest.signal?: AbortSignal` **暂不设对应字段** —— Dart 没有完全对等的
-///    标准原语（见 [ChatRequest] 的注释），译 `providers/` 实现时连同超时一起定。
+/// 1. `Part` / `AudioRef` 这类联合类型用 sealed class 表达，好让 `switch`
+///    在编译期做穷尽检查；
+/// 2. `ChatRequest` **暂不设取消信号字段** —— 取消与超时的惯用做法和插件层耦合，
+///    现在凭空定一个类型只是猜（见 [ChatRequest] 的注释）。
 library;
 
 /// 送给主 LLM 的输入块。**刻意只有文本与图片** —— 语音不走这条路。
 ///
-/// 需求 3.2 原本还有一条「模式 1 · LLM 原生音频」（把音频塞进 chat 的 `input_audio`
-/// 内容块让模型自己听），已于 2026-09-19 废止：格式各家不一、拿不到热词、
-/// 成本与延迟都明显更高，且从 1.0 起就没有任何代码走过它。
+/// 需求 3.2 的「模式 1 · LLM 原生音频」（把音频塞进 chat 的 `input_audio`
+/// 内容块让模型自己听）**不做**：格式各家不一、拿不到热词、
+/// 成本与延迟都明显更高。
 /// 转写一律走 [AsrProviderAdapter.transcribe]（`/audio/transcriptions`）。
 sealed class Part {
   const Part();
@@ -40,10 +40,10 @@ final class ImagePart extends Part {
 
 /// 一次 chat 调用的输入。
 ///
-/// ⚠️ **TS 有 `signal?: AbortSignal`，这里没有对应字段** —— 它是用来中途取消请求的
-/// （用户退出页面、重试时掐掉上一发）。Dart 侧取消 + 超时的惯用做法和插件层耦合
+/// ⚠️ **这里没有取消信号字段** —— 中途取消（用户退出页面、重试时掐掉上一发）
+/// 需要和超时配合，而 Dart 侧这两件事的惯用做法和插件层耦合
 /// （`HttpClient` 的 `close(force:)`、或 `Future.timeout`），现在凭空定一个类型只是猜。
-/// 译 `providers/` 的实现时再连同 [timeoutMs] 一起定。
+/// 真需要时再连同 [timeoutMs] 一起定。
 final class ChatRequest {
   const ChatRequest({
     required this.system,
@@ -87,7 +87,7 @@ final class ChatUsage {
 
 /// 带 HTTP 状态码的调用失败。调用方据此区分「认证 / 模型名 / 限流」与「端点不接受这种输入」。
 ///
-/// TS 那边是「给 `Error` 实例挂两个属性」（`httpStatusError()` 工厂），Dart 里换成
+/// 不是「给 `Error` 实例挂两个属性」，而是换成
 /// 一个真的异常类型 —— 判类型比判 `err.name === 'HttpStatusError'` 可靠。
 final class HttpStatusException implements Exception {
   HttpStatusException(this.prefix, this.status, this.body)
@@ -104,11 +104,11 @@ final class HttpStatusException implements Exception {
   String toString() => message;
 }
 
-/// 构造 [HttpStatusException] —— 保留 TS 的同名工厂形状，调用点不用改写法。
+/// 构造 [HttpStatusException] 的工厂。
 HttpStatusException httpStatusError(String prefix, int status, String body) =>
     HttpStatusException(prefix, status, body);
 
-/// TS 的 `body.slice(0, 300)`。**按 UTF-16 码元截断**，与 JS 同口径。
+/// `slice(0, 300)` 的等价物：**按 UTF-16 码元截断**。
 String _clip(String value, int max) => value.length > max ? value.substring(0, max) : value;
 
 /// 音频引用。走原生文件直传，m4a 不进内存；
@@ -163,7 +163,7 @@ final class TranscribeRequest {
   final int? timeoutMs;
 }
 
-/// 转写结果。TS 侧是匿名结构 `{ text: string }`。
+/// 转写结果。
 final class TranscribeResult {
   const TranscribeResult(this.text);
 
@@ -190,7 +190,7 @@ enum ProviderType {
 
   /// 反解，认不出来就用 [fallback]。
   ///
-  /// 给「读设置」用：TS 那边 `providerType` 是 union 类型、由类型系统保证合规，
+  /// 给「读设置」用：`providerType` 得在运行期验一遍，
   /// Dart 读的是库里的 JSON 字符串，所以必须有个运行时兜底。
   static ProviderType fromWireOr(Object? value, ProviderType fallback) {
     for (final type in values) {
@@ -202,9 +202,9 @@ enum ProviderType {
 
 /// 主模型 / 转写的调用配置。
 ///
-/// 认证头由适配器自动决定，**不再是可配项**（第十八版删掉了 `authStyle`）：
+/// 认证头由适配器自动决定，**不是可配项**（早先的 `authStyle` 已删）：
 /// openai-compat 恒发 `Authorization: Bearer`；anthropic 默认也发 Bearer，
-/// 仅在 401/403 时改用 legacy 的 `x-api-key` 重试一次。见 `anthropic.ts` 的类注释。
+/// 仅在 401/403 时改用 legacy 的 `x-api-key` 重试一次。见 `anthropic.dart` 的类注释。
 final class ProviderConfig {
   const ProviderConfig({
     required this.providerType,
@@ -221,7 +221,7 @@ final class ProviderConfig {
 
   final String model;
 
-  /// 只进系统安全存储，永不进备份包。
+  /// 只进系统安全存储 —— DB 的 `settings` 里**没有**它。
   final String? apiKey;
 
   /// 部分网关按 User-Agent 路由，需要伪装成已知客户端（如 `claude-cli/…`）。

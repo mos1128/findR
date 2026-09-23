@@ -1,4 +1,4 @@
-/// L2 答案组织 —— 逐字对应 `packages/core/src/search/answer.ts`（92 行）。
+/// L2 答案组织。
 ///
 /// 把 L1 命中的 top-N 条目交给主模型组织成答案卡片。
 ///
@@ -53,7 +53,7 @@ String _clip(String? value, int max) {
   return text.length > max ? '${text.substring(0, max)}…' : text;
 }
 
-/// 取前 [n] 个码元 —— 对应 JS 的 `String.slice(0, n)`：**短于 [n] 时原样返回，不抛**。
+/// 取前 [n] 个码元 —— **短于 [n] 时原样返回，不抛**。
 String _head(String value, int n) => value.length > n ? value.substring(0, n) : value;
 
 bool _has(String? value) => value != null && value.isNotEmpty;
@@ -70,7 +70,7 @@ String formatSnippets(List<MemoryCard> cards, [int limit = l2MaxSnippets]) {
     if (_has(card.entity)) lines.add('实体：${card.entity}');
     if (_has(card.desc)) lines.add('描述：${_clip(card.desc, _descChars)}');
     final transcript = _clip(card.transcript, _transcriptChars);
-    // ⚠️ 比的是**截断后的 transcript** 与**原始的 desc** —— 照 TS 原样，
+    // ⚠️ 比的是**截断后的 transcript** 与**原始的 desc**，两边不对称是有意的 ——
     // 别"顺手"改成两边都截断，那会改变重复判定的结果。
     if (transcript.isNotEmpty && transcript != card.desc) {
       lines.add('原文：$transcript');

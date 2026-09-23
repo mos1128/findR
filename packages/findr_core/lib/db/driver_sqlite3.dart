@@ -4,7 +4,7 @@ import 'driver.dart';
 
 /// `package:sqlite3` → core 的 `SqliteDriver` 实现。
 ///
-/// 与 TS 侧的 `apps/mobile/src/platform/db.ts`（op-sqlite 适配）是同源的取舍：
+/// 取舍与驱动接口那层保持一致：
 ///
 /// 1. **不持有预编译语句**：`prepare` 返回的是只带 SQL 的薄壳，每次调用走
 ///    `Database.execute` / `Database.select`（内部 prepare 后立刻释放）。
@@ -75,7 +75,6 @@ final class Sqlite3Driver implements SqliteDriver {
     }
   }
 
-  /// 与 RN 侧 `attachPragmas` 同源（`apps/mobile/src/platform/db.ts`）。
   ///
   /// 先 ROLLBACK：上次异常退出可能留下未闭合事务，那会让后续 `BEGIN` 直接失败。
   void attachPragmas() {

@@ -1,13 +1,13 @@
-/// 备份的「文件那一半」—— 对应 RN 的 `apps/mobile/src/platform/backup.ts`。
+/// 备份的「文件那一半」。
 ///
 /// core 只负责「字节进字节出」（`backup/pack.dart`），落在哪个目录、怎么递给用户，
 /// 是平台层的事。全库媒体只在两端各读一遍，中间不复制 —— 导出峰值内存 ≈ 整包 + 单文件。
 ///
-/// ⚠️ **包里没有任何加密**（2026-09-20 决策，见 core 的 `backup/format.dart`）：
+/// ⚠️ **包里没有任何加密**（见 core 的 `backup/format.dart`）：
 /// 它就是一层壳 + 标准 ZIP，拿到文件的人直接就能读到全部记忆。
 /// 所以界面**必须**明说不加密（红条 + 导出前确认框），且只能往用户自己信得过的地方递。
 ///
-/// ⚠️ **API Key 可以随包带走**（2026-09-23 用户决定）。Key 只有平台层够得着
+/// ⚠️ **API Key 可以随包带走**（导出时界面上有开关）。Key 只有平台层够得着
 /// （在 Keystore 里，见 `secure.dart`），所以「读出来塞进包 / 取回来写回去」都在这里：
 /// 这是**唯一**该碰 Key 的一层，界面只决定带不带，不自己读写安全存储。
 library;
@@ -137,8 +137,8 @@ Future<ExportOutcome> exportToFile(
 
 /// 打开系统分享面板。用户在这里可以「发送到微信 / 保存到云盘 / 存到文件」。
 ///
-/// 不提供 RN 那边 `canShare()` 那类探测：`share_plus` 没有等价的可用性查询，
-/// 而 Android/iOS 上它恒可用。真失败就让异常冒到界面去 —— **报一句真话比静默禁用按钮好**。
+/// 不做可用性预探测：`share_plus` 没有等价的查询接口，而 Android/iOS 上它恒可用。
+/// 真失败就让异常冒到界面去 —— **报一句真话比静默禁用按钮好**。
 Future<void> shareBackup(String path, String fileName) async {
   await SharePlus.instance.share(
     ShareParams(

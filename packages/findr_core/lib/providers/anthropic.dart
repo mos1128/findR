@@ -1,6 +1,6 @@
-/// Anthropic Messages 协议适配器 —— 逐字对应 `packages/core/src/providers/anthropic.ts`（122 行）。
+/// Anthropic Messages 协议适配器。
 ///
-/// **认证头自动适配，用户不需要选**（第十八版起）：
+/// **认证头自动适配，用户不需要选**：
 /// - 默认发 `Authorization: Bearer` —— 官方文档现在的首选写法，网关也认这个；
 /// - **只有**收到 401 / 403（HTTP 层明确说「凭证不被接受」）才改用 `x-api-key` 重试一次。
 ///   `x-api-key` 是官方标注的 legacy 兜底、仍受支持；留这一步只为兼容只认它的老端点。
@@ -74,7 +74,7 @@ final class AnthropicAdapter implements LlmProviderAdapter {
     });
 
     // ⚠️ 注意 `temperature` 与 OpenAI 那边不同：这里是**原样透传**（可为 null），
-    // 那边有 `?? 0.1` 的兜底。TS 就是这个差异，别顺手"对齐"掉。
+    // 那边有 `?? 0.1` 的兜底。这个差异是有意的，别顺手"对齐"掉。
     Future<http.StreamedResponse> send(Map<String, String> auth) {
       final request = http.Request('POST', Uri.parse(url))
         ..headers.addAll({...baseHeaders, ...auth})
@@ -84,7 +84,7 @@ final class AnthropicAdapter implements LlmProviderAdapter {
 
     final timeoutMs = req.timeoutMs ?? _timeoutMs;
 
-    // 整个流程（含可能的第二次发送、含读体）共用一个超时 —— 与 TS 的单个 AbortController 同口径
+    // 整个流程（含可能的第二次发送、含读体）共用一个超时
     return withTimeout(timeoutMs, () async {
       var res = await send({'authorization': 'Bearer ${cfg.apiKey ?? ''}'});
 
