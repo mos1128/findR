@@ -360,7 +360,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                   const SizedBox(height: Spacing.two),
                   FindrButton(
                     title: '开始导入',
-                    variant: FindrButtonVariant.danger,
+                    variant: FindrButtonVariant.primary,
                     loading: _busy,
                     onPressed: _import,
                   ),

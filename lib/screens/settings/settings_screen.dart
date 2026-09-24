@@ -209,14 +209,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ListRow(
                   title: '主模型 (LLM)',
                   subtitle: llmName,
-                  onTap: () => _push(const ProviderSettingsScreen()),
+                  onTap: () => _push(const ProviderSettingsScreen(initialSlot: ProviderSlot.llm)),
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
                 FindrDivider(),
                 ListRow(
                   title: '语音识别 (ASR)',
                   subtitle: asrName,
-                  onTap: () => _push(const ProviderSettingsScreen()),
+                  onTap: () => _push(const ProviderSettingsScreen(initialSlot: ProviderSlot.asr)),
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
               ],

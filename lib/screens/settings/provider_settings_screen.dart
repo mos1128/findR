@@ -23,17 +23,22 @@ import '../../platform/secure.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
 
-enum _Slot { llm, asr }
+enum ProviderSlot { llm, asr }
 
 class ProviderSettingsScreen extends ConsumerStatefulWidget {
-  const ProviderSettingsScreen({super.key});
+  const ProviderSettingsScreen({
+    super.key,
+    this.initialSlot = ProviderSlot.llm,
+  });
+
+  final ProviderSlot initialSlot;
 
   @override
   ConsumerState<ProviderSettingsScreen> createState() => _ProviderSettingsScreenState();
 }
 
 class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen> {
-  _Slot _slot = _Slot.llm;
+  late ProviderSlot _slot;
   ProviderType _providerType = ProviderType.anthropic;
 
   final _baseUrl = TextEditingController();
@@ -45,6 +50,12 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
   String? _probeText;
   bool _loaded = false;
   bool _obscureKey = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _slot = widget.initialSlot;
+  }
 
   @override
   void dispose() {
@@ -62,12 +73,18 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
   void _fillOnce(RuntimeState rt) {
     if (_loaded) return;
     _loaded = true;
-    final llm = rt.llm;
-    _providerType = llm?.providerType ?? ProviderType.anthropic;
-    _baseUrl.text = llm?.baseUrl ?? rt.asr?.baseUrl ?? '';
-    _model.text = llm?.model ?? rt.asr?.model ?? '';
-    _userAgent.text = llm?.userAgent ?? '';
-    _apiKey.text = rt.llmKey ?? '';
+    if (_slot == ProviderSlot.asr) {
+      _baseUrl.text = rt.asr?.baseUrl ?? '';
+      _model.text = rt.asr?.model ?? '';
+      _apiKey.text = rt.asrKey ?? '';
+    } else {
+      final llm = rt.llm;
+      _providerType = llm?.providerType ?? ProviderType.anthropic;
+      _baseUrl.text = llm?.baseUrl ?? '';
+      _model.text = llm?.model ?? '';
+      _userAgent.text = llm?.userAgent ?? '';
+      _apiKey.text = rt.llmKey ?? '';
+    }
   }
 
   RuntimeState get _rt {
@@ -76,16 +93,17 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     return v;
   }
 
-  void _switchSlot(_Slot next) {
+  void _switchSlot(ProviderSlot next) {
     if (next == _slot) return;
     final rt = _rt;
     _slot = next;
     // 切槽位时把字段换成那个槽位的当前值 —— 两个槽位的地址/模型名通常完全不同，
     // 留着上一个框里的内容会让人误以为「没保存上」
-    if (next == _Slot.llm) {
+    if (next == ProviderSlot.llm) {
       _baseUrl.text = rt.llm?.baseUrl ?? '';
       _model.text = rt.llm?.model ?? '';
       _providerType = rt.llm?.providerType ?? ProviderType.anthropic;
+      _userAgent.text = rt.llm?.userAgent ?? '';
       _apiKey.text = rt.llmKey ?? '';
     } else {
       _baseUrl.text = rt.asr?.baseUrl ?? '';
@@ -124,10 +142,10 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
       final rt = _rt;
       final key = _apiKey.text.trim();
       await ref.read(apiKeyStoreProvider).write(
-        _slot == _Slot.llm ? ApiKeySlot.llm : ApiKeySlot.asr,
+        _slot == ProviderSlot.llm ? ApiKeySlot.llm : ApiKeySlot.asr,
         key,
       );
-      if (_slot == _Slot.llm) {
+      if (_slot == ProviderSlot.llm) {
         writeLlmSettings(rt.driver, _buildLlm(rt));
       } else {
         writeAsrSettings(rt.driver, _buildAsr());
@@ -150,7 +168,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     try {
       final rt = _rt;
       final key = _apiKey.text.trim().isNotEmpty ? _apiKey.text.trim() : null;
-      if (_slot == _Slot.llm) {
+      if (_slot == ProviderSlot.llm) {
         final cfg = _buildLlm(rt, keepCaps: false);
         final adapter = makeLlmAdapter(cfg);
         final stored = key ?? rt.llmKey;
@@ -221,10 +239,10 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     }
     _fillOnce(rt);
     final c = FindrColors.of(context);
-    final isLlm = _slot == _Slot.llm;
+    final isLlm = _slot == ProviderSlot.llm;
 
     return Scaffold(
-      appBar: FindrTopBar(title: '模型配置'),
+      appBar: FindrTopBar(title: isLlm ? '主模型配置' : '语音识别配置'),
       body: ScreenBody.column(
         padding: const EdgeInsets.fromLTRB(
           Spacing.four,
@@ -243,13 +261,13 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                     FindrChip(
                       label: '主语言与多模态模型',
                       active: isLlm,
-                      onPressed: () => _switchSlot(_Slot.llm),
+                      onPressed: () => _switchSlot(ProviderSlot.llm),
                     ),
                     const SizedBox(width: Spacing.two),
                     FindrChip(
                       label: '语音识别 (ASR)',
                       active: !isLlm,
-                      onPressed: () => _switchSlot(_Slot.asr),
+                      onPressed: () => _switchSlot(ProviderSlot.asr),
                     ),
                   ],
                 ),
