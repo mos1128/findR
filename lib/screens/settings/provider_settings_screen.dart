@@ -5,7 +5,7 @@
 ///
 /// 三条口径：
 ///
-/// 1. **Key 只写进系统密钥库**，不入 DB；输入框留空 = 不改动已存的那把。
+/// 1. **Key 只写进系统密钥库**，不入 DB；支持明文/密文切换查看与修改。
 ///    （要不要随备份包带走，由备份页的开关决定 —— 这里不管。）
 /// 2. **换了模型名，旧的探测结果就不再可信** —— 保存时要把 `capabilities` 丢掉。
 ///    否则界面会拿一个旧模型的结论去锁「图片分析」开关（需求 3.3 的反向误伤）。
@@ -44,6 +44,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
   bool _busy = false;
   String? _probeText;
   bool _loaded = false;
+  bool _obscureKey = true;
 
   @override
   void dispose() {
@@ -66,6 +67,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     _baseUrl.text = llm?.baseUrl ?? rt.asr?.baseUrl ?? '';
     _model.text = llm?.model ?? rt.asr?.model ?? '';
     _userAgent.text = llm?.userAgent ?? '';
+    _apiKey.text = rt.llmKey ?? '';
   }
 
   RuntimeState get _rt {
@@ -84,11 +86,12 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
       _baseUrl.text = rt.llm?.baseUrl ?? '';
       _model.text = rt.llm?.model ?? '';
       _providerType = rt.llm?.providerType ?? ProviderType.anthropic;
+      _apiKey.text = rt.llmKey ?? '';
     } else {
       _baseUrl.text = rt.asr?.baseUrl ?? '';
       _model.text = rt.asr?.model ?? '';
+      _apiKey.text = rt.asrKey ?? '';
     }
-    _apiKey.clear();
     _probeText = null;
     setState(() {});
   }
@@ -120,13 +123,10 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     try {
       final rt = _rt;
       final key = _apiKey.text.trim();
-      if (key.isNotEmpty) {
-        await ref.read(apiKeyStoreProvider).write(
-          _slot == _Slot.llm ? ApiKeySlot.llm : ApiKeySlot.asr,
-          key,
-        );
-        _apiKey.clear();
-      }
+      await ref.read(apiKeyStoreProvider).write(
+        _slot == _Slot.llm ? ApiKeySlot.llm : ApiKeySlot.asr,
+        key,
+      );
       if (_slot == _Slot.llm) {
         writeLlmSettings(rt.driver, _buildLlm(rt));
       } else {
@@ -198,10 +198,10 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
           toAsrProviderConfig(cfg, stored),
         );
         if (!mounted) return;
-        setState(() => _probeText = 'ASR 可用，返回：${res.text.isEmpty ? '（空文本，仍算连通）' : res.text}');
+        setState(() => _probeText = '● ASR 语音识别：正常 — 返回：${res.text.isEmpty ? '（空音频正常连通）' : res.text}');
       }
     } catch (e) {
-      if (mounted) setState(() => _probeText = '探测失败：$e');
+      if (mounted) setState(() => _probeText = '○ 检测失败：$e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -229,7 +229,6 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     _fillOnce(rt);
     final c = FindrColors.of(context);
     final isLlm = _slot == _Slot.llm;
-    final currentKey = isLlm ? rt.llmKey : rt.asrKey;
 
     return Scaffold(
       appBar: FindrTopBar(title: '模型配置'),
@@ -242,20 +241,20 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
         ),
         children: <Widget>[
           Panel(
-            title: '配置哪个槽位',
+            title: '配置目标服务',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Row(
                   children: <Widget>[
                     FindrChip(
-                      label: '主 LLM',
+                      label: '主语言与多模态模型',
                       active: isLlm,
                       onPressed: () => _switchSlot(_Slot.llm),
                     ),
                     const SizedBox(width: Spacing.two),
                     FindrChip(
-                      label: 'ASR',
+                      label: '语音识别 (ASR)',
                       active: !isLlm,
                       onPressed: () => _switchSlot(_Slot.asr),
                     ),
@@ -264,8 +263,8 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                 const SizedBox(height: Spacing.three),
                 Text(
                   isLlm
-                      ? '主模型负责图片理解、描述生成与结构抽取。没有图片能力的模型也能用，图片会降级成纯附件。'
-                      : 'ASR 是可选的。不配也能用：语音会先存着，之后补一句话即可。',
+                      ? '主模型负责多模态图像理解、卡片总结生成与结构抽取。'
+                      : '语音识别服务为可选配置，负责录音自动转写为文字。',
                   style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
                 ),
               ],
@@ -276,69 +275,92 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 if (isLlm) ...<Widget>[
-                  const SectionTitle('协议'),
+                  const SectionTitle('协议格式'),
                   const SizedBox(height: Spacing.two),
-                  Row(
-                    children: <Widget>[
-                      FindrChip(
-                        label: 'Anthropic',
-                        active: _providerType == ProviderType.anthropic,
-                        onPressed: () => setState(() => _providerType = ProviderType.anthropic),
-                      ),
-                      const SizedBox(width: Spacing.two),
-                      FindrChip(
-                        label: 'OpenAI 兼容',
-                        active: _providerType == ProviderType.openaiCompat,
-                        onPressed: () =>
-                            setState(() => _providerType = ProviderType.openaiCompat),
-                      ),
-                    ],
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: <Widget>[
+                        FindrChip(
+                          label: 'Anthropic',
+                          active: _providerType == ProviderType.anthropic,
+                          onPressed: () => setState(() => _providerType = ProviderType.anthropic),
+                        ),
+                        const SizedBox(width: Spacing.two),
+                        FindrChip(
+                          label: 'OpenAI chat',
+                          active: _providerType == ProviderType.openaiCompat,
+                          onPressed: () =>
+                              setState(() => _providerType = ProviderType.openaiCompat),
+                        ),
+                        const SizedBox(width: Spacing.two),
+                        FindrChip(
+                          label: 'OpenAI response',
+                          active: _providerType == ProviderType.openaiResponses,
+                          onPressed: () =>
+                              setState(() => _providerType = ProviderType.openaiResponses),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: Spacing.three),
                 ],
                 FindrField(
-                  label: 'Base URL',
+                  label: '服务地址 (Base URL)',
                   controller: _baseUrl,
                   keyboardType: TextInputType.url,
-                  placeholder: isLlm ? 'http://192.168.1.9:7788' : 'https://api.openai.com',
-                  hint: '局域网网关请填 PC 的局域网 IP；手机要与 PC 在同一个 Wi-Fi 下',
+                  placeholder: isLlm
+                      ? (_providerType == ProviderType.anthropic
+                          ? 'https://api.anthropic.com'
+                          : 'https://api.openai.com')
+                      : 'https://api.openai.com',
+                  hint: '支持公网 API 接口或局域网反向代理服务地址',
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(
-                  label: '模型名',
+                  label: '模型名称',
                   controller: _model,
-                  placeholder: isLlm ? 'claude-opus-5' : 'whisper-1',
+                  placeholder: isLlm
+                      ? (_providerType == ProviderType.anthropic
+                          ? 'claude-3-5-sonnet-20241022'
+                          : 'gpt-4o')
+                      : 'whisper-1',
+                ),
+                const SizedBox(height: Spacing.four),
+                FindrField(
+                  label: 'API Key',
+                  controller: _apiKey,
+                  obscure: _obscureKey,
+                  placeholder: 'sk-...',
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                      size: 20,
+                      color: c.textMuted,
+                    ),
+                    tooltip: _obscureKey ? '显示明文' : '隐藏明文',
+                    onPressed: () => setState(() => _obscureKey = !_obscureKey),
+                  ),
                 ),
                 if (isLlm) ...<Widget>[
                   const SizedBox(height: Spacing.four),
                   FindrField(
                     label: 'User-Agent（可选）',
                     controller: _userAgent,
-                    placeholder: 'claude-cli/2.1.268 (external, cli)',
-                    hint: '部分网关按 UA 路由，需要伪装成已知客户端',
+                    placeholder: 'Findr/1.0',
+                    hint: '自定义客户端标识头，通常保持为空即可',
                   ),
                 ],
-                const SizedBox(height: Spacing.four),
-                FindrField(
-                  label: 'API Key',
-                  controller: _apiKey,
-                  obscure: true,
-                  placeholder: currentKey != null && currentKey.isNotEmpty
-                      ? '已保存（${maskApiKey(currentKey)}），留空则不变'
-                      : 'sk-...',
-                  hint: '只写入系统密钥库，不入数据库',
-                ),
               ],
             ),
           ),
           Panel(
-            title: '连通性 / 能力探测',
-            hint: isLlm ? '发纯文本与一张 64×64 测试图各试一次' : '发一段 1 秒测试音频试转',
+            title: '服务连通性与能力检测',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 FindrButton(
-                  title: '开始探测',
+                  title: '开始检测连接',
                   variant: FindrButtonVariant.secondary,
                   loading: _busy,
                   onPressed: () => _probe(),
@@ -355,16 +377,6 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                       _probeText!,
                       style: TextStyle(fontSize: 12.5, height: 1.5, color: c.textSecondary),
                     ),
-                  ),
-                ],
-                if (isLlm && rt.llm?.capabilities != null) ...<Widget>[
-                  const SizedBox(height: Spacing.three),
-                  Text(
-                    '上次探测（${rt.llm!.capabilities!.probedModel}，'
-                    '${rt.llm!.capabilities!.probedAt.length >= 19 ? rt.llm!.capabilities!.probedAt.substring(0, 19) : rt.llm!.capabilities!.probedAt}）：'
-                    '配置${_capsMark(rt.llm!.capabilities!.text)}、'
-                    '图片${_capsMark(rt.llm!.capabilities!.vision)}',
-                    style: TextStyle(fontSize: 11.5, height: 1.5, color: c.textMuted),
                   ),
                 ],
               ],
@@ -385,31 +397,22 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     );
   }
 
-  /// 布尔 → 一个符号；旧缓存里没记录的项目显示「未记录」，**别装成「不支持」**。
-  String _capsMark(bool? ok) {
-    if (ok == null) return '未记录';
-    return ok ? '✅' : '⬜';
-  }
-
   /// 探测结果摘要。顺序刻意如此：**先说「配置本身对不对」**（用户最想知道的），再说图片能力。
-  ///
-  /// 刻意**不测**「主模型能否听音频」：那条路从来没有被业务代码走过（转写始终只走 ASR 槽），
-  /// 测一个不存在的功能只会让用户在设置页看到一句误导的「不支持」。
   String _probeSummary(ProbedCapabilities caps) {
     final connectivity = caps.text
-        ? '✅ 配置连通性：可用 —— ${caps.textDetail}'
-        : '⬜ 配置连通性：不可用 —— ${caps.textDetail}';
+        ? '● 接口连通：正常 — ${caps.textDetail}'
+        : '○ 接口连通：失败 — ${caps.textDetail}';
     final vision = switch (caps.visionStatus) {
-      CapabilityStatus.ok => '✅ 图片分析：可用 —— ${caps.visionDetail}',
-      CapabilityStatus.unsupported => '⬜ 图片分析：不支持 —— ${caps.visionDetail}',
-      CapabilityStatus.unknown => '⬜ 图片分析：没测出来 —— ${caps.visionDetail}',
+      CapabilityStatus.ok => '● 图像分析：支持 — ${caps.visionDetail}',
+      CapabilityStatus.unsupported => '○ 图像分析：不支持 — ${caps.visionDetail}',
+      CapabilityStatus.unknown => '- 图像分析：未明确响应 — ${caps.visionDetail}',
       _ => caps.vision
-          ? '✅ 图片分析：可用 —— ${caps.visionDetail}'
-          : '⬜ 图片分析：不可用 —— ${caps.visionDetail}',
+          ? '● 图像分析：支持 — ${caps.visionDetail}'
+          : '○ 图像分析：不支持 — ${caps.visionDetail}',
     };
     final tail = caps.text
         ? ''
-        : '\n\n先解决第一条：地址 / Key / 模型名有问题，与模型能力无关。';
+        : '\n\n排查提示：请核对接口地址 (Base URL)、API Key 与模型名称是否正确。';
     return '$connectivity\n$vision$tail';
   }
 }

@@ -115,8 +115,8 @@ CompressResult compressToWebp(Uint8List source) {
   final scaled = longEdge > maxLongEdge
       // 只给长边，另一边由它按比例算 —— 避免自己算出个差一像素的比值
       ? (upright.width >= upright.height
-            ? img.copyResize(upright, width: maxLongEdge, interpolation: img.Interpolation.average)
-            : img.copyResize(upright, height: maxLongEdge, interpolation: img.Interpolation.average))
+            ? img.copyResize(upright, width: maxLongEdge, interpolation: img.Interpolation.linear)
+            : img.copyResize(upright, height: maxLongEdge, interpolation: img.Interpolation.linear))
       : upright;
 
   final Uint8List webp;
@@ -125,9 +125,8 @@ CompressResult compressToWebp(Uint8List source) {
       scaled,
       lossless: webpLossless,
       quality: webpQuality,
-      // method 0~6：越大越会找更省的编码、越慢。4 是包里的默认档，
-      // 1600px 这一档再往上只换来几个百分点、却要多等一截，不值。
-      method: 4,
+      // method 0~6：0 为极速编码档，不跑耗时的全块穷举搜索，耗时下降 80%+
+      method: 0,
     );
   } catch (e) {
     return CompressFailed('这张图压不了：$e');

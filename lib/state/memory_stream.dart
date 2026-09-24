@@ -20,6 +20,7 @@ final class SearchView {
     required this.cards,
     this.advice,
     this.note,
+    this.usage,
   });
 
   /// 原话。重搜 / 组织答案都要用它。
@@ -33,11 +34,20 @@ final class SearchView {
   /// 「本次走的是哪条路」。空结果时必须说清，否则用户会把「字面没搜到」读成「卡片丢了」。
   final String? note;
 
-  SearchView copyWith({List<MemoryCard>? cards, AdviceResult? advice, String? note}) => SearchView(
+  /// 检索阶段消耗的模型 token 用量（P2 改写或整库裁决）。
+  final ChatUsage? usage;
+
+  SearchView copyWith({
+    List<MemoryCard>? cards,
+    AdviceResult? advice,
+    String? note,
+    ChatUsage? usage,
+  }) => SearchView(
     query: query,
     cards: cards ?? this.cards,
     advice: advice ?? this.advice,
-    note: note,
+    note: note ?? this.note,
+    usage: usage ?? this.usage,
   );
 }
 
@@ -221,6 +231,7 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
           cards: res.cards,
           advice: res.advice,
           note: note,
+          usage: res.usage,
         ),
       ));
     } catch (e) {

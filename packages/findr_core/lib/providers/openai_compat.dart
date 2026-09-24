@@ -114,6 +114,7 @@ final class OpenAICompatAdapter implements LlmProviderAdapter {
             : ChatUsage(
                 inputTokens: asInt(usage['prompt_tokens']),
                 outputTokens: asInt(usage['completion_tokens']),
+                totalTokens: asInt(usage['total_tokens']),
               ),
       );
     });

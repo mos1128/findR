@@ -47,30 +47,22 @@ String cardTitleOf(MemoryCard card) {
 
 String _clip(String s, int n) => s.length <= n ? s : s.substring(0, n);
 
-/// 副标题：`来源 · 分类 · 位置 · 摘要`。
-String cardSubtitleOf(MemoryCard card, String? categoryName, String? categoryEmoji) {
-  final parts = <String>[];
-  // 来源如果没在左侧封面展示，在副标题开头保留
-  parts.add('${sourceIcon[card.source] ?? '⌨️'} ${sourceLabel[card.source] ?? '文字'}');
-  if (categoryName != null && categoryName.isNotEmpty) {
-    parts.add('$categoryEmoji$categoryName'.trim());
-  }
-  // 如果位置已经在专门的药丸条里画了，副标题就不重复拼 pathNames，保持信息干练
+/// 副标题：专注展示卡片的内容描述或原文，不堆砌来源和分类。
+String cardSubtitleOf(MemoryCard card, [String? categoryName, String? categoryEmoji]) {
   final desc = card.desc;
   if (desc != null && desc.isNotEmpty && card.entity != null && card.entity!.isNotEmpty) {
-    parts.add(desc);
-  } else {
-    final transcript = card.transcript;
-    if (transcript != null &&
-        transcript.isNotEmpty &&
-        (card.entity != null || (desc != null && desc.isNotEmpty))) {
-      final title = cardTitleOf(card);
-      if (transcript != title && !title.startsWith(transcript) && !transcript.startsWith(title)) {
-        parts.add(transcript);
-      }
+    return desc;
+  }
+  final transcript = card.transcript;
+  if (transcript != null &&
+      transcript.isNotEmpty &&
+      (card.entity != null || (desc != null && desc.isNotEmpty))) {
+    final title = cardTitleOf(card);
+    if (transcript != title && !title.startsWith(transcript) && !transcript.startsWith(title)) {
+      return transcript;
     }
   }
-  return parts.join(' · ');
+  return desc ?? transcript ?? '';
 }
 
 /// 角标 → 色板。
@@ -123,6 +115,10 @@ class CardRow extends StatelessWidget {
     final hasImages = images != null && images.isNotEmpty;
     final cover = hasImages ? images.first : null;
     final path = card.pathNames;
+    final catName = categoryName;
+    final subtitle = cardSubtitleOf(card, catName, categoryEmoji);
+    final hasCategory = catName != null && catName.isNotEmpty;
+    final hasPath = path != null && path.isNotEmpty;
 
     return Material(
       color: c.surface,
@@ -179,48 +175,52 @@ class CardRow extends StatelessWidget {
                         ],
                       ],
                     ),
-                    const SizedBox(height: Spacing.two),
-                    Text(
-                      cardSubtitleOf(card, categoryName, categoryEmoji),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 13, height: 1.45, color: c.textSecondary),
-                    ),
-                    if (path != null && path.isNotEmpty) ...<Widget>[
+                    if (subtitle.isNotEmpty) ...<Widget>[
                       const SizedBox(height: Spacing.two),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: c.record.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(Radii.xs + 2),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            Icon(Icons.place_rounded, size: 12, color: c.record),
-                            const SizedBox(width: 3),
-                            Flexible(
-                              child: Text(
-                                path,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: c.record,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, height: 1.45, color: c.textSecondary),
                       ),
                     ],
-                    if (badges.isNotEmpty) ...<Widget>[
+                    if (hasCategory || hasPath || badges.isNotEmpty) ...<Widget>[
                       const SizedBox(height: Spacing.two),
                       Wrap(
-                        spacing: Spacing.one + 1,
-                        runSpacing: Spacing.one + 1,
+                        spacing: Spacing.two,
+                        runSpacing: Spacing.one,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: <Widget>[
+                          if (hasCategory)
+                            FindrBadge(label: catName),
+                          if (hasPath)
+                            Container(
+                              constraints: const BoxConstraints(maxWidth: 200),
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                              decoration: BoxDecoration(
+                                color: c.record.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(Radii.xs + 2),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(Icons.place_rounded, size: 12, color: c.record),
+                                  const SizedBox(width: 3),
+                                  Flexible(
+                                    child: Text(
+                                      path,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: c.record,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           for (final b in badges)
                             FindrBadge(label: badgeLabel(b, ctx), tone: toneOfBadge(b)),
                         ],

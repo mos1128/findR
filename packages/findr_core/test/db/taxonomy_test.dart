@@ -8,7 +8,7 @@ import '../helpers.dart';
 void main() {
   test('预设分类只在首次建库播种，删掉后重启不复活', () {
     final db = makeDb();
-    expect(listCategories(db), hasLength(3));
+    expect(listCategories(db), hasLength(4));
 
     deleteCategory(db, 'cat_item', testNow);
     expect(listCategories(db).map((c) => c.id), isNot(contains('cat_item')));
@@ -73,12 +73,19 @@ void main() {
     expect(updated.name, '装修');
     expect(updated.description, isNull);
 
-    reorderCategories(db, <String>['cat_custom', 'cat_item', 'cat_todo', 'cat_procedure']);
+    reorderCategories(db, <String>[
+      'cat_custom',
+      'cat_item',
+      'cat_todo',
+      'cat_procedure',
+      'cat_memo',
+    ]);
     expect(listCategories(db).map((c) => c.id), <String>[
       'cat_custom',
       'cat_item',
       'cat_todo',
       'cat_procedure',
+      'cat_memo',
     ]);
   });
 

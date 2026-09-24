@@ -77,12 +77,24 @@ final class ChatResponse {
   final ChatUsage? usage;
 }
 
-/// token 用量（各家的字段名归一到这里）。
+/// token 用量（各家协议的字段名归一到这里，参考 ccg-gateway 的统一用量语义）。
 final class ChatUsage {
-  const ChatUsage({this.inputTokens, this.outputTokens});
+  const ChatUsage({this.inputTokens, this.outputTokens, this.totalTokens});
 
   final int? inputTokens;
   final int? outputTokens;
+  final int? totalTokens;
+
+  int get total => totalTokens ?? ((inputTokens ?? 0) + (outputTokens ?? 0));
+
+  ChatUsage operator +(ChatUsage? other) {
+    if (other == null) return this;
+    return ChatUsage(
+      inputTokens: (inputTokens ?? 0) + (other.inputTokens ?? 0),
+      outputTokens: (outputTokens ?? 0) + (other.outputTokens ?? 0),
+      totalTokens: total + other.total,
+    );
+  }
 }
 
 /// 带 HTTP 状态码的调用失败。调用方据此区分「认证 / 模型名 / 限流」与「端点不接受这种输入」。
@@ -172,6 +184,7 @@ final class TranscribeResult {
 
 enum ProviderType {
   openaiCompat('openai-compat'),
+  openaiResponses('openai-responses'),
   anthropic('anthropic'),
   gemini('gemini'),
   fake('fake');
@@ -182,6 +195,8 @@ enum ProviderType {
   final String wire;
 
   static ProviderType fromWire(String value) {
+    if (value == 'openai-chat') return ProviderType.openaiCompat;
+    if (value == 'openai-response') return ProviderType.openaiResponses;
     for (final type in values) {
       if (type.wire == value) return type;
     }
@@ -193,6 +208,8 @@ enum ProviderType {
   /// 给「读设置」用：`providerType` 得在运行期验一遍，
   /// Dart 读的是库里的 JSON 字符串，所以必须有个运行时兜底。
   static ProviderType fromWireOr(Object? value, ProviderType fallback) {
+    if (value == 'openai-chat') return ProviderType.openaiCompat;
+    if (value == 'openai-response') return ProviderType.openaiResponses;
     for (final type in values) {
       if (type.wire == value) return type;
     }

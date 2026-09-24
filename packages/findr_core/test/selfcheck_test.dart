@@ -69,7 +69,7 @@ void main() {
       print(item);
     }
     expect(report.passed, isTrue, reason: report.verdict);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM categories').get()!['n'], 4);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM categories').get()!['n'], 5);
   });
 
   test('可以反复重跑（上一轮留下的临时表不会让这一轮假失败）', () {

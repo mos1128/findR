@@ -191,7 +191,7 @@ void main() {
     expect(currentSchemaVersion(db), schemaVersion);
     expect(
       listCategories(db).map((c) => c.name),
-      <String>['物品存取', '待买补货', '流程备忘'],
+      <String>['物品存取', '待买补货', '流程记录', '备忘事项'],
     );
     // 新库不该有「先建 v1 再重建」留下的痕迹
     expect(listLocations(db), isEmpty);

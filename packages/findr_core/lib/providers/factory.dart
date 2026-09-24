@@ -10,6 +10,7 @@ import '../settings.dart';
 import 'anthropic.dart';
 import 'media.dart';
 import 'openai_compat.dart';
+import 'openai_responses.dart';
 import 'types.dart';
 
 /// 建适配器时可注入的传输件（测试用假 client 换掉整条网络）。
@@ -49,6 +50,8 @@ LlmProviderAdapter makeLlmAdapter(LlmSettings llm, [AdapterOptions opts = const 
       return AnthropicAdapter(client: opts.client, timeoutMs: opts.timeoutMs);
     case ProviderType.openaiCompat:
       return OpenAICompatAdapter(client: opts.client, timeoutMs: opts.timeoutMs);
+    case ProviderType.openaiResponses:
+      return OpenAIResponsesAdapter(client: opts.client, timeoutMs: opts.timeoutMs);
     case ProviderType.gemini:
     case ProviderType.fake:
       throw UnsupportedError('主模型不支持 ${llm.providerType.wire} 协议');

@@ -308,6 +308,82 @@ void main() {
   });
 
   // ─────────────────────────────────────────────────────────────
+  // openai-responses · LLM（/v1/responses）
+  // ─────────────────────────────────────────────────────────────
+
+  group('openai-responses LLM', () {
+    const responsesCfg = ProviderConfig(
+      providerType: ProviderType.openaiResponses,
+      baseUrl: 'http://192.168.1.9:7788',
+      model: 'gpt-4o',
+      apiKey: 'sk-test',
+    );
+
+    test('路由拼到 /v1/responses，文本与用量正确解析', () async {
+      final fake = FakeHttpClient([
+        const FakeResponse(
+          json: {
+            'output': [
+              {
+                'type': 'message',
+                'content': [
+                  {'output_text': '{"ok":1}'},
+                ],
+              },
+            ],
+            'usage': {
+              'input_tokens': 120,
+              'output_tokens': 35,
+              'total_tokens': 155,
+            },
+          },
+        ),
+      ]);
+
+      final res = await OpenAIResponsesAdapter(client: fake).chat(
+        ChatRequest(
+          system: '你是整理助手',
+          parts: [TextPart('口述原文'), ImagePart(mime: 'image/webp', base64: 'QUJD')],
+        ),
+        responsesCfg,
+      );
+
+      expect(res.text, '{"ok":1}');
+      expect(fake.url(0), 'http://192.168.1.9:7788/v1/responses');
+      expect(res.usage?.inputTokens, 120);
+      expect(res.usage?.outputTokens, 35);
+      expect(res.usage?.total, 155);
+
+      final body = fake.jsonBody(0);
+      expect(body['model'], 'gpt-4o');
+      expect(body['instructions'], '你是整理助手');
+      final inputList = (body['input'] as List).cast<Map>();
+      expect(inputList.length, 1);
+      final contentList = (inputList[0]['content'] as List).cast<Map>();
+      expect(contentList[0]['type'], 'input_text');
+      expect(contentList[0]['text'], '口述原文');
+      expect(contentList[1]['type'], 'input_image');
+    });
+
+    test('SSE 流式兜底提取增量', () async {
+      final sse = [
+        'data: {"delta":"{\\"a\\":"}',
+        '',
+        'data: {"delta":"1}"}',
+        '',
+        'data: [DONE]',
+        '',
+      ].join('\n');
+      final fake = FakeHttpClient([FakeResponse(sse: sse)]);
+
+      final res = await OpenAIResponsesAdapter(
+        client: fake,
+      ).chat(ChatRequest(system: 's', parts: [TextPart('t')]), responsesCfg);
+      expect(res.text, '{"a":1}');
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────
   // anthropic · LLM（含 401/403 的 legacy 头兜底）
   // ─────────────────────────────────────────────────────────────
 

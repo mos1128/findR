@@ -43,6 +43,7 @@ final class SearchResult {
     required this.p2,
     this.relaxed,
     this.advice,
+    this.usage,
   });
 
   final List<MemoryCard> cards;
@@ -62,10 +63,14 @@ final class SearchResult {
   /// 推理题（advise）的裁决结果。有值时 [cards] 是**裁决后**的清单
   /// （必需在前、看情况在后），不再是字面命中 —— UI 必须据此换一套呈现。
   final AdviceResult? advice;
+
+  /// 搜索过程中的 AI token 用量（包含 P2 改写或推理题裁决）。
+  final ChatUsage? usage;
 }
 
 Future<SearchResult> searchCards(SearchDeps deps, String query) async {
   P2Output? p2;
+  ChatUsage? p2Usage;
   final llm = deps.llm;
   final cfg = deps.cfg;
   // 没有模型 ⇒ 跳过 P2、直接走字面兜底。这里**绝不能抛错**：抛了连字面检索都没了。
@@ -85,6 +90,7 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
         ),
         cfg,
       );
+      p2Usage = res.usage;
       final parsed = parseModelJson(res.text, P2OutputSchema.tryParse);
       if (parsed is ParseOk<P2Output>) p2 = parsed.value;
     } catch (_) {
@@ -100,7 +106,7 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
   // 必须放在下面的关键词检查**之前** —— advise 模式下 keywords 恒为空，
   // 否则会被当成「模型没听懂」而退化，正是要修的那个毛病。
   if (plan != null && plan.mode == SearchMode.advise) {
-    return _adviseSearch(deps, query, plan);
+    return _adviseSearch(deps, query, plan, p2Usage: p2Usage);
   }
 
   if (plan != null && plan.intent != P2Intent.unknown && plan.keywords.isNotEmpty) {
@@ -115,7 +121,13 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
     if (built != null) {
       final strict = executeSearch(deps.db, built);
       if (strict.isNotEmpty) {
-        return SearchResult(cards: strict, usedFallback: false, unclear: false, p2: plan);
+        return SearchResult(
+          cards: strict,
+          usedFallback: false,
+          unclear: false,
+          p2: plan,
+          usage: p2Usage,
+        );
       }
 
       // 严格条件一条都没命中 ⇒ 逐级放宽再试。
@@ -130,6 +142,7 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
             unclear: false,
             p2: plan,
             relaxed: true,
+            usage: p2Usage,
           );
         }
       }
@@ -140,6 +153,7 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
         usedFallback: false,
         unclear: false,
         p2: plan,
+        usage: p2Usage,
       );
     }
   }
@@ -154,6 +168,7 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
     usedFallback: true,
     unclear: plan != null,
     p2: plan,
+    usage: p2Usage,
   );
 }
 
@@ -166,8 +181,9 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
 Future<SearchResult> _adviseSearch(
   SearchDeps deps,
   String query,
-  P2Output p2,
-) async {
+  P2Output p2, {
+  ChatUsage? p2Usage,
+}) async {
   final llm = deps.llm;
   final cfg = deps.cfg;
   // 调用方已用 `llm != null && cfg != null` 保证非空，这里只是把类型收窄
@@ -177,6 +193,7 @@ Future<SearchResult> _adviseSearch(
       usedFallback: true,
       unclear: false,
       p2: p2,
+      usage: p2Usage,
     );
   }
 
@@ -194,6 +211,7 @@ Future<SearchResult> _adviseSearch(
       usedFallback: false,
       unclear: false,
       p2: p2,
+      usage: p2Usage,
       advice: const AdviceResult(
         ok: true,
         answer: '记忆库还是空的，先记一条再问我。',
@@ -210,6 +228,8 @@ Future<SearchResult> _adviseSearch(
     scenario,
     inventory,
   );
+  final totalUsage = (p2Usage ?? const ChatUsage()) + res.usage;
+
   if (!res.ok) {
     // 裁决失败 ⇒ 退到字面兜底，与「模型不可达」同一条路，并让 UI 说明走的是哪条
     return SearchResult(
@@ -217,6 +237,7 @@ Future<SearchResult> _adviseSearch(
       usedFallback: true,
       unclear: false,
       p2: p2,
+      usage: totalUsage,
     );
   }
 
@@ -228,6 +249,7 @@ Future<SearchResult> _adviseSearch(
       unclear: false,
       p2: p2,
       advice: res,
+      usage: totalUsage,
     );
   }
 
@@ -244,6 +266,7 @@ Future<SearchResult> _adviseSearch(
       unclear: false,
       p2: p2,
       advice: res,
+      usage: totalUsage,
     );
   }
 
@@ -253,5 +276,6 @@ Future<SearchResult> _adviseSearch(
     unclear: false,
     p2: p2,
     advice: res,
+    usage: totalUsage,
   );
 }

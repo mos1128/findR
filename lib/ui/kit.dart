@@ -493,6 +493,7 @@ class FindrField extends StatelessWidget {
     this.maxLines,
     this.focusNode,
     this.trailing,
+    this.suffixIcon,
     this.enabled = true,
   });
 
@@ -511,6 +512,7 @@ class FindrField extends StatelessWidget {
   final int? maxLines;
   final FocusNode? focusNode;
   final Widget? trailing;
+  final Widget? suffixIcon;
   final bool enabled;
 
   @override
@@ -545,6 +547,7 @@ class FindrField extends StatelessWidget {
             isDense: true,
             hintText: placeholder,
             hintStyle: TextStyle(fontSize: 14, color: c.textMuted),
+            suffixIcon: suffixIcon,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: Spacing.four,
               vertical: Spacing.three,

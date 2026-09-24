@@ -65,3 +65,16 @@ String openaiDelta(Map<String, Object?> event) {
   final content = delta['content'];
   return content is String ? content : '';
 }
+
+/// OpenAI responses API：`delta` 文本或 `response.output_item.added`。
+String openaiResponsesDelta(Map<String, Object?> event) {
+  final delta = event['delta'];
+  if (delta is String) return delta;
+  if (delta is Map) {
+    final text = delta['text'];
+    if (text is String) return text;
+  }
+  final text = event['text'];
+  if (text is String) return text;
+  return '';
+}

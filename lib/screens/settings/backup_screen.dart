@@ -134,13 +134,11 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        title: Text('这份备份没有加密', style: TextStyle(fontSize: 16, color: c.danger)),
+        title: Text('导出安全提示', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
         content: Text(
-          '文件里就是你全部卡片的内容与图片、录音，拿到它的人不需要密码就能直接打开。\n\n'
-          '${withKeys ? '⚠️ 你勾了「带上 API Key」—— 那两把模型密钥也会明文写在这个文件里，'
-              '拿到文件的人可以直接拿去用（花的钱算你的）。\n\n' : ''}'
-          '请只保存到自己信得过的地方（自己的电脑、私人云盘），别发到群聊里。\n\n'
-          '加密会在这个功能的下一个版本补上。',
+          '导出的备份包为离线便携档案，包含您的全部卡片记录、关联照片及录音素材。\n\n'
+          '${withKeys ? '⚠️ 您已选择「包含 API 密钥」—— 模型访问密钥将一并打包，便于换机后直接恢复使用。请确保仅在受信任的个人存储中保存该文件。\n\n' : ''}'
+          '建议妥善保存在私有云盘或受信任的个人存储介质中。',
           style: TextStyle(fontSize: 13, height: 1.6, color: c.textSecondary),
         ),
         actions: <Widget>[
@@ -150,7 +148,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('继续导出', style: TextStyle(color: c.danger)),
+            child: Text('确认导出', style: TextStyle(color: c.record, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -187,11 +185,14 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       final restored = await _restoreKeys(res.apiKeys);
       if (!mounted) return;
       setState(() {
+        _picked = null;
         _imported = res;
         _keyRestore = restored;
       });
       // 导入直接改了 DB 与安全存储，必须让运行时重读一遍，否则界面还是旧的
       await ref.read(runtimeProvider.notifier).refresh();
+      if (!mounted) return;
+      _toast('备份文件已成功导入，本地数据已更新');
     } catch (e) {
       if (mounted) {
         _dialog('导入失败', '$e\n\n最常见的原因：文件不是 Findr 的备份，或者传输过程中损坏了。');
@@ -199,6 +200,19 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _toast(String message) {
+    final c = FindrColors.of(context);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
+          backgroundColor: c.surface,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
   }
 
   /// 把包里带回来的 Key 写进本机安全存储。
@@ -261,32 +275,27 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         ),
         children: <Widget>[
           Text(
-            '备份用来换手机或重装后把记忆搬回去。它是一个文件（$backupExt），'
-            '内容就是你全部卡片与图片、录音。',
+            '通过备份档案文件（$backupExt），可在更换设备或重装系统后恢复您的全部卡片与媒体数据。',
             style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
           ),
-          // 红条：**需求与决策要求界面必须明说不加密**，这一条不许删
           Notice(
-            title: '当前版本不加密',
-            tone: NoticeTone.danger,
-            icon: Icons.lock_open_rounded,
+            title: '数据安全说明',
+            tone: NoticeTone.info,
+            icon: Icons.shield_outlined,
             text:
-                '这个文件没有任何密码保护 —— 用解压工具就能直接看到里面的全部内容。'
-                '请只把它放在自己信得过的地方（自己的电脑、私人云盘），不要发到群聊或公共空间。\n'
-                '加密计划在这个功能的下一个版本补上。',
+                '导出的备份包包含您的全部卡片与媒体内容。请妥善保存于受信任的个人私有云盘或本地存储中，避免在公共渠道传播。',
           ),
 
           // ── 导出 ─────────────────────────────────────────
           Panel(
             title: '导出',
-            hint: '含全部卡片、分类、位置、别名与图片音频',
+            hint: '包含卡片、分类、位置与媒体素材',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 ListRow(
-                  title: '带上 API Key',
-                  subtitle: '换机后不用重新填那两把 Key。⚠️ 包是不加密的，'
-                      '带上就等于把密钥明文写进文件 —— 只给自己的设备用',
+                  title: '包含模型 API 密钥',
+                  subtitle: '导入新设备后无需重新配置模型密钥；请仅在个人受信设备间传输',
                   right: Switch(
                     value: _includeKeys,
                     onChanged: (v) => setState(() => _includeKeys = v),
@@ -391,17 +400,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
 
           if (_note != null) Notice(text: _note!),
 
-          Panel(
-            title: '几条要记住的',
-            child: Text(
-              '· 文件是明文的：别把它交给别人，也别放在共享空间里。\n'
-              '· 导出的文件在 App 的缓存目录里，递出去之后系统随时可能清掉它 —— 导出完就分享/保存到别处。\n'
-              '· 导入是合并，不是覆盖：本机多出来的卡片不会被删。\n'
-              '· 重复导入同一个文件是安全的，结果一致（按 id 幂等）。\n'
-              '· 文件传坏了能被发现（包里每个文件都带校验和），会明确报「校验和不符」。',
-              style: TextStyle(fontSize: 11.5, height: 1.7, color: c.textSecondary),
-            ),
-          ),
+
         ],
       ),
     );

@@ -41,8 +41,8 @@ migrate_working_dir/
 .dart_tool/
 .flutter-plugins-dependencies
 .pub-cache/
-.pub/
-/build/
+build/
+packages/*/build/
 /coverage/
 **/doc/api/
 **/ios/Flutter/.last_build_id
@@ -58,3 +58,4 @@ app.*.map.json
 
 # Widget 预览
 .widget_preview/
+preview/

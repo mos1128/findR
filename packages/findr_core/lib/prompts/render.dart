@@ -96,7 +96,7 @@ String buildP4Input(String query, String scenario, int total, String inventory) 
 String formatCategoriesForPrompt(List<Category> categories) {
   if (categories.isEmpty) return '（暂无）';
   return categories
-      .map((c) => '- ${c.emoji ?? ''}${c.name}${c.description != null ? '：${c.description}' : ''}')
+      .map((c) => '- ${c.name}${c.description != null ? '：${c.description}' : ''}')
       .join('\n');
 }
 

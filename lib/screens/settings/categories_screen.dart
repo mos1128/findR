@@ -21,7 +21,6 @@ class CategoriesScreen extends ConsumerStatefulWidget {
 
 class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
   final _name = TextEditingController();
-  final _emoji = TextEditingController();
   final _desc = TextEditingController();
 
   /// 非空 = 正在编辑已有分类。
@@ -36,7 +35,6 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
   @override
   void dispose() {
     _name.dispose();
-    _emoji.dispose();
     _desc.dispose();
     super.dispose();
   }
@@ -45,7 +43,6 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
 
   void _resetForm() {
     _name.clear();
-    _emoji.clear();
     _desc.clear();
     _editingId = null;
     setState(() {});
@@ -79,7 +76,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
         Category(
           id: editing ?? makeId(),
           name: name,
-          emoji: _emoji.text.trim().isEmpty ? null : _emoji.text.trim(),
+          emoji: null,
           description: _desc.text.trim().isEmpty ? null : _desc.text.trim(),
           // 新分类排在最后；编辑时保持原位置
           sort: existing?.sort ?? list.length,
@@ -170,7 +167,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                       for (int i = 0; i < categories.length; i++) ...<Widget>[
                         if (i > 0) const FindrDivider(),
                         ListRow(
-                          title: '${categories[i].emoji ?? ''}${categories[i].name}',
+                          title: categories[i].name,
                           subtitle:
                               '${categories[i].description ?? '没有识别描述'}'
                               '${categories[i].isPreset ? ' · 预设' : ''}',
@@ -178,7 +175,6 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                             final cat = categories[i];
                             _editingId = cat.id;
                             _name.text = cat.name;
-                            _emoji.text = cat.emoji ?? '';
                             _desc.text = cat.description ?? '';
                             setState(() {});
                           },
@@ -210,8 +206,6 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                   controller: _name,
                   placeholder: '例如：装修记录',
                 ),
-                const SizedBox(height: Spacing.four),
-                FindrField(label: 'Emoji（可选）', controller: _emoji, placeholder: '🔨'),
                 const SizedBox(height: Spacing.four),
                 FindrField(
                   label: '识别描述（给模型看）',

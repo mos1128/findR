@@ -7,16 +7,22 @@
 /// 录音在这里**能听**（不是只显示一个文件路径）—— 见 `ui/audio_player.dart`。
 library;
 
+import 'dart:async';
+import 'dart:io';
+
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../platform/app_paths.dart';
 import '../platform/runtime.dart';
 import '../theme/tokens.dart';
 import '../ui/audio_player.dart';
 import '../ui/card_row.dart';
 import '../ui/kit.dart';
 import '../ui/media_view.dart';
+import 'settings/categories_screen.dart';
 
 class CardDetailScreen extends ConsumerStatefulWidget {
   const CardDetailScreen({super.key, required this.cardId});
@@ -33,9 +39,11 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
 
   /// 「步骤」按内容出现：有步骤时自动展开，没有则收起 —— 多数记忆本来就没有步骤。
   bool _stepsOpen = false;
+  bool _categoriesExpanded = false;
 
   bool _busy = false;
   bool _editorsReady = false;
+  _ActionResult? _actionResult;
 
   final _transcript = TextEditingController();
   final _desc = TextEditingController();
@@ -60,6 +68,21 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     _desc.text = card.desc ?? '';
     _entity.text = card.entity ?? '';
     _tags.text = (card.tags ?? const <String>[]).join('、');
+
+    // 清理历史遗留：对已经激活的正常卡片，若还残留旧的 lastError 或 retryCount，落库清除它
+    if (card.status == CardStatus.active &&
+        !card.needsOrganize &&
+        (card.lastError != null || card.retryCount > 0)) {
+      final rt = ref.read(runtimeProvider).value;
+      if (rt != null) {
+        updateCardFields(
+          rt.driver,
+          widget.cardId,
+          const CardPatch(lastError: null),
+          DateTime.now(),
+        );
+      }
+    }
   }
 
   void _patch(CardPatch patch) {
@@ -71,15 +94,44 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
 
   void _reload() => setState(() => _tick++);
 
-  void _toast(String message) {
+  void _toast(String message, {bool isError = false}) {
     final c = FindrColors.of(context);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
-          backgroundColor: c.surface,
+          content: Row(
+            children: <Widget>[
+              Icon(
+                isError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
+                size: 20,
+                color: isError ? c.danger : c.record,
+              ),
+              const SizedBox(width: Spacing.two),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: c.text,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: c.surfaceAlt,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Radii.lg),
+            side: BorderSide(
+              color: (isError ? c.danger : c.record).withValues(alpha: 0.4),
+              width: 1.2,
+            ),
+          ),
           behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(left: 20, right: 20, bottom: 36),
+          duration: const Duration(seconds: 4),
+          elevation: 6,
         ),
       );
   }
@@ -93,12 +145,52 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
       _reload();
       final outcome = res is AdvanceResult ? res.outcome : null;
       if (outcome == AdvanceOutcome.retry) {
-        _toast('$label 失败，稍后可以再试一次。');
+        final msg = '$label 失败，稍后可以再试一次。';
+        setState(() => _actionResult = _ActionResult(message: msg, isError: true));
+        _toast(msg, isError: true);
+      } else if (res is RegenerateDescResult) {
+        if (!res.ok) {
+          final msg = '$label 失败：${res.error ?? "未知错误"}';
+          setState(() => _actionResult = _ActionResult(message: msg, isError: true));
+          _toast(msg, isError: true);
+        } else {
+          final usageStr = (res.usage != null && res.usage!.total > 0)
+              ? ' · 消耗 ${res.usage!.total} tokens'
+              : '';
+          final msg = '$label 完成$usageStr';
+          if (res.card?.desc != null) {
+            _desc.text = res.card!.desc!;
+          }
+          setState(() => _actionResult = _ActionResult(
+            message: msg,
+            isError: false,
+            tokens: res.usage?.total,
+          ));
+          _toast(msg, isError: false);
+        }
+      } else if (res is AdvanceResult) {
+        if (res.outcome == AdvanceOutcome.activated) {
+          final msg = '$label 完成';
+          if (res.card.desc != null) _desc.text = res.card.desc!;
+          if (res.card.entity != null) _entity.text = res.card.entity!;
+          if (res.card.transcript != null) _transcript.text = res.card.transcript!;
+          if (res.card.tags != null) _tags.text = res.card.tags!.join('、');
+          setState(() => _actionResult = _ActionResult(message: msg, isError: false));
+          _toast(msg, isError: false);
+        } else {
+          final msg = '$label 失败：${res.error ?? "未能成功推进"}';
+          setState(() => _actionResult = _ActionResult(message: msg, isError: true));
+          _toast(msg, isError: true);
+        }
       } else {
-        _toast('$label 完成');
+        final msg = '$label 完成';
+        setState(() => _actionResult = _ActionResult(message: msg, isError: false));
+        _toast(msg, isError: false);
       }
     } catch (e) {
-      _toast('$label 失败：$e');
+      final msg = '$label 失败：$e';
+      setState(() => _actionResult = _ActionResult(message: msg, isError: true));
+      _toast(msg, isError: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -173,7 +265,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
               Padding(
                 padding: const EdgeInsets.all(Spacing.three),
                 child: Text(
-                  '要新建位置？去「设置 → 位置树」。位置也会在解析时自动长出来。',
+                  '如需管理空间层级，可前往「设置 → 空间位置树」进行配置。',
                   style: TextStyle(fontSize: 11.5, color: c.textMuted),
                 ),
               ),
@@ -250,6 +342,26 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     final images = card.images ?? const <String>[];
     final steps = card.steps ?? const <StepItem>[];
     final showSteps = _stepsOpen || steps.isNotEmpty;
+    final hasStaleError = card.status == CardStatus.active && !card.needsOrganize;
+    final showError = card.lastError != null && !hasStaleError;
+    final showProcessingPanel = card.status == CardStatus.pending ||
+        card.status == CardStatus.pendingTranscript ||
+        card.needsOrganize ||
+        canReanalyze(card, ctx) ||
+        showError ||
+        _actionResult != null;
+
+    List<File> attachmentFiles = const <File>[];
+    if (AppPaths.ready && card.createdAt.isNotEmpty) {
+      try {
+        final date = DateTime.tryParse(card.createdAt) ?? DateTime.now();
+        final attachDirRel = 'files/cards/${monthDir(date)}/${card.id}/attachments';
+        final attachDir = Directory(AppPaths.abs(attachDirRel));
+        if (attachDir.existsSync()) {
+          attachmentFiles = attachDir.listSync().whereType<File>().toList();
+        }
+      } catch (_) {}
+    }
 
     return Scaffold(
       appBar: FindrTopBar(
@@ -301,15 +413,31 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 ],
                 if (card.ask != null && card.ask!.isNotEmpty) ...<Widget>[
                   const SizedBox(height: Spacing.three),
-                  Text(
-                    '想确认：${card.ask}',
-                    style: TextStyle(fontSize: 13, height: 1.4, color: c.badgeConfirm),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: Spacing.two),
+                    decoration: BoxDecoration(
+                      color: c.badgeConfirmBg,
+                      borderRadius: BorderRadius.circular(Radii.md),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Icon(Icons.lightbulb_outline_rounded, size: 16, color: c.badgeConfirm),
+                        const SizedBox(width: Spacing.two),
+                        Expanded(
+                          child: Text(
+                            '待确认细节：${card.ask}',
+                            style: TextStyle(fontSize: 12.5, height: 1.4, color: c.badgeConfirm),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
                 if (card.pathSuggestion != null && card.pathNames == null) ...<Widget>[
                   const SizedBox(height: Spacing.two),
                   Text(
-                    '模型猜的位置：${card.pathSuggestion}',
+                    '推测位置：${card.pathSuggestion}',
                     style: TextStyle(fontSize: 12, color: c.textSecondary),
                   ),
                 ],
@@ -324,23 +452,19 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 else
                   Text(
                     card.audioPath != null
-                        ? '还没有文字。在下面「卡片文字 → 口述原文」里补一句，这张卡就能解析入库。'
-                        : '没有原文。',
+                        ? '语音转写尚未完成，可在下方「详细记录」中手动补充。'
+                        : '暂无文字记录。',
                     style: TextStyle(fontSize: 13, height: 1.5, color: c.textMuted),
                   ),
                 if (card.audioPath != null) ...<Widget>[
                   const SizedBox(height: Spacing.three),
-                  AudioPlayBar(relPath: card.audioPath!, label: '这段录音'),
+                  AudioPlayBar(relPath: card.audioPath!, label: '语音记录'),
                 ],
                 if (images.isNotEmpty) ...<Widget>[
                   const SizedBox(height: Spacing.four),
-                  // 多张时把「点开能左右滑」写出来：全屏相册的翻页手势没有视觉提示，
-                  // 不说一句就等于没做（真机就吃过一次这个亏）。
                   SectionTitle(
                     '照片',
-                    hint: images.length > 1
-                        ? '${images.length} 张 · 点开可左右滑'
-                        : '${images.length} 张',
+                    hint: '${images.length} 张',
                   ),
                   const SizedBox(height: Spacing.two),
                   SizedBox(
@@ -357,39 +481,106 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                     ),
                   ),
                 ],
+                if (attachmentFiles.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: Spacing.four),
+                  SectionTitle(
+                    '附件',
+                    hint: '${attachmentFiles.length} 个文件',
+                  ),
+                  const SizedBox(height: Spacing.two),
+                  for (final file in attachmentFiles) ...<Widget>[
+                    ListRow(
+                      leading: Icon(Icons.attach_file_rounded, size: 20, color: c.record),
+                      title: file.path.split(Platform.isWindows ? r'\' : '/').last,
+                      subtitle: '${(file.lengthSync() / 1024).toStringAsFixed(1)} KB',
+                      right: Icon(Icons.share_outlined, size: 18, color: c.textMuted),
+                      onTap: () {
+                        unawaited(
+                          SharePlus.instance.share(
+                            ShareParams(
+                              files: <XFile>[XFile(file.path)],
+                              title: file.path.split(Platform.isWindows ? r'\' : '/').last,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: Spacing.one),
+                  ],
+                ],
               ],
             ),
           ),
 
-          // ── 待办（只在真有东西可做时出现） ─────────────────
-          if (card.retryCount > 0 ||
-              card.status == CardStatus.pending ||
-              card.status == CardStatus.pendingTranscript ||
-              card.needsOrganize)
+          // ── 智能处理（有待办、或刚操作完、或可补分析、或有真实异常时展示） ───────────────
+          if (showProcessingPanel)
             Panel(
-              title: '待办',
+              title: '状态与处理',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
+                  if (_actionResult != null) ...<Widget>[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Spacing.three,
+                        vertical: Spacing.two,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _actionResult!.isError
+                            ? c.danger.withValues(alpha: 0.1)
+                            : c.record.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(Radii.md),
+                        border: Border.all(
+                          color: _actionResult!.isError
+                              ? c.danger.withValues(alpha: 0.35)
+                              : c.record.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          Icon(
+                            _actionResult!.isError
+                                ? Icons.error_outline_rounded
+                                : Icons.check_circle_outline_rounded,
+                            size: 18,
+                            color: _actionResult!.isError ? c.danger : c.record,
+                          ),
+                          const SizedBox(width: Spacing.two),
+                          Expanded(
+                            child: Text(
+                              _actionResult!.message,
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: _actionResult!.isError ? c.danger : c.record,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: Spacing.two),
+                  ],
                   if (card.needsOrganize)
                     FindrButton(
-                      title: '重新整理',
+                      title: '重新整理卡片',
                       loading: _busy,
                       onPressed: () => _run((d) => reorganizeCard(d, card.id), '重新整理'),
                     ),
                   if (canReanalyze(card, ctx)) ...<Widget>[
-                    const SizedBox(height: Spacing.two),
+                    if (card.needsOrganize) const SizedBox(height: Spacing.two),
                     FindrButton(
-                      title: '补分析图片',
+                      title: '分析图片内容',
                       variant: FindrButtonVariant.secondary,
                       loading: _busy,
                       onPressed: () => _confirmReanalyze(card),
                     ),
                   ],
                   if (!card.needsOrganize && card.status == CardStatus.active) ...<Widget>[
-                    const SizedBox(height: Spacing.two),
+                    if (card.needsOrganize || canReanalyze(card, ctx))
+                      const SizedBox(height: Spacing.two),
                     FindrButton(
-                      title: '重新生成描述',
+                      title: '重新生成卡片描述',
                       variant: FindrButtonVariant.secondary,
                       loading: _busy,
                       onPressed: () => _run((d) => regenerateDesc(d, card.id), '重新生成描述'),
@@ -399,7 +590,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                       card.status == CardStatus.pendingTranscript) ...<Widget>[
                     const SizedBox(height: Spacing.two),
                     FindrButton(
-                      title: '立即重试一次',
+                      title: '重试当前解析任务',
                       variant: FindrButtonVariant.secondary,
                       loading: _busy,
                       onPressed: () => _run(
@@ -408,11 +599,31 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                       ),
                     ),
                   ],
-                  if (card.lastError != null) ...<Widget>[
+                  if (showError) ...<Widget>[
                     const SizedBox(height: Spacing.two),
-                    Text(
-                      '上次错误：${card.lastError}',
-                      style: TextStyle(fontSize: 11.5, height: 1.4, color: c.textMuted),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Spacing.three,
+                        vertical: Spacing.two,
+                      ),
+                      decoration: BoxDecoration(
+                        color: c.danger.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(Radii.md),
+                        border: Border.all(color: c.danger.withValues(alpha: 0.25)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Icon(Icons.error_outline_rounded, size: 16, color: c.danger),
+                          const SizedBox(width: Spacing.two),
+                          Expanded(
+                            child: Text(
+                              '处理异常：${card.lastError}',
+                              style: TextStyle(fontSize: 12, height: 1.4, color: c.danger),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ],
@@ -425,28 +636,160 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 const SectionTitle('分类'),
-                const SizedBox(height: Spacing.three),
-                Wrap(
-                  spacing: Spacing.two,
-                  runSpacing: Spacing.two,
-                  children: <Widget>[
-                    if (categories.isEmpty)
-                      Text(
-                        '还没有分类。去「设置 → 分类」建一个。',
-                        style: TextStyle(fontSize: 12, color: c.textMuted),
-                      ),
-                    for (final cat in categories)
-                      FindrChip(
-                        dense: true,
-                        label: '${cat.emoji ?? ''}${cat.name}',
-                        active: card.categoryId == cat.id,
-                        // 再点一次即取消归类（用户可能只是归错了想摘掉）
-                        onPressed: () => _patch(
-                          CardPatch(categoryId: card.categoryId == cat.id ? null : cat.id),
-                        ),
-                      ),
-                  ],
-                ),
+                const SizedBox(height: Spacing.two),
+                if (categories.isEmpty)
+                  Text(
+                    '还没有分类。可前往「设置 → 分类标签」进行添加。',
+                    style: TextStyle(fontSize: 12, color: c.textMuted),
+                  )
+                else
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: !_categoriesExpanded
+                        ? Row(
+                            children: <Widget>[
+                              Expanded(
+                                child: SizedBox(
+                                  height: 32,
+                                  child: ShaderMask(
+                                    shaderCallback: (Rect bounds) {
+                                      return const LinearGradient(
+                                        begin: Alignment.centerLeft,
+                                        end: Alignment.centerRight,
+                                        colors: <Color>[
+                                          Colors.white,
+                                          Colors.white,
+                                          Colors.transparent,
+                                        ],
+                                        stops: <double>[0.0, 0.88, 1.0],
+                                      ).createShader(bounds);
+                                    },
+                                    blendMode: BlendMode.dstIn,
+                                    child: ListView.separated(
+                                      scrollDirection: Axis.horizontal,
+                                      padding: const EdgeInsets.only(right: Spacing.two),
+                                      itemCount: categories.length + 1,
+                                      separatorBuilder: (_, _) =>
+                                          const SizedBox(width: Spacing.two),
+                                      itemBuilder: (_, i) {
+                                        if (i == categories.length) {
+                                          return FindrChip(
+                                            label: '＋ 新建分类',
+                                            dense: true,
+                                            onPressed: () => Navigator.of(context).push(
+                                              MaterialPageRoute<void>(
+                                                builder: (_) => const CategoriesScreen(),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        final cat = categories[i];
+                                        return FindrChip(
+                                          label: cat.name,
+                                          dense: true,
+                                          active: card.categoryId == cat.id,
+                                          onPressed: () => _patch(
+                                            CardPatch(
+                                              categoryId: card.categoryId == cat.id ? null : cat.id,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: Spacing.two),
+                              Material(
+                                color: c.surfaceAlt,
+                                borderRadius: BorderRadius.circular(Radii.pill),
+                                child: InkWell(
+                                  onTap: () => setState(() => _categoriesExpanded = true),
+                                  borderRadius: BorderRadius.circular(Radii.pill),
+                                  child: Container(
+                                    width: 32,
+                                    height: 32,
+                                    alignment: Alignment.center,
+                                    child: Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      size: 20,
+                                      color: c.textSecondary,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Container(
+                            decoration: BoxDecoration(
+                              color: c.surfaceAlt,
+                              borderRadius: BorderRadius.circular(Radii.md),
+                            ),
+                            padding: const EdgeInsets.all(Spacing.three),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: <Widget>[
+                                    Text(
+                                      '全部分类（${categories.length}）',
+                                      style: TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: c.textSecondary,
+                                      ),
+                                    ),
+                                    GestureDetector(
+                                      onTap: () => setState(() => _categoriesExpanded = false),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: <Widget>[
+                                          Text('收起', style: TextStyle(fontSize: 12, color: c.textMuted)),
+                                          const SizedBox(width: 2),
+                                          Icon(
+                                            Icons.keyboard_arrow_up_rounded,
+                                            size: 18,
+                                            color: c.textMuted,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: Spacing.two),
+                                Wrap(
+                                  spacing: Spacing.two,
+                                  runSpacing: Spacing.two,
+                                  children: <Widget>[
+                                    for (final cat in categories)
+                                      FindrChip(
+                                        dense: true,
+                                        label: cat.name,
+                                        active: card.categoryId == cat.id,
+                                        onPressed: () => _patch(
+                                          CardPatch(
+                                            categoryId: card.categoryId == cat.id ? null : cat.id,
+                                          ),
+                                        ),
+                                      ),
+                                    FindrChip(
+                                      label: '＋ 新建分类',
+                                      dense: true,
+                                      onPressed: () => Navigator.of(context).push(
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => const CategoriesScreen(),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
                 const SizedBox(height: Spacing.four),
                 const SectionTitle('位置'),
                 const SizedBox(height: Spacing.two),
@@ -477,7 +820,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                               if (card.pathMatched == false) ...<Widget>[
                                 const SizedBox(height: 2),
                                 Text(
-                                  '解析时新建的位置',
+                                  '解析时自动识别的新位置',
                                   style: TextStyle(fontSize: 11.5, color: c.textMuted),
                                 ),
                               ],
@@ -496,8 +839,8 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   )
                 else
                   ListRow(
-                    title: '还没记录位置',
-                    subtitle: '解析这条卡片时如果提到了位置会自动记录；也可以现在手动选一个',
+                    title: '暂未指定位置',
+                    subtitle: '点击选择该物品所在的房间、家具或收纳容器',
                     onTap: () => _pickLocation(locations),
                     right: Text(
                       '选择',
@@ -523,37 +866,31 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
             ),
           ),
 
-          // ── 卡片文字 ─────────────────────────────────────
+          // ── 详细记录 ─────────────────────────────────────
           Panel(
-            title: '卡片文字',
+            title: '详细记录',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 FindrField(
-                  label: '口述原文',
-                  controller: _transcript,
-                  multiline: true,
-                  onChanged: (v) => _patch(CardPatch(transcript: v)),
-                ),
-                const SizedBox(height: Spacing.four),
-                FindrField(
-                  label: '描述',
-                  controller: _desc,
-                  multiline: true,
-                  onChanged: (v) => _patch(CardPatch(desc: v)),
-                ),
-                const SizedBox(height: Spacing.four),
-                FindrField(
-                  label: '实体名',
+                  label: '实体名称（核心标识）',
                   controller: _entity,
-                  placeholder: '规范名称，如「备用手电筒」',
+                  placeholder: '物品或备忘的明确名称，如「备用钥匙」',
                   onChanged: (v) => _patch(CardPatch(entity: v)),
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(
-                  label: '标签',
+                  label: '内容描述',
+                  controller: _desc,
+                  multiline: true,
+                  placeholder: '物品的外观特征、存放细节或备忘内容',
+                  onChanged: (v) => _patch(CardPatch(desc: v)),
+                ),
+                const SizedBox(height: Spacing.four),
+                FindrField(
+                  label: '分类标签',
                   controller: _tags,
-                  placeholder: '用、或逗号分隔',
+                  placeholder: '多个标签用逗号或顿号隔开',
                   onChanged: (v) => _patch(
                     CardPatch(
                       tags: v
@@ -564,11 +901,30 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: Spacing.four),
+                FindrField(
+                  label: '原始口述 / 转写记录',
+                  controller: _transcript,
+                  multiline: true,
+                  placeholder: '录音识别的原始文本或手录原句',
+                  onChanged: (v) => _patch(CardPatch(transcript: v)),
+                ),
+                if (!showProcessingPanel &&
+                    card.status == CardStatus.active &&
+                    !card.needsOrganize) ...<Widget>[
+                  const SizedBox(height: Spacing.four),
+                  FindrButton(
+                    title: '根据修改重新生成卡片描述',
+                    variant: FindrButtonVariant.secondary,
+                    loading: _busy,
+                    onPressed: () => _run((d) => regenerateDesc(d, card.id), '重新生成描述'),
+                  ),
+                ],
               ],
             ),
           ),
 
-          // ── 步骤（按内容出现） ───────────────────────────
+          // ── 步骤清单（按需展示） ───────────────────────────
           Panel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -580,7 +936,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                     children: <Widget>[
                       Expanded(
                         child: Text(
-                          '步骤${steps.isEmpty ? '（没有）' : '（${steps.length}）'}',
+                          steps.isEmpty ? '步骤清单（未添加）' : '步骤清单（${steps.length}）',
                           style: TextStyle(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
@@ -669,13 +1025,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   onPressed: _delete,
                 ),
               ],
-            ),
-          ),
-
-          Center(
-            child: Text(
-              card.id,
-              style: TextStyle(fontSize: 11, color: c.textMuted),
             ),
           ),
         ],
@@ -799,3 +1148,16 @@ class _StepIcon extends StatelessWidget {
     );
   }
 }
+
+class _ActionResult {
+  const _ActionResult({
+    required this.message,
+    required this.isError,
+    this.tokens,
+  });
+
+  final String message;
+  final bool isError;
+  final int? tokens;
+}
+

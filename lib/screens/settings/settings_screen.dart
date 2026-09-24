@@ -1,8 +1,11 @@
 /// 设置主页。
 ///
-/// 分七块：模型 / 录入 / 检索 / 词表 / 数据 / 维护 / 关于。
-/// 版式是新画的，但**每一条提示语都保留** —— 那些话是在真机上踩过坑之后留下来的
-/// （比如「关掉图片分析省 token，但图中内容搜不到」），少一句用户就会少一个判断依据。
+/// 正式商用发版标准架构：
+/// - 模型服务：LLM 与 ASR 状态
+/// - 智能偏好：多模态分析、搜索智能解答
+/// - 空间与分类：位置树与分类管理
+/// - 数据与维护：备份恢复与后台队列诊断
+/// - 关于：规范版本与关于信息，高级技术参数收拢于调试弹窗
 library;
 
 import 'package:findr_core/findr_core.dart';
@@ -10,7 +13,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../platform/runtime.dart';
-import '../../platform/secure.dart';
 import '../../selfcheck/self_check_screen.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
@@ -53,12 +55,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        title: Text(title, style: TextStyle(fontSize: 16, color: c.text)),
+        title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
         content: Text(body, style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary)),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('好', style: TextStyle(color: c.record)),
+            child: Text('确定', style: TextStyle(color: c.record, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -68,6 +70,113 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _push(Widget screen) async {
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
     if (mounted) setState(() {});
+  }
+
+  void _showDiagnosticsSheet() {
+    final c = FindrColors.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: c.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.xl)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.three, Spacing.four, Spacing.five),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: Spacing.three),
+                  decoration: BoxDecoration(
+                    color: c.borderStrong,
+                    borderRadius: BorderRadius.circular(Radii.pill),
+                  ),
+                ),
+              ),
+              Text(
+                '处理队列与系统诊断',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text),
+              ),
+              const SizedBox(height: Spacing.one),
+              Text(
+                '管理后台排队解析任务与设备运行状态自检',
+                style: TextStyle(fontSize: 12, color: c.textMuted),
+              ),
+              const SizedBox(height: Spacing.four),
+              FindrButton(
+                title: '推进解析队列',
+                variant: FindrButtonVariant.secondary,
+                loading: _busy,
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _run((rt) async {
+                    final res = await runQueueNow(rt);
+                    if (res == null) return '尚未配置主模型，队列未执行。';
+                    return '已处理 ${res.processed} 条，入库 ${res.settled} 条'
+                        '${res.failed > 0 ? '，待重试 ${res.failed} 条' : ''}'
+                        '${res.skippedNoAsr > 0 ? '，${res.skippedNoAsr} 条等待语音转写' : ''}。';
+                  }, title: '处理队列');
+                },
+              ),
+              const SizedBox(height: Spacing.two),
+              FindrButton(
+                title: '重试未完成的语音转写',
+                variant: FindrButtonVariant.secondary,
+                loading: _busy,
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _run((rt) async {
+                    final res = await retryAllTranscriptions(requireDeps(rt));
+                    await ref.read(runtimeProvider.notifier).refresh();
+                    return '重置 ${res.reset} 条任务，已成功完成 ${res.run.settled} 条。';
+                  }, title: '语音转写重试');
+                },
+              ),
+              const SizedBox(height: Spacing.two),
+              FindrButton(
+                title: '运行系统诊断与自检',
+                variant: FindrButtonVariant.ghost,
+                icon: Icons.health_and_safety_outlined,
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _push(const SelfCheckScreen());
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showDevDetails(RuntimeState rt) {
+    final c = FindrColors.of(context);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('系统信息', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
+        content: SelectableText(
+          '数据库文件：\n${rt.dbPath}\n\n'
+          '版本号：${rt.version ?? '1.0.0'}\n'
+          '图片处理：长边 ≤1600px，WebP 质量 0.8\n'
+          '单卡图片上限：${rt.capture.maxAnalyzeImages} 张',
+          style: TextStyle(fontSize: 12, height: 1.6, color: c.textSecondary),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('好', style: TextStyle(color: c.record)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -91,41 +200,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Spacing.six,
         ),
         children: <Widget>[
+          // ── 模型服务 ──────────────────────────────────
           Panel(
-            title: '模型',
+            title: '模型服务',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 ListRow(
-                  title: '主 LLM',
+                  title: '主模型 (LLM)',
                   subtitle: llmName,
                   onTap: () => _push(const ProviderSettingsScreen()),
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
                 FindrDivider(),
                 ListRow(
-                  title: 'ASR（语音转写）',
+                  title: '语音识别 (ASR)',
                   subtitle: asrName,
                   onTap: () => _push(const ProviderSettingsScreen()),
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
-                const SizedBox(height: Spacing.two),
-                Text(
-                  'API Key 存在系统密钥库，不进数据库、也不会出现在导出备份里。'
-                  '当前：LLM ${maskApiKey(rt.llmKey)} / ASR ${maskApiKey(rt.asrKey)}',
-                  style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
-                ),
               ],
             ),
           ),
+
+          // ── 智能偏好 ──────────────────────────────────
           Panel(
-            title: '录入',
+            title: '智能偏好',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 ListRow(
-                  title: '图片分析默认值',
-                  subtitle: '每次录入仍可临时切换；关掉可省 token，但图中内容搜不到',
+                  title: '多模态图片分析',
+                  subtitle: '录入图片时自动解析画面主体、细节与文字内容',
                   right: Switch(
                     value: rt.capture.visionDefault,
                     onChanged: (v) {
@@ -141,41 +247,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     },
                   ),
                 ),
-                if (rt.capture.visionLast != null) ...<Widget>[
-                  FindrDivider(),
-                  ListRow(
-                    title: '上次的选择',
-                    subtitle: '最近一次录入用的是「${rt.capture.visionLast! ? '开' : '关'}」，点这里恢复成跟随默认值',
-                    onTap: () {
-                      writeCaptureSettings(
-                        rt.driver,
-                        CaptureSettings(
-                          visionDefault: rt.capture.visionDefault,
-                          visionLast: null,
-                          maxAnalyzeImages: rt.capture.maxAnalyzeImages,
-                        ),
-                      );
-                      ref.read(runtimeProvider.notifier).refresh();
-                    },
-                    right: Text('重置', style: TextStyle(fontSize: 13, color: c.record)),
-                  ),
-                ],
-                const SizedBox(height: Spacing.two),
-                Text(
-                  '单卡最多送模型分析 ${rt.capture.maxAnalyzeImages} 张图（固定护栏，超出的图片仍会保存）',
-                  style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
-                ),
-              ],
-            ),
-          ),
-          Panel(
-            title: '检索',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
+                FindrDivider(),
                 ListRow(
-                  title: '每次搜索都自动组织答案',
-                  subtitle: '关：只在搜不到、或你点「AI 总结」时才跑。开：搜到也自动跑，答案追加在列表下方',
+                  title: '搜索智能解答',
+                  subtitle: '检索时自动综合多条相关记忆并生成直接答复',
                   right: Switch(
                     value: rt.search.autoAnswer,
                     onChanged: (v) {
@@ -184,103 +259,104 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     },
                   ),
                 ),
-                const SizedBox(height: Spacing.two),
-                Text(
-                  '打开后每次搜索都会把最多 8 条命中片段发给模型；真正的代价是 —— '
-                  '关着的时候你不点按钮就不外发任何记忆内容，开着则每次搜索都会。',
-                  style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
-                ),
               ],
             ),
           ),
+
+          // ── 空间与分类 ──────────────────────────────────
           Panel(
-            title: '词表',
+            title: '空间与分类',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 ListRow(
-                  title: '位置树',
-                  subtitle: '房间 → 家具 → 容器',
+                  title: '空间位置树',
+                  subtitle: '管理房间、家具与收纳容器',
                   onTap: () => _push(const LocationsScreen()),
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
                 FindrDivider(),
                 ListRow(
-                  title: '分类',
-                  subtitle: '名称、Emoji、给模型看的识别描述',
+                  title: '分类标签',
+                  subtitle: '管理物品、证件、备忘等分类及标识',
                   onTap: () => _push(const CategoriesScreen()),
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
               ],
             ),
           ),
+
+          // ── 数据与维护 ──────────────────────────────────
           Panel(
-            title: '数据',
-            child: ListRow(
-              title: '备份与恢复',
-              subtitle: '导出明文文件（不加密），也能从备份合并回来；Key 可选一起带走',
-              onTap: () => _push(const BackupScreen()),
-              right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
-            ),
-          ),
-          Panel(
-            title: '维护',
+            title: '数据与维护',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                FindrButton(
-                  title: '批量补转写',
-                  variant: FindrButtonVariant.secondary,
-                  loading: _busy,
-                  onPressed: () => _run((rt) async {
-                    final res = await retryAllTranscriptions(requireDeps(rt));
-                    await ref.read(runtimeProvider.notifier).refresh();
-                    return '重置 ${res.reset} 张，完成 ${res.run.settled} 张。';
-                  }, title: '补转写'),
+                ListRow(
+                  title: '数据备份与恢复',
+                  subtitle: '导出或导入记忆档案包 (.findrpack)',
+                  onTap: () => _push(const BackupScreen()),
+                  right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
-                const SizedBox(height: Spacing.two),
-                FindrButton(
-                  title: '立刻跑一次解析队列',
-                  variant: FindrButtonVariant.secondary,
-                  onPressed: () => _run((rt) async {
-                    final res = await runQueueNow(rt);
-                    if (res == null) return '还没配置主模型，队列没跑。素材都在，配好之后会自动补上。';
-                    return '推进 ${res.processed} 张，入库 ${res.settled} 张'
-                        '${res.failed > 0 ? '，失败 ${res.failed} 张（卡片上带「重试中」，可再跑一次）' : ''}'
-                        '${res.skippedNoAsr > 0 ? '，${res.skippedNoAsr} 张在等 ASR' : ''}。';
-                  }, title: '跑队列'),
-                ),
-                const SizedBox(height: Spacing.two),
-                FindrButton(
-                  title: '打开自检',
-                  variant: FindrButtonVariant.ghost,
-                  icon: Icons.health_and_safety_outlined,
-                  onPressed: () => _push(const SelfCheckScreen()),
+                FindrDivider(),
+                ListRow(
+                  title: '处理队列与诊断',
+                  subtitle: '重试未完成的转写与模型解析，运行系统自检',
+                  onTap: _showDiagnosticsSheet,
+                  right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
               ],
             ),
           ),
+
+          // ── 关于 ──────────────────────────────────────
           Panel(
-            title: '关于',
+            title: '关于 Findr',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Row(
                   children: <Widget>[
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: c.record,
+                        borderRadius: BorderRadius.circular(Radii.md),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        'F',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: c.recordText),
+                      ),
+                    ),
+                    const SizedBox(width: Spacing.three),
+                    Expanded(
+                      child: GestureDetector(
+                        onLongPress: () => _showDevDetails(rt),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              'FindR',
+                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.text),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '版本 ${rt.version ?? '1.0.0'}',
+                              style: TextStyle(fontSize: 12, color: c.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     FindrChip(
                       dense: true,
-                      label:
-                          '图片分析${rt.llm?.capabilities == null ? '：未探测' : (rt.llm!.capabilities!.vision ? '：支持' : '：不支持')}',
+                      label: rt.llm?.capabilities == null
+                          ? '多模态未探测'
+                          : (rt.llm!.capabilities!.vision ? '支持图片分析' : '纯文本模式'),
                     ),
                   ],
-                ),
-                const SizedBox(height: Spacing.three),
-                Text(
-                  '数据库：${rt.dbPath}\n'
-                  '版本：${rt.version ?? '未知'}\n'
-                  '图片压缩参数：长边 ≤1600px、WebP 0.8（默认：图片分析'
-                  '${defaultCaptureSettings.visionDefault ? '开' : '关'}）',
-                  style: TextStyle(fontSize: 11.5, height: 1.6, color: c.textMuted),
                 ),
               ],
             ),

@@ -337,7 +337,7 @@ void main() {
       CaptureInput(source: SourceKind.photo, text: '流程截图', images: images),
       id: 'c1',
     );
-    final llm = FakeLlmAdapter([p1(<String, Object?>{'category': '流程备忘'})]);
+    final llm = FakeLlmAdapter([p1(<String, Object?>{'category': '流程记录'})]);
 
     await advanceCard(deps(db: db, llm: llm, maxAnalyzeImages: 3), 'c1', vision: true);
     final sent = llm.requests[0].parts.whereType<ImagePart>().toList();

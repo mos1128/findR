@@ -40,6 +40,7 @@ final class AdviceResult {
     this.missing = const <String>[],
     this.answer = '',
     this.error,
+    this.usage,
   });
 
   final bool ok;
@@ -56,6 +57,8 @@ final class AdviceResult {
   final String answer;
 
   final String? error;
+
+  final ChatUsage? usage;
 }
 
 final class AdviceDeps {
@@ -124,6 +127,7 @@ Future<AdviceResult> adviseFromInventory(
       maybe: maybe,
       missing: p4.missing.map((m) => m.trim()).where((m) => m.isNotEmpty).toList(),
       answer: p4.answer,
+      usage: res.usage,
     );
   } catch (e) {
     return AdviceResult(ok: false, error: e.toString());

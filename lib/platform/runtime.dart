@@ -73,6 +73,25 @@ Future<RuntimeState> openRuntime({
   required ApiKeyStore keys,
   String? version,
 }) async {
+  // 数据库平滑升级与分类规范化
+  try {
+    // 升级旧预设：流程备忘 改为 流程记录
+    db
+        .prepare(
+          "UPDATE categories SET name = '流程记录', description = '怎么做的步骤、流程与材料' "
+          "WHERE id = 'cat_procedure' AND name = '流程备忘'",
+        )
+        .run();
+    // 插入新增的预设分类：备忘事项
+    db
+        .prepare(
+          "INSERT OR IGNORE INTO categories (id, name, emoji, description, sort, is_preset) "
+          "VALUES ('cat_memo', '备忘事项', NULL, '出行提醒、日常琐事、待办与生活备忘', 3, 1)",
+        )
+        .run();
+    // 清理分类历史残留的 emoji
+    db.prepare('UPDATE categories SET emoji = NULL WHERE emoji IS NOT NULL').run();
+  } catch (_) {}
   final llmKey = await keys.read(ApiKeySlot.llm);
   final asrKey = await keys.read(ApiKeySlot.asr);
   return RuntimeState(

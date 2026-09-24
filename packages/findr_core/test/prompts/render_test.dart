@@ -144,7 +144,7 @@ void main() {
         ),
         Category(id: 'c2', name: '待买补货', emoji: null, description: null, sort: 1, isPreset: true),
       ]);
-      expect(text, '- 📦物品存取：东西放哪了\n- 待买补货');
+      expect(text, '- 物品存取：东西放哪了\n- 待买补货');
     });
 
     test('formatLocationsForPrompt：只注入一二级，三级容器不注入', () {

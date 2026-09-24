@@ -174,7 +174,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
                   children: <Widget>[
                     FindrChip(
                       dense: true,
-                      label: '🏠 根',
+                      label: '根位置',
                       active: _parentId == null,
                       onPressed: () => setState(() => _parentId = null),
                     ),
@@ -186,6 +186,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
                 ),
                 const SizedBox(height: Spacing.three),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: <Widget>[
                     Expanded(
                       child: FindrField(
@@ -195,13 +196,10 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
                       ),
                     ),
                     const SizedBox(width: Spacing.two),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 22),
-                      child: FindrButton(
-                        title: '添加',
-                        expand: false,
-                        onPressed: _add,
-                      ),
+                    FindrButton(
+                      title: '添加',
+                      expand: false,
+                      onPressed: _add,
                     ),
                   ],
                 ),
@@ -224,11 +222,8 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
           Panel(
             title: '说明',
             child: Text(
-              '· 位置树由解析结果**增量长出来**：模型在内容里提到「电视柜下面的抽屉」'
-              '就会自动建好这一串，不必先来这里手工建。\n'
-              '· 改名会同步更新所有卡片的位置串（否则按新旧名字都搜不到）。\n'
-              '· 同一个父节点下不能有同名位置。',
-              style: TextStyle(fontSize: 11.5, height: 1.6, color: c.textMuted),
+              '位置树为可选项，无需预先手动创建。AI 分析卡片时若识别到存放位置会自动生成并归类；您也可在此手动梳理层级或修改位置名称。',
+              style: TextStyle(fontSize: 12, height: 1.6, color: c.textMuted),
             ),
           ),
         ],
@@ -257,25 +252,17 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
                   child: FindrField(label: '新名称', controller: _renameText),
                 ),
                 const SizedBox(width: Spacing.two),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 1),
-                  child: FindrButton(
-                    title: '保存',
-                    compact: true,
-                    expand: false,
-                    onPressed: () => _rename(node.id),
-                  ),
+                FindrButton(
+                  title: '保存',
+                  expand: false,
+                  onPressed: () => _rename(node.id),
                 ),
                 const SizedBox(width: Spacing.one),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 1),
-                  child: FindrButton(
-                    title: '取消',
-                    compact: true,
-                    expand: false,
-                    variant: FindrButtonVariant.ghost,
-                    onPressed: () => setState(() => _renameId = null),
-                  ),
+                FindrButton(
+                  title: '取消',
+                  expand: false,
+                  variant: FindrButtonVariant.ghost,
+                  onPressed: () => setState(() => _renameId = null),
                 ),
               ],
             ),

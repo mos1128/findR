@@ -35,6 +35,7 @@ final class AnswerResult {
     this.hitIds = const <String>[],
     this.suggest = '',
     this.error,
+    this.usage,
   });
 
   final bool ok;
@@ -45,6 +46,7 @@ final class AnswerResult {
 
   final String suggest;
   final String? error;
+  final ChatUsage? usage;
 }
 
 String _clip(String? value, int max) {
@@ -112,6 +114,7 @@ Future<AnswerResult> answerFromCards(
       answer: p3.answer,
       hitIds: p3.hitIds.where(known.contains).toList(),
       suggest: p3.suggest,
+      usage: res.usage,
     );
   } catch (e) {
     return AnswerResult(ok: false, error: e.toString());

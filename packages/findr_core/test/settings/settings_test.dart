@@ -287,6 +287,10 @@ void main() {
         makeLlmAdapter(const LlmSettings(providerType: ProviderType.openaiCompat, model: 'm')),
         isA<OpenAICompatAdapter>(),
       );
+      expect(
+        makeLlmAdapter(const LlmSettings(providerType: ProviderType.openaiResponses, model: 'm')),
+        isA<OpenAIResponsesAdapter>(),
+      );
     });
 
     test('设置里出现不可能用到的协议时显式报错', () {

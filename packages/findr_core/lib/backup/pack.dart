@@ -57,12 +57,16 @@ Future<ExportResult> exportBackup(
   BackupDeps deps, {
   DateTime? now,
   Map<String, String>? secrets,
+  List<String>? extraMediaPaths,
 }) async {
   final at = now ?? DateTime.now();
   final schemaVer = deps.schemaVersion ?? currentSchemaVersion(deps.db);
   final built = buildManifest(deps.db, schemaVer, at, deps.appVersion);
   final manifest = built.manifest.withApiKeys(secrets);
-  final mediaPaths = built.mediaPaths;
+  final mediaPaths = <String>{
+    ...built.mediaPaths,
+    ...?extraMediaPaths,
+  }.toList();
 
   // 第一趟：只读一遍媒体算 size/crc，**读完就丢** ——
   // buildZip 需要精确长度来一次性分配输出缓冲，所以长度必须先知道。

@@ -235,7 +235,8 @@ END''',
 /// 但那只是名字与 Emoji 的暗示，不再有任何字段约束含义。用户可自由增删改。
 const List<String> seedStatements = <String>[
   r'''INSERT OR IGNORE INTO categories (id, name, emoji, description, sort, is_preset) VALUES
-  ('cat_item', '物品存取', '📍', '东西放在哪里的记录', 0, 1),
-  ('cat_todo', '待买补货', '🛒', '要做什么、该买什么', 1, 1),
-  ('cat_procedure', '流程备忘', '📋', '怎么做的步骤与材料', 2, 1)''',
+  ('cat_item', '物品存取', NULL, '东西放在哪里的记录', 0, 1),
+  ('cat_todo', '待买补货', NULL, '要做什么、该买什么', 1, 1),
+  ('cat_procedure', '流程记录', NULL, '怎么做的步骤、流程与材料', 2, 1),
+  ('cat_memo', '备忘事项', NULL, '出行提醒、日常琐事、待办与生活备忘', 3, 1)''',
 ];

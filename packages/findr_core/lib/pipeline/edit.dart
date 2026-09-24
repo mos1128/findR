@@ -100,11 +100,17 @@ Future<AdvanceResult> reanalyzeCard(AdvanceDeps deps, String cardId) async {
 }
 
 final class RegenerateDescResult {
-  const RegenerateDescResult({required this.card, required this.ok, this.error});
+  const RegenerateDescResult({
+    required this.card,
+    required this.ok,
+    this.error,
+    this.usage,
+  });
 
   final MemoryCard? card;
   final bool ok;
   final String? error;
+  final ChatUsage? usage;
 }
 
 /// 编辑结构化字段后重新生成 desc（需求四）。
@@ -137,11 +143,21 @@ Future<RegenerateDescResult> regenerateDesc(AdvanceDeps deps, String cardId) asy
         card: getCard(deps.db, cardId),
         ok: false,
         error: (parsed as ParseFailure<P1Output>).error,
+        usage: res.usage,
       );
     }
 
-    updateCardFields(deps.db, cardId, CardPatch(desc: parsed.value.desc), clock());
-    return RegenerateDescResult(card: getCard(deps.db, cardId), ok: true);
+    updateCardFields(
+      deps.db,
+      cardId,
+      CardPatch(desc: parsed.value.desc, lastError: null),
+      clock(),
+    );
+    return RegenerateDescResult(
+      card: getCard(deps.db, cardId),
+      ok: true,
+      usage: res.usage,
+    );
   } catch (e) {
     return RegenerateDescResult(card: getCard(deps.db, cardId), ok: false, error: e.toString());
   }

@@ -100,6 +100,25 @@ Future<String?> appVersion() async {
   }
 }
 
+List<String> listAllAttachments() {
+  if (!AppPaths.ready) return const <String>[];
+  final doc = AppPaths.documents;
+  final cardsDir = Directory('${doc.path}/files/cards');
+  if (!cardsDir.existsSync()) return const <String>[];
+  final rels = <String>[];
+  final docNorm = doc.path.replaceAll(r'\', '/');
+  for (final file in cardsDir.listSync(recursive: true).whereType<File>()) {
+    final norm = file.path.replaceAll(r'\', '/');
+    if (norm.startsWith('$docNorm/')) {
+      final rel = norm.substring(docNorm.length + 1);
+      if (rel.contains('/attachments/')) {
+        rels.add(rel);
+      }
+    }
+  }
+  return rels;
+}
+
 Future<ExportOutcome> exportToFile(
   SqliteDriver db, {
   String? version,
@@ -117,6 +136,7 @@ Future<ExportOutcome> exportToFile(
     BackupDeps(db: db, media: const DeviceMediaStore(), appVersion: version),
     now: now,
     secrets: secrets,
+    extraMediaPaths: listAllAttachments(),
   );
 
   onPhase?.call(ExportPhase.writing);

@@ -17,30 +17,83 @@ import 'package:findr_core/findr_core.dart';
 import '../platform/media.dart';
 import 'recorder.dart';
 
-/// 一张已经压好、等着落盘的图片。
+/// 一张选取的图片（支持选图时即刻上屏，压缩完全在后台异步处理）。
 final class PendingPhoto {
-  const PendingPhoto({required this.webp, required this.width, required this.height});
+  PendingPhoto({
+    Uint8List? rawBytes,
+    Uint8List? webp,
+    this.width = 0,
+    this.height = 0,
+    this.compressFuture,
+  })  : rawBytes = rawBytes ?? webp ?? Uint8List(0),
+        _webp = webp;
 
-  /// 已编码的 WebP 字节。
-  final Uint8List webp;
+  /// 原始选取的图片字节（用于无需等待的极速缩略图渲染，或作为后备）。
+  final Uint8List rawBytes;
+
+  /// 已压缩编码的 WebP 字节；若后台任务仍在压缩则初始为 null。
+  Uint8List? _webp;
+  Uint8List get webp => _webp ?? rawBytes;
+
+  /// 后台异步压缩的任务。
+  Future<void>? compressFuture;
 
   /// 压缩后的尺寸，仅用于回显与调试。
-  final int width;
-  final int height;
+  int width;
+  int height;
 
   /// 大概多少 KB，界面拿来显示「3 张 · 约 640KB」。
-  int get approxKb => (webp.length / 1024).round();
+  int get approxKb => ((_webp?.length ?? rawBytes.length) / 1024).round();
+
+  bool get isCompressed => _webp != null;
+
+  void setCompressed({required Uint8List webp, required int width, required int height}) {
+    _webp = webp;
+    this.width = width;
+    this.height = height;
+  }
+}
+
+/// 一个待保存的文件附件。
+final class PendingFile {
+  PendingFile({
+    required this.name,
+    required this.bytes,
+    this.text,
+    bool? includeContent,
+  }) : includeContent = includeContent ?? (text != null && text.trim().isNotEmpty);
+
+  final String name;
+  final Uint8List bytes;
+
+  /// 可解码为文本时的内容；若为 null 表示二进制或不可读文本。
+  final String? text;
+
+  /// 是否将内容提取并追加到记忆文本中由模型分析。
+  bool includeContent;
+
+  bool get isReadable => text != null && text!.trim().isNotEmpty;
+  int get sizeKb => (bytes.length / 1024).round();
+  int get charCount => text?.length ?? 0;
 }
 
 /// 一次录入要落库的东西。
 final class CaptureSubmission {
-  const CaptureSubmission({this.text, this.photos = const <PendingPhoto>[], this.audio});
+  const CaptureSubmission({
+    this.text,
+    this.photos = const <PendingPhoto>[],
+    this.audio,
+    this.attachments = const <PendingFile>[],
+  });
 
   final String? text;
   final List<PendingPhoto> photos;
 
   /// 还躺在临时目录里的录音；由 [persistCapture] 负责搬进媒体目录并删掉临时文件。
   final RecordedAudio? audio;
+
+  /// 附件文件列表。
+  final List<PendingFile> attachments;
 }
 
 /// 落盘 + 插行，返回草稿卡。调用方拿到就可以立刻渲染，**不必等模型**。
@@ -78,7 +131,13 @@ Future<MemoryCard> persistCapture(
     }
   }
 
-  // 3) 来源由「手里真有什么」决定，不是由用户从哪个入口进来的
+  // 3) 附件：存入卡片附件子目录
+  for (final att in input.attachments) {
+    final attRel = 'files/cards/${monthDir(at)}/$cardId/attachments/${att.name}';
+    writeMediaFile(attRel, att.bytes);
+  }
+
+  // 4) 来源由「手里真有什么」决定，不是由用户从哪个入口进来的
   //    （需求里没有「文件」这个来源，文本文件走的就是文字链路）
   final text = (input.text ?? '').trim();
   final SourceKind source;

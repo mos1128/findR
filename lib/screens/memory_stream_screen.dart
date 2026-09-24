@@ -124,7 +124,12 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     try {
       await persistCapture(
         rt.driver,
-        CaptureSubmission(text: payload.text, photos: payload.photos, audio: payload.audio),
+        CaptureSubmission(
+          text: payload.text,
+          photos: payload.photos,
+          audio: payload.audio,
+          attachments: payload.attachments,
+        ),
       );
     } catch (e) {
       _toast('没能存下：$e');
@@ -286,6 +291,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
                 count: cards.length,
                 canAnswer: cards.isNotEmpty && answer == null && advice == null && !answering,
                 llmReady: llmConfigured(ref.read(runtimeProvider).value?.llm),
+                usage: search.usage,
                 onAnswer: () => unawaited(
                   ref.read(memoryStreamProvider.notifier).requestAnswer(search.query, cards),
                 ),
@@ -334,6 +340,8 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
                 footer: answer.hitIds.isEmpty
                     ? null
                     : '依据 ${answer.hitIds.length} 张卡片，已在上方高亮',
+                usage: answer.usage,
+                searchUsage: search?.usage,
               ),
             if (advice != null)
               _AnswerCard(
@@ -343,6 +351,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
                 extraTone: NoticeTone.warn,
                 footer: '必需 ${advice.picks.length} 项'
                     '${advice.maybe.isEmpty ? '' : ' · 看情况 ${advice.maybe.length} 项'}',
+                usage: advice.usage ?? search?.usage,
               ),
             // 渐进式的唯一指示器：列表已经能用，答案还在路上。刻意放在答案即将出现的位置
             if (answering && answer == null && search != null)
@@ -553,7 +562,7 @@ class _SearchBarState extends State<_SearchBar> {
                                       }
                                       final cat = widget.categories[i - 1];
                                       return FindrChip(
-                                        label: '${cat.emoji ?? ''}${cat.name}',
+                                        label: cat.name,
                                         dense: true,
                                         active: widget.categoryFilter == cat.id,
                                         onPressed: () => widget.onCategory(widget.categoryFilter == cat.id ? null : cat.id),
@@ -624,7 +633,7 @@ class _SearchBarState extends State<_SearchBar> {
                                   ),
                                   for (final cat in widget.categories)
                                     FindrChip(
-                                      label: '${cat.emoji ?? ''}${cat.name}',
+                                      label: cat.name,
                                       dense: true,
                                       active: widget.categoryFilter == cat.id,
                                       onPressed: () => widget.onCategory(widget.categoryFilter == cat.id ? null : cat.id),
@@ -691,6 +700,7 @@ class _ResultsHeader extends StatelessWidget {
     required this.llmReady,
     required this.onAnswer,
     required this.onBack,
+    this.usage,
   });
 
   final AdviceResult? advice;
@@ -699,16 +709,45 @@ class _ResultsHeader extends StatelessWidget {
   final bool llmReady;
   final VoidCallback onAnswer;
   final VoidCallback onBack;
+  final ChatUsage? usage;
 
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
+    final countText = advice != null ? '为你挑出 $count 条' : '检索结果 $count 条';
     return Row(
       children: <Widget>[
         Expanded(
-          child: Text(
-            advice != null ? '为你挑出 $count 条' : '检索结果 $count 条',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textSecondary),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                countText,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textSecondary),
+              ),
+              if (advice == null && usage != null && usage!.total > 0) ...[
+                const SizedBox(width: Spacing.two),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: c.surfaceAlt,
+                    borderRadius: BorderRadius.circular(Radii.xs),
+                    border: Border.all(color: c.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.bolt_rounded, size: 11, color: c.textMuted),
+                      const SizedBox(width: 2),
+                      Text(
+                        '${usage!.total} tokens',
+                        style: TextStyle(fontSize: 10.5, color: c.textMuted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
         // 没有模型时不给「AI 总结」入口 —— 点了必然失败。
@@ -741,6 +780,8 @@ class _AnswerCard extends StatelessWidget {
     this.extra,
     this.extraTone = NoticeTone.info,
     this.footer,
+    this.usage,
+    this.searchUsage,
   });
 
   final String tag;
@@ -748,11 +789,25 @@ class _AnswerCard extends StatelessWidget {
   final String? extra;
   final NoticeTone extraTone;
   final String? footer;
+  final ChatUsage? usage;
+  final ChatUsage? searchUsage;
 
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     final extraColor = extraTone == NoticeTone.warn ? c.badgeConfirm : c.textSecondary;
+
+    final sTokens = searchUsage?.total ?? 0;
+    final aTokens = usage?.total ?? 0;
+    String? usageText;
+    if (sTokens > 0 && aTokens > 0) {
+      usageText = '总用量：${sTokens + aTokens} tokens（搜索 $sTokens + 总结 $aTokens）';
+    } else if (aTokens > 0) {
+      usageText = '用量：$aTokens tokens';
+    } else if (sTokens > 0) {
+      usageText = '用量：$sTokens tokens';
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: Spacing.three),
       decoration: BoxDecoration(
@@ -808,6 +863,23 @@ class _AnswerCard extends StatelessWidget {
           if (footer != null) ...<Widget>[
             const SizedBox(height: Spacing.two),
             Text(footer!, style: TextStyle(fontSize: 11, color: c.textMuted)),
+          ],
+          if (usageText != null) ...<Widget>[
+            const SizedBox(height: Spacing.two),
+            Row(
+              children: [
+                Icon(Icons.bolt_rounded, size: 13, color: c.record),
+                const SizedBox(width: 3),
+                Text(
+                  usageText,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: c.record,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ],
         ],
       ),

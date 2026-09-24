@@ -96,10 +96,10 @@ class _SelfCheckScreenState extends State<SelfCheckScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('自检 · 命门第 2 层'),
+        title: const Text('系统运行诊断'),
         actions: <Widget>[
           IconButton(
-            tooltip: '重跑',
+            tooltip: '重新诊断',
             onPressed: _running ? null : _run,
             icon: const Icon(Icons.refresh),
           ),
@@ -110,9 +110,8 @@ class _SelfCheckScreenState extends State<SelfCheckScreen> {
           padding: const EdgeInsets.all(16),
           children: <Widget>[
             const Text(
-              '这一屏验的是「打进 APK 的那份 SQLite 带不带 FTS5 + trigram」，'
-              '外加只有真机才成立的那几件事。\n'
-              '全部 ✅ 才算通过；本地 dart test 通过不等于这里通过。',
+              '检测底层数据库模块完整性、全文索引检索能力与真机沙盒读写状态。\n'
+              '所有检测项通过表示设备运行环境良好。',
             ),
             const SizedBox(height: 12),
             if (_error != null)

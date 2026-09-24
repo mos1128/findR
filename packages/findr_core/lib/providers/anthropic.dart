@@ -118,13 +118,21 @@ final class AnthropicAdapter implements LlmProviderAdapter {
                 .join()
           : '';
       final usage = asMap(data?['usage']);
+      final inputTokens = asInt(usage?['input_tokens']);
+      final outputTokens = asInt(usage?['output_tokens']);
+      final cacheRead = asInt(usage?['cache_read_input_tokens']) ?? 0;
+      final cacheWrite = asInt(usage?['cache_creation_input_tokens']) ?? 0;
+      final totalTokens = (inputTokens != null && outputTokens != null)
+          ? (inputTokens + outputTokens + cacheRead + cacheWrite)
+          : null;
       return ChatResponse(
         text: text,
         usage: usage == null
             ? null
             : ChatUsage(
-                inputTokens: asInt(usage['input_tokens']),
-                outputTokens: asInt(usage['output_tokens']),
+                inputTokens: inputTokens,
+                outputTokens: outputTokens,
+                totalTokens: totalTokens,
               ),
       );
     });

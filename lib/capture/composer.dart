@@ -22,6 +22,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -29,7 +30,6 @@ import 'package:flutter/material.dart';
 
 import '../platform/app_paths.dart';
 import '../theme/tokens.dart';
-import '../ui/kit.dart';
 import 'image_compress.dart';
 import 'photo_picker.dart';
 import 'recorder.dart';
@@ -42,6 +42,7 @@ final class ComposerPayload {
     this.text = '',
     this.photos = const <PendingPhoto>[],
     this.audio,
+    this.attachments = const <PendingFile>[],
     this.fromFile = false,
     this.vision = true,
     this.visionOverride,
@@ -54,6 +55,9 @@ final class ComposerPayload {
 
   /// 录音；`null` 表示这次没有语音。
   final RecordedAudio? audio;
+
+  /// 附件文件列表。
+  final List<PendingFile> attachments;
 
   /// 文本来源里有没有「选文件」那一份。只影响提示文案。
   final bool fromFile;
@@ -107,12 +111,8 @@ class _ComposerState extends State<Composer> {
   bool _hadContent = false;
 
   final _photos = <PendingPhoto>[];
-  final _files = <TextFileOk>[];
+  final _files = <PendingFile>[];
   RecordedAudio? _audio;
-
-  /// 正在压缩第几张 / 一共几张。0 表示没在处理。
-  int _processingDone = 0;
-  int _processingTotal = 0;
 
   bool _expanded = false;
   bool _recording = false;
@@ -191,7 +191,7 @@ class _ComposerState extends State<Composer> {
     super.dispose();
   }
 
-  bool get _locked => widget.busy || _sending || _processingTotal > 0;
+  bool get _locked => widget.busy || _sending;
   bool get _canSubmit => _hadContent && !_locked;
 
   // ── 提示 ────────────────────────────────────────────────
@@ -217,13 +217,14 @@ class _ComposerState extends State<Composer> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        title: Text(title, style: TextStyle(fontSize: 16, color: c.text)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.lg)),
+        title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
         content: Text(body, style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary)),
         actions: actions.isEmpty
             ? <Widget>[
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(),
-                  child: Text('知道了', style: TextStyle(color: c.record)),
+                  child: Text('知道了', style: TextStyle(color: c.record, fontWeight: FontWeight.w600)),
                 ),
               ]
             : actions,
@@ -242,36 +243,28 @@ class _ComposerState extends State<Composer> {
     final limitHint = overImageLimitHint(_photos.length + raws.length);
 
     setState(() {
-      _processingDone = 0;
-      _processingTotal = raws.length;
       _expanded = false;
-    });
-
-    final failures = <String>[];
-    for (final raw in raws) {
-      final result = await compute(compressToWebp, raw.bytes);
-      if (!mounted) return;
-      switch (result) {
-        case CompressOk(:final webp, :final width, :final height):
-          _photos.add(PendingPhoto(webp: webp, width: width, height: height));
-        case CompressFailed(:final reason):
-          failures.add('「${raw.name}」：$reason');
+      for (final raw in raws) {
+        final photo = PendingPhoto(rawBytes: raw.bytes);
+        _photos.add(photo);
+        // 后台异步进行极速 WebP 压缩，不阻塞主线程，不让用户等待
+        photo.compressFuture = compute(compressToWebp, raw.bytes).then((result) {
+          if (!mounted) return;
+          if (result is CompressOk) {
+            photo.setCompressed(
+              webp: result.webp,
+              width: result.width,
+              height: result.height,
+            );
+            if (mounted) setState(() {});
+          }
+        });
       }
-      setState(() => _processingDone++);
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _processingTotal = 0;
-      _processingDone = 0;
     });
     _refreshCanSubmit();
 
-    if (failures.isNotEmpty) {
-      await _alert('有 ${failures.length} 张没能加进来', failures.join('\n'));
-    }
     if (limitHint != null && mounted) {
-      // 需求 5.1：超过软阈值**只提示**，不做硬截断
+      // 需求 5.1：超过软阈值只提示，不做硬截断
       await _alert('图片有点多', limitHint);
     }
   }
@@ -304,15 +297,33 @@ class _ComposerState extends State<Composer> {
     if (_locked) return;
     final picked = await pickPlainTextFile();
     if (picked == null || !mounted) return;
-    final result = await readPlainTextFile(picked);
-    if (!mounted) return;
-    switch (result) {
-      case TextFileOk():
-        setState(() => _files.add(result));
-        _refreshCanSubmit();
-        _toast('已读入「${result.fileName}」${result.text.length} 字，按「存」一并记下');
-      case TextFileRejected(:final message):
-        await _alert('没能读这个文件', message);
+    try {
+      final bytes = await picked.xFile.readAsBytes();
+      if (bytes.isEmpty) {
+        _toast('所选文件为空');
+        return;
+      }
+      String? text;
+      try {
+        final decoded = utf8.decode(bytes);
+        final clean = decoded.startsWith('\uFEFF') ? decoded.substring(1) : decoded;
+        if (!clean.contains('\u0000') && clean.trim().isNotEmpty && clean.length <= 16000) {
+          text = clean.trim();
+        }
+      } catch (_) {
+        text = null;
+      }
+
+      final item = PendingFile(
+        name: picked.name,
+        bytes: bytes,
+        text: text,
+      );
+
+      setState(() => _files.add(item));
+      _refreshCanSubmit();
+    } catch (e) {
+      _toast('读取文件失败: $e');
     }
   }
 
@@ -348,52 +359,86 @@ class _ComposerState extends State<Composer> {
       if (audio != null) _audio = audio;
     });
     _refreshCanSubmit();
-    // 误触（太短 / 没拿到文件）时 `stop()` 回 null —— 什么都不做，也不打扰用户
-    if (audio != null) _toast('录了 ${(audio.durationMs / 1000).toStringAsFixed(1)} 秒，按「存」记下');
   }
 
   // ── 提交 ────────────────────────────────────────────────
 
   Future<void> _submit({bool forceWithVisionOff = false}) async {
     if (_locked || !_hasContent) return;
-    final text = <String>[_controller.text.trim(), ..._files.map((f) => f.text)]
-        .where((s) => s.isNotEmpty)
-        .join('\n\n');
+
     final photos = List<PendingPhoto>.of(_photos);
     final audio = _audio;
-    if (photos.isEmpty && audio == null && text.isEmpty) return;
+    final userText = _controller.text.trim();
+    if (photos.isEmpty && audio == null && userText.isEmpty && _files.isEmpty) return;
 
-    // 关掉图片分析又没有文字：**没有任何可抽取的信息源**（需求 5.1）。
-    // 这时不静默存下，先问一句 —— 纯图片卡片之后只能靠分类和标签找到它。
-    if (!forceWithVisionOff && !_vision && photos.isNotEmpty && text.isEmpty) {
-      final c = FindrColors.of(context);
-      await _alert(
-        '没有可分析的内容',
-        '打开图片分析，或者补一句话。也可以存成纯图片卡片 —— 之后只能靠分类和标签找到它。',
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('继续编辑', style: TextStyle(color: c.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              unawaited(_submit(forceWithVisionOff: true));
-            },
-            child: Text('存为纯图片卡片', style: TextStyle(color: c.danger)),
-          ),
-        ],
+    final readableFiles = _files.where((f) => f.isReadable).toList();
+    final hasPhotos = photos.isNotEmpty;
+    final hasReadableFiles = readableFiles.isNotEmpty;
+
+    // 当包含图片或可提取文本文件时，在点击「存」时唤起选项面板，明确选择是否进行 AI 分析
+    if (!forceWithVisionOff && (hasPhotos || hasReadableFiles)) {
+      final opts = await showModalBottomSheet<_SaveOptions>(
+        context: context,
+        backgroundColor: FindrColors.of(context).surface,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(Radii.xl)),
+        ),
+        builder: (sheetContext) => _SaveOptionsSheet(
+          hasPhotos: hasPhotos,
+          photoCount: photos.length,
+          visionCapable: widget.visionCapable,
+          initialVision: _vision,
+          hasReadableFiles: hasReadableFiles,
+          readableFileCount: readableFiles.length,
+          initialExtractFiles: readableFiles.any((f) => f.includeContent),
+          hasOtherContent: userText.isNotEmpty || audio != null,
+        ),
       );
-      return;
+      if (opts == null || !mounted) return;
+
+      _visionOverride = opts.vision;
+      for (final f in _files) {
+        if (f.isReadable) {
+          f.includeContent = opts.extractFiles;
+        }
+      }
     }
+
+    final textParts = <String>[];
+    if (userText.isNotEmpty) textParts.add(userText);
+
+    for (final f in _files) {
+      if (f.isReadable && f.includeContent && f.text != null) {
+        textParts.add('【文件：${f.name}】\n${f.text!}');
+      } else {
+        textParts.add('[附件: ${f.name}]');
+      }
+    }
+    final text = textParts.join('\n\n');
 
     setState(() => _sending = true);
     try {
+      // 确保所有图片的后台异步压缩已完成
+      for (final p in photos) {
+        if (!p.isCompressed) {
+          if (p.compressFuture != null) {
+            await p.compressFuture;
+          } else {
+            final res = await compute(compressToWebp, p.rawBytes);
+            if (res is CompressOk) {
+              p.setCompressed(webp: res.webp, width: res.width, height: res.height);
+            }
+          }
+        }
+      }
+
       await widget.onSubmit(
         ComposerPayload(
           text: text,
           photos: photos,
           audio: audio,
+          attachments: List<PendingFile>.of(_files),
           fromFile: _files.isNotEmpty,
           vision: _vision,
           visionOverride: _visionOverride,
@@ -466,8 +511,7 @@ class _ComposerState extends State<Composer> {
                   Expanded(
                     child: _AttachCard(
                       icon: Icons.camera_alt_rounded,
-                      title: '拍照 / 连拍',
-                      subtitle: '不限张数 拍完接着拍',
+                      title: '拍照',
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         unawaited(_takePhoto());
@@ -478,8 +522,7 @@ class _ComposerState extends State<Composer> {
                   Expanded(
                     child: _AttachCard(
                       icon: Icons.photo_library_rounded,
-                      title: '从相册选',
-                      subtitle: '支持多选 不限张数',
+                      title: '图片',
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         unawaited(_openLibrary());
@@ -489,9 +532,8 @@ class _ComposerState extends State<Composer> {
                   const SizedBox(width: Spacing.two),
                   Expanded(
                     child: _AttachCard(
-                      icon: Icons.description_rounded,
-                      title: '纯文本文件',
-                      subtitle: 'txt / md ≤8k字',
+                      icon: Icons.attach_file_rounded,
+                      title: '添加文件',
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         unawaited(_pickFile());
@@ -542,8 +584,6 @@ class _ComposerState extends State<Composer> {
                       photos: _photos,
                       files: _files,
                       audio: _audio,
-                      vision: _vision,
-                      visionCapable: widget.visionCapable,
                       enabled: !_locked,
                       onRemovePhoto: (i) {
                         setState(() => _photos.removeAt(i));
@@ -557,28 +597,7 @@ class _ComposerState extends State<Composer> {
                         setState(() => _audio = null);
                         _refreshCanSubmit();
                       },
-                      onToggleVision: () {
-                        setState(() => _visionOverride = !_vision);
-                        // 这一步不改动「存」的可用性，但仍要重建以便开关变色
-                      },
                     ),
-                    const SizedBox(height: Spacing.two),
-                  ],
-                  if (_photos.isNotEmpty) ...<Widget>[
-                    _ShootingHint(count: _photos.length, onAdd: _takePhoto, enabled: !_locked),
-                    const SizedBox(height: Spacing.two),
-                  ],
-                  if (_photos.isNotEmpty && !_vision) ...<Widget>[
-                    Text(
-                      widget.visionCapable
-                          ? '图片不发给模型，图里的内容不会被搜到（之后可以「补分析图片」）'
-                          : '当前模型无视觉能力，图片仅作附件保存',
-                      style: TextStyle(fontSize: 11, height: 1.4, color: c.textMuted),
-                    ),
-                    const SizedBox(height: Spacing.two),
-                  ],
-                  if (_processingTotal > 0) ...<Widget>[
-                    _Progress(text: '正在处理图片 $_processingDone/$_processingTotal…'),
                     const SizedBox(height: Spacing.two),
                   ],
                   if (_recording) ...<Widget>[
@@ -662,62 +681,16 @@ class _ComposerState extends State<Composer> {
   }
 }
 
-/// 拍摄引导 + 计数（需求 173：**张数不限、给出构图引导、不做硬性截断**）。
-///
-/// 用的是系统相机，所以这两句话落在录入坞上 ——
-/// 拍完回来就在眼前，接着拍点右边那颗。
-class _ShootingHint extends StatelessWidget {
-  const _ShootingHint({required this.count, required this.onAdd, required this.enabled});
-
-  final int count;
-  final Future<void> Function() onAdd;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = FindrColors.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: 6),
-      decoration: BoxDecoration(
-        color: c.surfaceAlt,
-        borderRadius: BorderRadius.circular(Radii.md),
-        border: Border.all(color: c.border.withValues(alpha: 0.7)),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(Icons.camera_enhance_rounded, size: 15, color: c.record),
-          const SizedBox(width: Spacing.two),
-          Expanded(
-            child: Text(
-              count == 1 ? '已拍 1 张：全貌 → 局部 → 特写' : '已拍 $count 张（不限张数）',
-              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: c.textSecondary),
-            ),
-          ),
-          FindrButton(
-            title: '再拍一张',
-            variant: FindrButtonVariant.ghost,
-            compact: true,
-            expand: false,
-            onPressed: enabled ? () => unawaited(onAdd()) : null,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// 底部展开的素材选项卡片。
 class _AttachCard extends StatelessWidget {
   const _AttachCard({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
   final VoidCallback onTap;
 
   @override
@@ -753,14 +726,6 @@ class _AttachCard extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.text),
               ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 10.5, color: c.textMuted),
-              ),
             ],
           ),
         ),
@@ -769,192 +734,407 @@ class _AttachCard extends StatelessWidget {
   }
 }
 
-/// 附件条：图片缩略图 + 文件 chip + 录音 chip + 图片分析开关。
+/// 附件条：统一药丸条，横向滚动的图片、文件与录音。
 class _AttachStrip extends StatelessWidget {
   const _AttachStrip({
     required this.photos,
     required this.files,
     required this.audio,
-    required this.vision,
-    required this.visionCapable,
     required this.enabled,
     required this.onRemovePhoto,
     required this.onRemoveFile,
     required this.onRemoveAudio,
-    required this.onToggleVision,
   });
 
   final List<PendingPhoto> photos;
-  final List<TextFileOk> files;
+  final List<PendingFile> files;
   final RecordedAudio? audio;
-  final bool vision;
-  final bool visionCapable;
   final bool enabled;
   final void Function(int index) onRemovePhoto;
   final void Function(int index) onRemoveFile;
   final VoidCallback onRemoveAudio;
-  final VoidCallback onToggleVision;
 
   @override
   Widget build(BuildContext context) {
-    final c = FindrColors.of(context);
-    final totalKb = photos.fold<int>(0, (sum, p) => sum + p.approxKb);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: <Widget>[
-        // ⚠️ 横向列表必须 `Expanded` 包住：不写它按内容撑宽，
-        // 会把右边的「图片分析」开关顶出屏幕（横向 ListView 在 Row 里的默认宽度就是内容宽度）。
-        Expanded(
-          child: SizedBox(
-            height: 54,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: photos.length + files.length + (audio == null ? 0 : 1),
-              separatorBuilder: (_, _) => const SizedBox(width: Spacing.two),
-              itemBuilder: (_, i) {
-                if (i < photos.length) {
-                  return _ThumbTile(
-                    photo: photos[i],
-                    onRemove: enabled ? () => onRemovePhoto(i) : null,
-                  );
-                }
-                final j = i - photos.length;
-                if (j < files.length) {
-                  final f = files[j];
-                  return _ChipTile(
-                    label: '📄 ${f.fileName}',
-                    sub: '${f.text.length} 字',
-                    onRemove: enabled ? () => onRemoveFile(j) : null,
-                  );
-                }
-                return _ChipTile(
-                  label: '🎙️ 录音',
-                  sub: '${(audio!.durationMs / 1000).toStringAsFixed(1)}s',
-                  onRemove: enabled ? onRemoveAudio : null,
-                );
-              },
-            ),
-          ),
-        ),
-        if (photos.isNotEmpty) ...<Widget>[
-          const SizedBox(width: Spacing.two),
-          GestureDetector(
-            onTap: visionCapable && enabled ? onToggleVision : null,
-            child: Container(
-              decoration: BoxDecoration(
-                color: vision ? c.record : c.surfaceAlt,
+    return SizedBox(
+      height: 36,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: photos.length + files.length + (audio == null ? 0 : 1),
+        separatorBuilder: (_, _) => const SizedBox(width: Spacing.two),
+        itemBuilder: (context, i) {
+          final c = FindrColors.of(context);
+          if (i < photos.length) {
+            final p = photos[i];
+            return _AttachTile(
+              leading: ClipRRect(
                 borderRadius: BorderRadius.circular(Radii.pill),
-                border: Border.all(color: vision ? c.record : c.border),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              child: Text(
-                '图片分析·${visionCapable ? (vision ? '开' : '关') : '不可用'}${
-                  photos.length > 1 ? ' · ${photos.length}张' : ''
-                }${totalKb > 0 ? ' · ${totalKb}KB' : ''}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: vision && visionCapable ? c.recordText : c.textSecondary,
+                child: Image.memory(
+                  p.rawBytes,
+                  cacheWidth: 64,
+                  cacheHeight: 64,
+                  width: 24,
+                  height: 24,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
                 ),
               ),
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _ThumbTile extends StatelessWidget {
-  const _ThumbTile({required this.photo, this.onRemove});
-
-  final PendingPhoto photo;
-  final VoidCallback? onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = FindrColors.of(context);
-    return SizedBox(
-      width: 48,
-      height: 54,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          Positioned(
-            left: 0,
-            bottom: 0,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(Radii.sm),
-              child: Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(border: Border.all(color: c.border)),
-                child: Image.memory(photo.webp, fit: BoxFit.cover, gaplessPlayback: true),
+              label: photos.length > 1 ? '图片 ${i + 1}' : '图片',
+              sizeText: p.approxKb > 0 ? '${p.approxKb}KB' : null,
+              onRemove: enabled ? () => onRemovePhoto(i) : null,
+            );
+          }
+          final j = i - photos.length;
+          if (j < files.length) {
+            final f = files[j];
+            return _AttachTile(
+              leading: Container(
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: c.textSecondary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  f.isReadable ? Icons.description_outlined : Icons.attach_file_rounded,
+                  size: 13,
+                  color: c.textSecondary,
+                ),
               ),
-            ),
-          ),
-          // 删除角标是缩略图的**子元素**，不是浮层 —— 别改成全屏 absolute
-          Positioned(
-            top: 0,
-            right: 0,
-            child: GestureDetector(
-              onTap: onRemove,
-              child: Container(
-                width: 19,
-                height: 19,
-                decoration: BoxDecoration(color: c.danger, shape: BoxShape.circle),
-                child: const Icon(Icons.close_rounded, size: 13, color: Colors.white),
+              label: f.name,
+              sizeText: '${f.sizeKb}KB',
+              onRemove: enabled ? () => onRemoveFile(j) : null,
+            );
+          }
+          return _AttachTile(
+            leading: Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: c.record.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
               ),
+              child: Icon(Icons.mic_none_rounded, size: 13, color: c.record),
             ),
-          ),
-        ],
+            label: '语音',
+            sizeText: '${(audio!.durationMs / 1000).toStringAsFixed(1)}s',
+            onRemove: enabled ? onRemoveAudio : null,
+          );
+        },
       ),
     );
   }
 }
 
-class _ChipTile extends StatelessWidget {
-  const _ChipTile({required this.label, required this.sub, this.onRemove});
+/// 统一规格的附件 Pill 组件（34px 高）
+class _AttachTile extends StatelessWidget {
+  const _AttachTile({
+    this.leading,
+    required this.label,
+    this.sizeText,
+    this.onRemove,
+  });
 
+  final Widget? leading;
   final String label;
-  final String sub;
+  final String? sizeText;
   final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: Spacing.two),
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: c.surfaceAlt,
         borderRadius: BorderRadius.circular(Radii.pill),
         border: Border.all(color: c.border),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          if (leading != null) ...<Widget>[
+            leading!,
+            const SizedBox(width: 6),
+          ],
           ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 150),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11.5, color: c.textSecondary),
-                ),
-                Text(sub, style: TextStyle(fontSize: 10, color: c.textMuted)),
-              ],
+            constraints: const BoxConstraints(maxWidth: 110),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: c.text,
+              ),
             ),
           ),
-          const SizedBox(width: Spacing.one),
-          GestureDetector(
-            onTap: onRemove,
-            child: Icon(Icons.close_rounded, size: 14, color: c.textMuted),
-          ),
+          if (sizeText != null) ...<Widget>[
+            const SizedBox(width: 5),
+            Text(
+              sizeText!,
+              style: TextStyle(
+                fontSize: 11,
+                color: c.textMuted,
+              ),
+            ),
+          ],
+          if (onRemove != null) ...<Widget>[
+            const SizedBox(width: 6),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onRemove,
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: Icon(Icons.close_rounded, size: 14, color: c.textMuted),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _SaveOptions {
+  const _SaveOptions({
+    required this.vision,
+    required this.extractFiles,
+  });
+
+  final bool vision;
+  final bool extractFiles;
+}
+
+/// 存入时的选项底板：针对图片与文本文件，明确询问是否进行 AI 提取与解析
+class _SaveOptionsSheet extends StatefulWidget {
+  const _SaveOptionsSheet({
+    required this.hasPhotos,
+    required this.photoCount,
+    required this.visionCapable,
+    required this.initialVision,
+    required this.hasReadableFiles,
+    required this.readableFileCount,
+    required this.initialExtractFiles,
+    required this.hasOtherContent,
+  });
+
+  final bool hasPhotos;
+  final int photoCount;
+  final bool visionCapable;
+  final bool initialVision;
+  final bool hasReadableFiles;
+  final int readableFileCount;
+  final bool initialExtractFiles;
+  final bool hasOtherContent;
+
+  @override
+  State<_SaveOptionsSheet> createState() => _SaveOptionsSheetState();
+}
+
+class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
+  late bool _vision;
+  late bool _extractFiles;
+
+  @override
+  void initState() {
+    super.initState();
+    _vision = widget.visionCapable && widget.initialVision;
+    _extractFiles = widget.initialExtractFiles;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = FindrColors.of(context);
+    final isPureAttachmentOnly = !widget.hasOtherContent &&
+        (!widget.hasPhotos || !_vision) &&
+        (!widget.hasReadableFiles || !_extractFiles);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.two, Spacing.four, Spacing.four),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: Spacing.three),
+                decoration: BoxDecoration(
+                  color: c.borderStrong,
+                  borderRadius: BorderRadius.circular(Radii.pill),
+                ),
+              ),
+            ),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    '存入选项',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text),
+                  ),
+                ),
+                Text(
+                  '选择素材的处理方式',
+                  style: TextStyle(fontSize: 12, color: c.textMuted),
+                ),
+              ],
+            ),
+            const SizedBox(height: Spacing.three),
+            if (widget.hasPhotos) ...<Widget>[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: Spacing.two),
+                decoration: BoxDecoration(
+                  color: c.surfaceAlt,
+                  borderRadius: BorderRadius.circular(Radii.lg),
+                  border: Border.all(color: c.border),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: c.record.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.auto_awesome_rounded, size: 20, color: c.record),
+                    ),
+                    const SizedBox(width: Spacing.three),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            'AI 识别图片内容 (${widget.photoCount}张)',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            !widget.visionCapable
+                                ? '当前模型不支持视觉分析，将作为附件保存'
+                                : (_vision ? '开启：由大模型分析图中物品并提取记忆' : '关闭：仅作为图片附件保存，不发给模型'),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: !widget.visionCapable ? c.textMuted : c.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: Spacing.two),
+                    Switch.adaptive(
+                      value: widget.visionCapable && _vision,
+                      onChanged: widget.visionCapable ? (val) => setState(() => _vision = val) : null,
+                      activeTrackColor: c.record,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: Spacing.two),
+            ],
+            if (widget.hasReadableFiles) ...<Widget>[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: Spacing.two),
+                decoration: BoxDecoration(
+                  color: c.surfaceAlt,
+                  borderRadius: BorderRadius.circular(Radii.lg),
+                  border: Border.all(color: c.border),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: c.record.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.description_rounded, size: 20, color: c.record),
+                    ),
+                    const SizedBox(width: Spacing.three),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            '提取文本文件内容 (${widget.readableFileCount}个)',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _extractFiles ? '开启：将文字内容追加到记忆正文供搜索' : '关闭：仅作为附件保存，不解析正文',
+                            style: TextStyle(fontSize: 12, color: c.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: Spacing.two),
+                    Switch.adaptive(
+                      value: _extractFiles,
+                      onChanged: (val) => setState(() => _extractFiles = val),
+                      activeTrackColor: c.record,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: Spacing.two),
+            ],
+            if (isPureAttachmentOnly) ...<Widget>[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Text(
+                  '💡 提示：当前未输入任何文字且未开启 AI 分析，将存为纯附件卡片（后续只能通过分类或标签查看）。',
+                  style: TextStyle(fontSize: 11.5, height: 1.4, color: c.danger),
+                ),
+              ),
+              const SizedBox(height: Spacing.two),
+            ],
+            const SizedBox(height: Spacing.two),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: c.border),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.pill)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    child: Text('取消', style: TextStyle(color: c.textSecondary, fontSize: 14)),
+                  ),
+                ),
+                const SizedBox(width: Spacing.three),
+                Expanded(
+                  flex: 2,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(context).pop(_SaveOptions(
+                        vision: _vision,
+                        extractFiles: _extractFiles,
+                      ));
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: c.record,
+                      foregroundColor: c.recordText,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.pill)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      isPureAttachmentOnly ? '仍作为纯附件存入' : '确认存入',
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

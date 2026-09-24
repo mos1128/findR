@@ -221,7 +221,7 @@ final class ParsedCardFields {
 }
 
 const String _applyParseSql =
-    "UPDATE cards SET status = 'active', category_id = ?, "
+    "UPDATE cards SET status = 'active', last_error = NULL, retry_count = 0, next_retry_at = NULL, category_id = ?, "
     'entity = ?, path_ids = ?, path_names = ?, steps = ?, desc_text = ?, tags = ?, confidence = ?, '
     'ask = ?, path_suggestion = ?, path_matched = ?, updated_at = ? WHERE id = ?';
 
@@ -650,6 +650,7 @@ final class CardPatch {
     this.ask = unset,
     this.pathSuggestion = unset,
     this.pathMatched = unset,
+    this.lastError = unset,
   });
 
   /// `String?`
@@ -687,6 +688,9 @@ final class CardPatch {
 
   /// `bool?`（落库转 0/1，三态保留）
   final Object? pathMatched;
+
+  /// `String?`（错误信息，可传 null 清除）
+  final Object? lastError;
 }
 
 /// 按白名单更新卡片字段，恒定刷新 `updated_at`。**只写 patch 里出现的键。**
@@ -717,6 +721,13 @@ void updateCardFields(SqliteDriver db, String id, CardPatch patch, DateTime now)
   if (!identical(patch.ask, unset)) put('ask', patch.ask);
   if (!identical(patch.pathSuggestion, unset)) put('path_suggestion', patch.pathSuggestion);
   if (!identical(patch.pathMatched, unset)) putTriBool('path_matched', patch.pathMatched);
+  if (!identical(patch.lastError, unset)) {
+    put('last_error', patch.lastError);
+    if (patch.lastError == null) {
+      put('retry_count', 0);
+      put('next_retry_at', null);
+    }
+  }
 
   if (sets.isEmpty) return;
   sets.add('updated_at = ?');
@@ -738,7 +749,9 @@ void markPlainCard(SqliteDriver db, String id, DateTime now) {
 
 void clearNeedsOrganize(SqliteDriver db, String id, DateTime now) {
   db
-      .prepare('UPDATE cards SET needs_organize = 0, updated_at = ? WHERE id = ?')
+      .prepare(
+        'UPDATE cards SET needs_organize = 0, last_error = NULL, retry_count = 0, next_retry_at = NULL, updated_at = ? WHERE id = ?',
+      )
       .run(<Object?>[isoUtc(now), id]);
 }
 

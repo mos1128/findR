@@ -62,6 +62,7 @@ export 'providers/factory.dart';
 export 'providers/fake.dart';
 export 'providers/media.dart';
 export 'providers/openai_compat.dart';
+export 'providers/openai_responses.dart';
 export 'providers/samples.dart';
 export 'providers/sse.dart';
 export 'providers/types.dart';
