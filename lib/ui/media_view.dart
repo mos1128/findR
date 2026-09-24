@@ -50,7 +50,6 @@ class MediaThumb extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         color: c.surfaceAlt,
-        border: Border.all(color: c.border),
         borderRadius: BorderRadius.circular(Radii.md),
       ),
       alignment: Alignment.center,
@@ -113,7 +112,6 @@ class MediaFull extends StatelessWidget {
         decoration: BoxDecoration(
           color: c.surfaceAlt,
           borderRadius: BorderRadius.circular(Radii.md),
-          border: Border.all(color: c.border),
         ),
         alignment: Alignment.center,
         child: Text('图片不在了', style: TextStyle(fontSize: 12.5, color: c.textMuted)),

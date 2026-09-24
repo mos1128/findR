@@ -27,9 +27,6 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
   /// 当前选中的父节点（null = 往根上加）。
   String? _parentId;
 
-  /// 非空 = 正在重命名这一条。
-  String? _renameId;
-
   RuntimeState get _rt {
     final v = ref.read(runtimeProvider).value;
     if (v == null) throw StateError('运行时还没就绪');
@@ -84,13 +81,58 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
     setState(() {});
   }
 
+  Future<void> _showRenameDialog(LocationNode node) async {
+    _renameText.text = node.name;
+    final c = FindrColors.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.lg)),
+        title: Text('重命名位置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text)),
+        content: Container(
+          decoration: BoxDecoration(
+            color: c.surfaceAlt,
+            borderRadius: BorderRadius.circular(Radii.md),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: Spacing.three),
+          child: TextField(
+            controller: _renameText,
+            autofocus: true,
+            style: TextStyle(fontSize: 14, color: c.text),
+            decoration: InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              hintText: '输入新名称',
+              hintStyle: TextStyle(fontSize: 13, color: c.textMuted),
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+            onSubmitted: (_) => Navigator.of(ctx).pop(true),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('取消', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('保存', style: TextStyle(color: c.record, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      _rename(node.id);
+    }
+  }
+
   void _rename(String id) {
     final name = _renameText.text.trim();
     if (name.isEmpty) return;
     renameLocation(_rt.driver, id, name);
     // ⚠️ 改名后同步卡片的冗余位置串，否则按旧名/新名都搜不到
     final changed = refreshPathNames(_rt.driver, DateTime.now());
-    _renameId = null;
     _renameText.clear();
     ref.read(runtimeProvider.notifier).refresh();
     setState(() {});
@@ -162,8 +204,8 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
         ),
         children: <Widget>[
           Panel(
-            title: '当前层级',
-            hint: '点一个位置即为「往它下面加」',
+            title: '当前添加层级',
+            hint: '点选下方位置可指定父级',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -178,37 +220,69 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
                       active: _parentId == null,
                       onPressed: () => setState(() => _parentId = null),
                     ),
-                    for (final name in parents) ...<Widget>[
-                      Text('›', style: TextStyle(color: c.textMuted)),
-                      Text(name, style: TextStyle(fontSize: 13, color: c.text)),
+                    for (int i = 0; i < parents.length; i++) ...<Widget>[
+                      Icon(Icons.chevron_right_rounded, size: 16, color: c.textMuted),
+                      FindrChip(
+                        dense: true,
+                        label: parents[i],
+                        active: i == parents.length - 1,
+                        onPressed: i == parents.length - 1
+                            ? null
+                            : () {
+                                var cur = _parentId;
+                                for (int k = parents.length - 1; k > i; k--) {
+                                  cur = byId[cur]?.parentId;
+                                }
+                                setState(() => _parentId = cur);
+                              },
+                      ),
                     ],
                   ],
                 ),
                 const SizedBox(height: Spacing.three),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: <Widget>[
-                    Expanded(
-                      child: FindrField(
-                        label: '在这里加一个位置',
-                        controller: _newName,
-                        placeholder: _parentId == null ? '例如：客厅' : '例如：电视柜',
+                Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: c.surfaceAlt,
+                    borderRadius: BorderRadius.circular(Radii.pill),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(14, 0, 4, 0),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(Icons.add_location_alt_outlined, size: 18, color: c.textMuted),
+                      const SizedBox(width: Spacing.two),
+                      Expanded(
+                        child: TextField(
+                          controller: _newName,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _add(),
+                          style: TextStyle(fontSize: 14, color: c.text),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            hintText: _parentId == null
+                                ? '新建根位置，如「客厅」'
+                                : '在「${parents.last}」下新增子位置',
+                            hintStyle: TextStyle(fontSize: 13, color: c.textMuted),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: Spacing.two),
-                    FindrButton(
-                      title: '添加',
-                      expand: false,
-                      onPressed: _add,
-                    ),
-                  ],
+                      FindrButton(
+                        title: '添加',
+                        compact: true,
+                        expand: false,
+                        onPressed: _add,
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
           Panel(
             title: '位置树',
-            hint: '长按改名',
+            hint: '长按改名 · 点击设为父级',
             child: all.isEmpty
                 ? const EmptyState(
                     title: '还没有位置',
@@ -240,74 +314,99 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
     final c = FindrColors.of(context);
     final nodes = _childrenOf(all, pid);
     final out = <Widget>[];
-    for (final node in nodes) {
-      if (_renameId == node.id) {
-        out.add(
-          Padding(
-            padding: EdgeInsets.fromLTRB(depth * 16, Spacing.two, 0, Spacing.two),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: <Widget>[
-                Expanded(
-                  child: FindrField(label: '新名称', controller: _renameText),
-                ),
-                const SizedBox(width: Spacing.two),
-                FindrButton(
-                  title: '保存',
-                  expand: false,
-                  onPressed: () => _rename(node.id),
-                ),
-                const SizedBox(width: Spacing.one),
-                FindrButton(
-                  title: '取消',
-                  expand: false,
-                  variant: FindrButtonVariant.ghost,
-                  onPressed: () => setState(() => _renameId = null),
-                ),
-              ],
+    for (int i = 0; i < nodes.length; i++) {
+      final node = nodes[i];
+      final isSelected = _parentId == node.id;
+      final childCount = _childrenOf(all, node.id).length;
+
+      out.add(
+        Padding(
+          padding: EdgeInsets.only(left: depth * 16.0),
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 1),
+            decoration: BoxDecoration(
+              color: isSelected ? c.record.withValues(alpha: 0.08) : Colors.transparent,
+              borderRadius: BorderRadius.circular(Radii.md),
             ),
-          ),
-        );
-      } else {
-        out.add(
-          Padding(
-            padding: EdgeInsets.only(left: depth * 16.0),
             child: ListRow(
               title: node.name,
-              subtitle: '${_childrenOf(all, node.id).length} 个子位置',
-              onTap: () => setState(() => _parentId = node.id),
-              onLongPress: () => setState(() {
-                _renameId = node.id;
-                _renameText.text = node.name;
-              }),
+              subtitle: childCount > 0 ? '$childCount 个子位置' : (isSelected ? '当前父级' : null),
+              leading: Icon(
+                depth == 0 ? Icons.folder_outlined : Icons.subdirectory_arrow_right_rounded,
+                size: depth == 0 ? 20 : 18,
+                color: isSelected ? c.record : (depth == 0 ? c.textSecondary : c.textMuted),
+              ),
+              onTap: () => setState(() => _parentId = isSelected ? null : node.id),
+              onLongPress: () => _showRenameDialog(node),
               right: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  InkWell(
-                    onTap: () => setState(() {
-                      _renameId = node.id;
-                      _renameText.text = node.name;
-                    }),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: Spacing.two),
-                      child: Text('改名', style: TextStyle(fontSize: 12.5, color: c.textMuted)),
-                    ),
+                  _ActionPill(
+                    label: '改名',
+                    icon: Icons.edit_outlined,
+                    onTap: () => _showRenameDialog(node),
                   ),
-                  InkWell(
+                  const SizedBox(width: Spacing.one),
+                  _ActionPill(
+                    label: '删除',
+                    icon: Icons.delete_outline_rounded,
+                    danger: true,
                     onTap: () => _delete(node),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: Spacing.two),
-                      child: Text('删除', style: TextStyle(fontSize: 12.5, color: c.danger)),
-                    ),
                   ),
                 ],
               ),
             ),
           ),
-        );
-      }
+        ),
+      );
       out.addAll(_renderTree(all, byId, node.id, depth + 1));
     }
     return out;
+  }
+}
+
+class _ActionPill extends StatelessWidget {
+  const _ActionPill({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = FindrColors.of(context);
+    final color = danger ? c.danger : c.textSecondary;
+    return Material(
+      color: danger ? c.danger.withValues(alpha: 0.08) : c.surfaceAlt,
+      borderRadius: BorderRadius.circular(Radii.pill),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Radii.pill),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4.5),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 12.5, color: color),
+              const SizedBox(width: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w500,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

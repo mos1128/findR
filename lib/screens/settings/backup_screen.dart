@@ -282,6 +282,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
             title: '数据安全说明',
             tone: NoticeTone.info,
             icon: Icons.shield_outlined,
+            surface: true,
             text:
                 '导出的备份包包含您的全部卡片与媒体内容。请妥善保存于受信任的个人私有云盘或本地存储中，避免在公共渠道传播。',
           ),

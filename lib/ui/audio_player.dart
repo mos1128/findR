@@ -240,7 +240,6 @@ class _Shell extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.surfaceAlt,
         borderRadius: BorderRadius.circular(Radii.md),
-        border: Border.all(color: c.border),
       ),
       padding: const EdgeInsets.all(Spacing.three),
       child: child,

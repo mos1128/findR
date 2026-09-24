@@ -99,18 +99,6 @@ class Panel extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(Radii.lg),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: c.shadow,
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-          BoxShadow(
-            color: c.shadow.withValues(alpha: 0.04),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
       ),
       padding: padding,
       child: Column(
@@ -191,7 +179,7 @@ class FindrButton extends StatelessWidget {
     final c = FindrColors.of(context);
     final (Color bg, Color fg, Color? border) = switch (variant) {
       FindrButtonVariant.primary => (c.record, c.recordText, null),
-      FindrButtonVariant.secondary => (c.surfaceAlt, c.text, null),
+      FindrButtonVariant.secondary => (c.surfaceSunken, c.text, null),
       FindrButtonVariant.danger => (c.danger, Colors.white, null),
       FindrButtonVariant.ghost => (Colors.transparent, c.record, null),
     };
@@ -256,6 +244,7 @@ class FindrChip extends StatelessWidget {
     this.active = false,
     this.onPressed,
     this.dense = false,
+    this.canvas = false,
   });
 
   final String label;
@@ -263,13 +252,18 @@ class FindrChip extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool dense;
 
+  /// 是否位于页面大底色（如记忆流顶栏筛选区）上；在底色上未激活态使用纯白以提升对比度。
+  final bool canvas;
+
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = active
-        ? (isDark ? Colors.white : const Color(0xFF0F172A))
-        : c.surfaceAlt;
+        ? (isDark ? Colors.white : c.text)
+        : (canvas
+            ? (isDark ? c.surfaceAlt : Colors.white)
+            : c.surfaceAlt);
     final fg = active
         ? (isDark ? const Color(0xFF121212) : Colors.white)
         : c.textSecondary;
@@ -363,6 +357,7 @@ class Notice extends StatelessWidget {
     this.title,
     this.action,
     this.icon,
+    this.surface = false,
   });
 
   final String text;
@@ -370,20 +365,22 @@ class Notice extends StatelessWidget {
   final String? title;
   final Widget? action;
   final IconData? icon;
+  final bool surface;
 
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final (Color fg, Color bg, IconData defaultIcon) = switch (tone) {
+    final (Color fg, Color defaultBg, IconData defaultIcon) = switch (tone) {
       NoticeTone.info => (c.textSecondary, c.surfaceAlt, Icons.info_outline_rounded),
       NoticeTone.warn => (c.badgeConfirm, c.badgeConfirmBg.withValues(alpha: 0.5), Icons.lightbulb_outline_rounded),
       NoticeTone.danger => (c.danger, c.badgeOrganizeBg.withValues(alpha: 0.5), Icons.error_outline_rounded),
       NoticeTone.success => (c.success, c.surfaceAlt, Icons.check_circle_outline_rounded),
     };
+    final bg = surface ? c.surface : defaultBg;
     return Container(
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(Radii.md),
+        borderRadius: BorderRadius.circular(surface ? Radii.lg : Radii.md),
       ),
       padding: const EdgeInsets.symmetric(horizontal: Spacing.four, vertical: Spacing.three),
       child: Row(

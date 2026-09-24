@@ -559,6 +559,13 @@ class _ComposerState extends State<Composer> {
     return Container(
       decoration: BoxDecoration(
         color: c.surface,
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: c.shadow.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
       ),
       child: SafeArea(
         top: false,
@@ -706,7 +713,6 @@ class _AttachCard extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: Spacing.two, vertical: Spacing.three),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(Radii.lg),
-            border: Border.all(color: c.border),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -849,7 +855,6 @@ class _AttachTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.surfaceAlt,
         borderRadius: BorderRadius.circular(Radii.pill),
-        border: Border.all(color: c.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -991,7 +996,6 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                 decoration: BoxDecoration(
                   color: c.surfaceAlt,
                   borderRadius: BorderRadius.circular(Radii.lg),
-                  border: Border.all(color: c.border),
                 ),
                 child: Row(
                   children: <Widget>[
@@ -1043,7 +1047,6 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                 decoration: BoxDecoration(
                   color: c.surfaceAlt,
                   borderRadius: BorderRadius.circular(Radii.lg),
-                  border: Border.all(color: c.border),
                 ),
                 child: Row(
                   children: <Widget>[

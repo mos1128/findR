@@ -96,6 +96,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
 
   void _toast(String message, {bool isError = false}) {
     final c = FindrColors.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -114,24 +115,25 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   style: TextStyle(
                     fontSize: 13.5,
                     fontWeight: FontWeight.w600,
-                    color: c.text,
+                    color: isError
+                        ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B))
+                        : c.text,
                   ),
                 ),
               ),
             ],
           ),
-          backgroundColor: c.surfaceAlt,
+          backgroundColor: isError
+              ? (isDark ? const Color(0xFF2C1515) : const Color(0xFFFEF2F2))
+              : c.surfaceAlt,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Radii.lg),
-            side: BorderSide(
-              color: (isError ? c.danger : c.record).withValues(alpha: 0.4),
-              width: 1.2,
-            ),
+            side: BorderSide.none,
           ),
           behavior: SnackBarBehavior.floating,
           margin: const EdgeInsets.only(left: 20, right: 20, bottom: 36),
           duration: const Duration(seconds: 4),
-          elevation: 6,
+          elevation: 4,
         ),
       );
   }
@@ -530,11 +532,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                             ? c.danger.withValues(alpha: 0.1)
                             : c.record.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(Radii.md),
-                        border: Border.all(
-                          color: _actionResult!.isError
-                              ? c.danger.withValues(alpha: 0.35)
-                              : c.record.withValues(alpha: 0.35),
-                        ),
                       ),
                       child: Row(
                         children: <Widget>[
@@ -609,7 +606,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                       decoration: BoxDecoration(
                         color: c.danger.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(Radii.md),
-                        border: Border.all(color: c.danger.withValues(alpha: 0.25)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,

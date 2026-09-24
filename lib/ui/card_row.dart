@@ -120,32 +120,31 @@ class CardRow extends StatelessWidget {
     final hasCategory = catName != null && catName.isNotEmpty;
     final hasPath = path != null && path.isNotEmpty;
 
-    return Material(
-      color: c.surface,
-      borderRadius: BorderRadius.circular(Radii.lg),
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
         borderRadius: BorderRadius.circular(Radii.lg),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(Radii.lg),
-            border: highlight ? Border.all(color: c.record, width: 1.5) : null,
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: highlight ? c.record.withValues(alpha: 0.12) : c.shadow,
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-              BoxShadow(
-                color: c.shadow.withValues(alpha: 0.03),
-                blurRadius: 2,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(Spacing.four),
-          child: Row(
+        border: highlight ? Border.all(color: c.record, width: 1.5) : null,
+        boxShadow: highlight
+            ? <BoxShadow>[
+                BoxShadow(
+                  color: c.record.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(Radii.lg),
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          borderRadius: BorderRadius.circular(Radii.lg),
+          child: Padding(
+            padding: const EdgeInsets.all(Spacing.four),
+            child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Expanded(
@@ -303,6 +302,7 @@ class CardRow extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

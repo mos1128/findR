@@ -469,7 +469,7 @@ class _SearchBarState extends State<_SearchBar> {
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
-                          color: c.surfaceAlt,
+                          color: c.surfaceSunken,
                           borderRadius: BorderRadius.circular(Radii.pill),
                         ),
                         padding: const EdgeInsets.symmetric(horizontal: Spacing.four),
@@ -504,7 +504,7 @@ class _SearchBarState extends State<_SearchBar> {
                     const SizedBox(width: Spacing.two),
                     Container(
                       decoration: BoxDecoration(
-                        color: c.surfaceAlt,
+                        color: c.surfaceSunken,
                         borderRadius: BorderRadius.circular(Radii.pill),
                       ),
                       child: IconButton(
@@ -553,17 +553,24 @@ class _SearchBarState extends State<_SearchBar> {
                                         return FindrChip(
                                           label: '全部',
                                           dense: true,
+                                          canvas: true,
                                           active: widget.categoryFilter == null,
                                           onPressed: () => widget.onCategory(null),
                                         );
                                       }
                                       if (i == widget.categories.length + 1) {
-                                        return FindrChip(label: '＋ 新建分类', dense: true, onPressed: widget.onNewCategory);
+                                        return FindrChip(
+                                          label: '＋ 新建分类',
+                                          dense: true,
+                                          canvas: true,
+                                          onPressed: widget.onNewCategory,
+                                        );
                                       }
                                       final cat = widget.categories[i - 1];
                                       return FindrChip(
                                         label: cat.name,
                                         dense: true,
+                                        canvas: true,
                                         active: widget.categoryFilter == cat.id,
                                         onPressed: () => widget.onCategory(widget.categoryFilter == cat.id ? null : cat.id),
                                       );
@@ -575,7 +582,7 @@ class _SearchBarState extends State<_SearchBar> {
                             if (widget.categories.isNotEmpty) ...<Widget>[
                               const SizedBox(width: Spacing.two),
                               Material(
-                                color: c.surfaceAlt,
+                                color: c.surfaceSunken,
                                 borderRadius: BorderRadius.circular(Radii.pill),
                                 child: InkWell(
                                   onTap: () => setState(() => _expanded = true),
@@ -628,6 +635,7 @@ class _SearchBarState extends State<_SearchBar> {
                                   FindrChip(
                                     label: '全部',
                                     dense: true,
+                                    canvas: true,
                                     active: widget.categoryFilter == null,
                                     onPressed: () => widget.onCategory(null),
                                   ),
@@ -635,12 +643,14 @@ class _SearchBarState extends State<_SearchBar> {
                                     FindrChip(
                                       label: cat.name,
                                       dense: true,
+                                      canvas: true,
                                       active: widget.categoryFilter == cat.id,
                                       onPressed: () => widget.onCategory(widget.categoryFilter == cat.id ? null : cat.id),
                                     ),
                                   FindrChip(
                                     label: '＋ 新建分类',
                                     dense: true,
+                                    canvas: true,
                                     onPressed: widget.onNewCategory,
                                   ),
                                 ],
@@ -732,7 +742,6 @@ class _ResultsHeader extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: c.surfaceAlt,
                     borderRadius: BorderRadius.circular(Radii.xs),
-                    border: Border.all(color: c.border),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -813,16 +822,15 @@ class _AnswerCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius: BorderRadius.circular(Radii.lg),
-        border: Border.all(color: c.record.withValues(alpha: 0.35), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: c.record.withValues(alpha: 0.06),
-            blurRadius: 10,
+            color: c.record.withValues(alpha: 0.08),
+            blurRadius: 12,
             offset: const Offset(0, 3),
           ),
           BoxShadow(
             color: c.shadow,
-            blurRadius: 4,
+            blurRadius: 6,
             offset: const Offset(0, 1),
           ),
         ],
