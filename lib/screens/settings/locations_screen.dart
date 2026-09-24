@@ -282,7 +282,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
           ),
           Panel(
             title: '位置树',
-            hint: '长按改名 · 点击设为父级',
+            hint: '点击设为父级',
             child: all.isEmpty
                 ? const EmptyState(
                     title: '还没有位置',
@@ -337,7 +337,6 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
                 color: isSelected ? c.record : (depth == 0 ? c.textSecondary : c.textMuted),
               ),
               onTap: () => setState(() => _parentId = isSelected ? null : node.id),
-              onLongPress: () => _showRenameDialog(node),
               right: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[

@@ -115,7 +115,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     baseUrl: _baseUrl.text.trim().isEmpty ? null : _baseUrl.text.trim(),
   );
 
-  Future<void> _save({bool thenDrain = false}) async {
+  Future<void> _save() async {
     setState(() {
       _busy = true;
       _probeText = null;
@@ -135,13 +135,6 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
       await ref.read(runtimeProvider.notifier).refresh();
       if (!mounted) return;
       _toast('已保存');
-      if (thenDrain) {
-        // 刚配好模型，顺手把积压的草稿推一遍 —— 这是用户配完之后最想看到的事
-        final ok = await runQueueNow(_rt);
-        if (mounted) {
-          _toast(ok == null ? '保存了，但还没配好主模型' : '已保存，并跑了一次解析队列');
-        }
-      }
     } catch (e) {
       if (mounted) _toast('保存失败：$e');
     } finally {
@@ -386,11 +379,6 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
             title: '保存配置',
             loading: _busy,
             onPressed: () => _save(),
-          ),
-          FindrButton(
-            title: '保存并立刻补跑一次队列',
-            variant: FindrButtonVariant.secondary,
-            onPressed: () => _save(thenDrain: true),
           ),
         ],
       ),

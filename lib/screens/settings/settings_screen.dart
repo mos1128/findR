@@ -350,11 +350,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ),
                       ),
                     ),
-                    FindrChip(
-                      dense: true,
-                      label: rt.llm?.capabilities == null
-                          ? '多模态未探测'
-                          : (rt.llm!.capabilities!.vision ? '支持图片分析' : '纯文本模式'),
+                    FindrButton(
+                      title: '检查更新',
+                      variant: FindrButtonVariant.secondary,
+                      compact: true,
+                      expand: false,
+                      onPressed: () {
+                        // 预留接口，暂不执行逻辑
+                      },
                     ),
                   ],
                 ),
