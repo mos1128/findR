@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider 的路径白名单：只把 cache 下的 updates/ 暴露给系统安装器。
+     下载目录就是 getTemporaryDirectory()/updates（= 这里的 cache-path，见
+     lib/platform/update.dart 的 updateDownloadDir）—— 白名单越小越安全：
+     这份 XML 之外的文件，别的 App 拿不到 content:// 授权。 -->
+<paths>
+    <cache-path name="updates" path="updates/"/>
+</paths>

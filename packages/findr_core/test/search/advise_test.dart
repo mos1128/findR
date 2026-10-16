@@ -68,7 +68,6 @@ final p2Advise = jsonEncode({
   'match_mode': 'any',
   'scenario': '出国旅游需要随身携带的物品',
   'aspects': ['证件', '洗漱用品', '电子产品'],
-  'normalized_query': '出国旅游需要带哪些东西',
 });
 
 final p4Answer = jsonEncode({
@@ -291,7 +290,6 @@ void main() {
           'match_mode': 'any',
           'scenario': null,
           'aspects': <String>[],
-          'normalized_query': '护照放在哪里',
         }),
       ]);
 

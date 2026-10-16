@@ -6,7 +6,7 @@
 name: findr_app
 description: "findR —— 本地优先的口述记忆库：说一句、拍一张，剩下交给它整理。"
 publish_to: 'none'
-version: 0.1.0+1
+version: 1.0.0+1
 
 environment:
   sdk: ^3.13.4
@@ -33,6 +33,8 @@ dependencies:
   path_provider: ^2.1.6
   record: ^7.1.1
   share_plus: ^13.3.0
+  # 「开源仓库」与「检查更新」要打开系统浏览器（release 构建也走这条，别只依赖 share 面板）
+  url_launcher: ^6.3.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

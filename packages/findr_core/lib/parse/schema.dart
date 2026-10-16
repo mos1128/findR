@@ -12,8 +12,8 @@
 /// | 直接暴露失败 | **整次解析失败**（没有兜底接住） |
 ///
 /// 具体到我们的四个 schema，**不做兜底的字段**是：
-/// `P1Output.path_matched` / `.path_suggestion`、`P2Output.time_hint` / `.scenario` /
-/// `.normalized_query`。也就是说模型把 `time_hint` 写成 `"yesterday"` 时，
+/// `P1Output.path_matched` / `.path_suggestion`、`P2Output.time_hint` / `.scenario`。
+/// 也就是说模型把 `time_hint` 写成 `"yesterday"` 时，
 /// 整条 P2 都作废、检索退回字面兜底 —— **别「顺手」补上默认值**。
 ///
 /// 手写校验要的东西很有限：**取值 + 判型 + 落默认**，
@@ -140,7 +140,6 @@ abstract final class P2OutputSchema {
         ),
         scenario: _nullishString(m['scenario'], 'scenario'),
         aspects: _caught(() => _stringList(m['aspects'], 'aspects'), const <String>[]),
-        normalizedQuery: _nullishString(m['normalized_query'], 'normalized_query'),
       );
     } catch (_) {
       return null;

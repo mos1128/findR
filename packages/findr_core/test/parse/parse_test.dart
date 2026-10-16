@@ -151,13 +151,9 @@ void main() {
       expect(bad, isA<ParseFailure<P2Output>>());
     });
 
-    test('scenario / normalized_query 类型不对同样拖垮整次解析（它们没有 catch）', () {
+    test('scenario 类型不对同样拖垮整次解析（它没有 catch）', () {
       expect(
         parseModelJson<P2Output>('{"scenario":123}', P2OutputSchema.tryParse),
-        isA<ParseFailure<P2Output>>(),
-      );
-      expect(
-        parseModelJson<P2Output>('{"normalized_query":[]}', P2OutputSchema.tryParse),
         isA<ParseFailure<P2Output>>(),
       );
     });
@@ -166,7 +162,7 @@ void main() {
       final base = parseModelJson(
         '{"mode":"advise","intent":"unknown","keywords":["a"],"synonyms":["x"],'
         '"category":"物品存取","time_hint":"recent","match_mode":"all",'
-        '"scenario":"出国","aspects":["证件"],"normalized_query":"q"}',
+        '"scenario":"出国","aspects":["证件"]}',
         P2OutputSchema.tryParse,
       );
       final v = (base as ParseOk<P2Output>).value;
@@ -180,7 +176,6 @@ void main() {
       expect(swapped.matchMode, v.matchMode);
       expect(swapped.scenario, v.scenario);
       expect(swapped.aspects, v.aspects);
-      expect(swapped.normalizedQuery, v.normalizedQuery);
     });
   });
 

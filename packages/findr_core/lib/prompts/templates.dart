@@ -1,14 +1,9 @@
-/// 提示词模板 —— 文案的权威出处是 `prompt设计.md`，改文案要与那边同步。
-///
-/// ⚠️ 这是全项目**唯一允许逐字复制**的两样东西之一（另一样是所有 SQL 语句）。
-/// **一个字都别改、别"优化"、别重排** —— 模板内容以 `prompt设计.md` 为唯一权威，
-/// 本文件只负责承载与注入（见 `prompts/render.dart`）。
+/// 提示词模板 —— **文案的唯一权威**。设计意图、行为约束与调用侧约定见 `prompt设计.md`，
+/// 那边只引用、不复制文案；改文案一律改在这里。
 ///
 /// Dart 侧用 **raw 三引号字符串**承载：模板里同时有单引号、双引号、`{` `}`、反斜杠，
 /// raw 形式能让它们原样穿过（也就不会有 `$` 被当插值的风险）。
 library;
-
-// 模板内容以《prompt设计.md》为唯一权威，本文件只负责承载与注入
 
 const String p1System = r'''你是一个个人记忆库的整理助手。用户会给你若干张照片（数量不定，也可能没有）和一段口述（可能由语音转写、可能有错别字），你需要整理成一条可长期检索的记忆卡片。
 
@@ -68,6 +63,24 @@ const String p1Fewshot = r'''输入：『备用手电筒放最下层纸箱了』
   "path_suggestion": "衣柜最下层的纸箱",
   "steps": [],
   "desc": "备用手电筒（也叫手电、应急灯）放在主卧衣柜最下层的纸箱里，箱内还收着应急物资和电池。黑色塑料外壳，装两节 5 号电池，是停电时备用的那一只。",
+  "tags": ["应急", "备用"],
+  "confidence": 0.86,
+  "missing": ["path 三级容器未确认"],
+  "ask": ""
+}''';
+
+// 仅文本模式用它替代 p1Fewshot：示例不带图，desc 只依据文字（见 `prompt设计.md` 一）
+const String p1FewshotTextOnly = r'''输入：『备用手电筒放主卧衣柜最下层纸箱里了，和应急物资、电池放一起』
+
+{
+  "category": "物品存取",
+  "entity": "备用手电筒",
+  "aliases": ["手电筒", "手电", "应急灯"],
+  "path": ["主卧", "衣柜"],
+  "path_matched": true,
+  "path_suggestion": "衣柜最下层的纸箱",
+  "steps": [],
+  "desc": "备用手电筒（也叫手电、应急灯）放在主卧衣柜最下层的纸箱里，和应急物资、电池放在一起，是停电时备用的那一只。",
   "tags": ["应急", "备用"],
   "confidence": 0.86,
   "missing": ["path 三级容器未确认"],
@@ -135,8 +148,7 @@ const String p2Fewshot = r'''输入：『我护照放哪了』
   "time_hint": null,
   "match_mode": "any",
   "scenario": null,
-  "aspects": [],
-  "normalized_query": "护照放在哪里"
+  "aspects": []
 }
 
 输入：『有哪些东西该买了』
@@ -151,8 +163,7 @@ const String p2Fewshot = r'''输入：『我护照放哪了』
   "time_hint": null,
   "match_mode": "any",
   "scenario": null,
-  "aspects": [],
-  "normalized_query": "待买清单有哪些"
+  "aspects": []
 }
 
 输入：『我去国外玩应该会用到哪些东西』
@@ -167,8 +178,7 @@ const String p2Fewshot = r'''输入：『我护照放哪了』
   "time_hint": null,
   "match_mode": "any",
   "scenario": "出国旅游需要随身携带的物品",
-  "aspects": ["证件", "洗漱用品", "电子产品", "常用药品", "衣物"],
-  "normalized_query": "出国旅游需要带哪些东西"
+  "aspects": ["证件", "洗漱用品", "电子产品", "常用药品", "衣物"]
 }''';
 
 const String p2OutputSchema = r'''{
@@ -181,8 +191,7 @@ const String p2OutputSchema = r'''{
   "time_hint": "recent | this_week | this_month | this_year | null",
   "match_mode": "any | all",
   "scenario": "advise：一句话情景描述；locate：null",
-  "aspects": ["advise：该情景通常需要的类别 2~6 个（写类别不写具体物品名）；locate：空数组"],
-  "normalized_query": "改写后的规范问句"
+  "aspects": ["advise：该情景通常需要的类别 2~6 个（写类别不写具体物品名）；locate：空数组"]
 }''';
 
 const String p3System = r'''给你若干条记忆卡片摘要和用户的问题。请基于这些片段回答。

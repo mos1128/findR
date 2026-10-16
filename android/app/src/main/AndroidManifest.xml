@@ -13,6 +13,19 @@
          · CAMERA **刻意不声明**：我们用 image_picker 走系统相机（App 只是发起 intent），
            一旦声明了 CAMERA，image_picker 反而会被要求先拿到该权限才能用。
          · 相册同理：`pickMultiImage` 走 Android 13+ 的系统照片选择器，不需要读媒体权限。 -->
+    <!-- 应用内更新（设置页「检查更新」下载安装包）要的两组权限。
+         ⚠️ 它们和 INTERNET 一样是「漏了就只在真机上炸」的那类，主清单里必须显式声明：
+         · REQUEST_INSTALL_PACKAGES：Android 8.0+ 拉起系统安装界面（ACTION_VIEW +
+           application/vnd.android.package-archive）的前提；没有它 canRequestPackageInstalls()
+           恒 false，安装界面根本起不来。用户还要在系统设置里单独允许一次「安装未知应用」。
+         · FOREGROUND_SERVICE / FOREGROUND_SERVICE_DATA_SYNC：下载期间的前台服务
+           （DownloadKeepAliveService，type=dataSync）。Android 14+ 缺 DATA_SYNC 会直接
+           抛异常把下载打断 —— 只在真机上暴露。
+         · POST_NOTIFICATIONS：Android 13+ 下载进度通知才看得见；**拒了不影响下载**。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="Findr"
         android:name="${applicationName}"
@@ -44,6 +57,24 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- 下载更新包期间的前台服务（只保活 + 挂通知，下载本体在 Dart 侧，见该类的注释）。
+             type 必须与 FOREGROUND_SERVICE_DATA_SYNC 权限配套，Android 14+ 缺一不可。 -->
+        <service
+            android:name=".DownloadKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!-- 把下载好的 APK 授权给系统安装器：file:// 从 API 24 起被禁，
+             只能走 content:// + 临时的读授权（MainActivity 里加 FLAG_GRANT_READ_URI_PERMISSION）。
+             白名单见 res/xml/file_paths.xml（只放 cache 下的 updates/）。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -54,6 +85,12 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- url_launcher（「开源仓库」/「检查更新」把链接丢给系统浏览器）：
+             Android 11+ 的包可见性要求这里声明目标 intent，否则 canLaunch/launch 会被挡。 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

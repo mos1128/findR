@@ -30,7 +30,8 @@ String buildP1System({
 }) {
   var s = render(p1System, {'categories': categories, 'locations': locations});
   s += '\n\n输出 schema（字段名与类型不得改动）：\n$p1Schema';
-  s += '\n\n$descRules\n\n$askRules\n\n示例：\n$p1Fewshot';
+  final example = textOnly == null ? p1Fewshot : p1FewshotTextOnly;
+  s += '\n\n$descRules\n\n$askRules\n\n示例：\n$example';
   if (textOnly == TextOnlyMode.off) {
     s += '\n\n$p1TextOnlyOff';
   } else if (textOnly == TextOnlyMode.unsupported) {
@@ -63,7 +64,7 @@ String describeCardFields(MemoryCard card) {
 /// 编辑结构化字段后重新生成 desc（需求四「编辑闭环」）。
 ///
 /// 把用户已确认的字段作为既定事实注入，避免模型又按自己的理解改写回去。
-/// 文案与规则见《prompt设计.md》一「重新生成 desc」。
+/// 设计见《prompt设计.md》一「重新生成 desc」；文案权威在本文件。
 String buildRegenerateDescUser(MemoryCard card) {
   final base = buildP1User(card.transcript);
   final locked = describeCardFields(card);

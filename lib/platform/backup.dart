@@ -81,7 +81,11 @@ final class ExportOutcome {
 /// 界面靠秒表交代「还在动」，不靠进度条。
 enum ExportPhase { packing, writing }
 
-/// 取 App 版本号（写进备份 manifest 的 `appVersion`）。
+/// 取 App 的版本号与构建号（`0.1.0+1` 的那两半）。
+///
+/// 版本号写进备份 manifest 的 `appVersion`；两个值一起喂给运行时快照 ——
+/// 设置页拿它显示「版本 0.1.0（+1）」，检查更新拿它跟远端比
+/// （只比版本号的话，「同版本重出的包」发现不了）。
 ///
 /// ⚠️ **这个 Future 有可能永远不完成** —— 它走平台通道，在少数环境（没注册插件的
 /// 测试宿主、个别定制 ROM）里那个调用可能迟迟不回包。
@@ -91,12 +95,14 @@ enum ExportPhase { packing, writing }
 ///
 /// （这里刻意**不加 `timeout`**：`timeout` 会挂一个定时器，在 widget 测试里
 /// 那个定时器必然「测试结束时仍 pending」而让用例失败。不阻塞比设超时更根本。）
-Future<String?> appVersion() async {
+Future<(String?, String?)> appVersionInfo() async {
   try {
-    return (await PackageInfo.fromPlatform()).version;
+    final info = await PackageInfo.fromPlatform();
+    return (info.version, info.buildNumber);
   } catch (_) {
-    // 取不到版本号不该让导出失败 —— manifest 里那个字段本来就可选
-    return null;
+    // 取不到不该让任何调用方失败 —— manifest 里那个字段本来就可选，
+    // 设置页则退回展示兜底文案
+    return (null, null);
   }
 }
 

@@ -48,6 +48,11 @@ void main() {
       expect(plain, isNot(contains('本次用户选择不分析图片')));
       expect(plain, isNot(contains('当前模型无法接收图片')));
       expect(off, isNot(equals(unsupported)));
+      // 仅文本模式换用不带图的示例，避免与「不要猜测图片内容」互相打架
+      expect(plain, contains('（3 张图：衣柜全貌 → 柜内 → 纸箱特写）'));
+      expect(off, contains('和应急物资、电池放一起'));
+      expect(off, isNot(contains('3 张图')));
+      expect(unsupported, isNot(contains('3 张图')));
     });
 
     test('user：没有文字输入时给出明确说明，而不是空片段', () {

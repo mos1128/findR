@@ -31,6 +31,7 @@ final class RuntimeState {
     required this.llmKey,
     required this.asrKey,
     required this.version,
+    required this.buildNumber,
   });
 
   final SqliteDriver driver;
@@ -52,9 +53,14 @@ final class RuntimeState {
   /// App 版本号，写进备份 manifest。
   final String? version;
 
-  /// 只覆盖版本号。**刻意只开这一个口子**：别让它长成通用的 `copyWith`，
+  /// App 构建号（pubspec `0.1.0+1` 里 `+` 后面那个数）。
+  /// 与 [version] 由同一次平台通道调用填入，同样可能一直是 `null`；
+  /// 检查更新拿它兜「版本号没变、但重出了一个包」的情形。
+  final String? buildNumber;
+
+  /// 只覆盖版本号与构建号。**刻意只开这一个口子**：别让它长成通用的 `copyWith`，
   /// 那样每加一个字段就要多一处「哪些能改」的判断，而这些字段本来都是设置页的职责。
-  RuntimeState withVersion(String? value) => RuntimeState(
+  RuntimeState withVersion(String? value, {String? buildNumber}) => RuntimeState(
     driver: driver,
     dbPath: dbPath,
     llm: llm,
@@ -64,6 +70,7 @@ final class RuntimeState {
     llmKey: llmKey,
     asrKey: asrKey,
     version: value,
+    buildNumber: buildNumber,
   );
 }
 
@@ -72,6 +79,7 @@ Future<RuntimeState> openRuntime({
   required Sqlite3Driver db,
   required ApiKeyStore keys,
   String? version,
+  String? buildNumber,
 }) async {
   // 数据库平滑升级与分类规范化
   try {
@@ -104,6 +112,7 @@ Future<RuntimeState> openRuntime({
     llmKey: llmKey,
     asrKey: asrKey,
     version: version,
+    buildNumber: buildNumber,
   );
 }
 
@@ -248,14 +257,15 @@ final class RuntimeNotifier extends AsyncNotifier<RuntimeState> {
     return rt;
   }
 
-  /// 拿到版本号再补一次快照。拿不到就一直空着（`appVersion()` 自己有超时兜底）。
+  /// 拿到版本号与构建号再补一次快照。拿不到就一直空着
+  /// （`appVersionInfo()` 有「可能永远不完成」的警告，所以只许在这里 unawaited 地等）。
   Future<void> _fillVersion(RuntimeState snapshot) async {
-    final v = await appVersion();
+    final (v, b) = await appVersionInfo();
     if (v == null) return;
     final current = state.value;
     // 期间若已经 refresh 过，state 里是另一份快照，别把新快照盖回旧的
     if (current != null && identical(current, snapshot)) {
-      state = AsyncData(snapshot.withVersion(v));
+      state = AsyncData(snapshot.withVersion(v, buildNumber: b));
     }
   }
 
@@ -271,6 +281,8 @@ final class RuntimeNotifier extends AsyncNotifier<RuntimeState> {
         db: ref.read(dbProvider),
         keys: ref.read(apiKeyStoreProvider),
         version: prev?.version,
+        // 构建号跟着一起带过来：只带 version 的话，保存一次设置就会把构建号抹掉
+        buildNumber: prev?.buildNumber,
       );
       state = AsyncData(next);
       if (next.version == null) unawaited(_fillVersion(next));

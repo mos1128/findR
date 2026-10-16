@@ -8,16 +8,16 @@ Findr（长程记忆助手）的**安卓客户端**。仓库根就是它；`lib/
 
 | 目录 | 放什么 |
 |---|---|
-| `lib/platform/` | 设备侧实现：DB 驱动、媒体读写、安全存储、备份、运行时（`runtime`）|
+| `lib/platform/` | 设备侧实现：DB 驱动、媒体读写、安全存储、备份、运行时（`runtime`）、检查更新与下载（`update`）、安装与保活通道（`update_install`）|
 | `lib/capture/` | 录入链路：拍照/相册、压缩、录音、文本文件、提交 |
-| `lib/ui/` | 通用组件（`kit.dart` 基础件、卡片行、媒体查看、音频回放）|
+| `lib/ui/` | 通用组件（`kit.dart` 基础件、卡片行、媒体查看、音频回放、更新进度小图标 `update_pill`）|
 | `lib/screens/` | 页面：记忆流主页、卡片详情、设置（5 屏）+ 自检屏 |
-| `lib/state/` | Riverpod 状态 |
+| `lib/state/` | Riverpod 状态（含 `update_download`：应用内更新的下载状态机）|
 | `lib/theme/` | 设计令牌（配色 / 圆角 / 间距）|
 | `assets/branding/` | 品牌素材（图标 / 启动图）—— **尚未接入**，见该目录的 README |
 
 **纯逻辑在 `packages/findr_core/`**（零 Flutter 依赖的纯 Dart 包：数据库 / 检索 / 模型调用 / 备份格式）。
-那边的测试是主验收网（290 条，`dart test`），这里的 widget 测试是补充（90 条，`flutter test`）。
+那边的测试是主验收网（299 条，`dart test`），这里的 widget 测试是补充（116 条，`flutter test`）。
 
 ## 常用命令
 
@@ -26,6 +26,7 @@ flutter pub get
 flutter analyze
 flutter test
 flutter run                 # 需要连着设备
+bash release.sh             # 发版：改版本号 → 打 tag → 推 GitHub（CI 出包并同步 Gitee，见《开发指南》5.6）
 ```
 
 ⚠️ 本机没装 Android SDK 时**出包只能走 CI**（`.github/workflows/flutter.yml` 的 `apk` 作业）。
@@ -36,7 +37,9 @@ flutter run                 # 需要连着设备
    （`android/app/src/main/AndroidManifest.xml`）。
    没有任何插件会替你带它，而 Flutter 模板在 `debug/`、`profile/` 清单里自带
    ⇒ **`flutter run` 一切正常、release 包装到真机后所有域名解析失败**
-   （`Failed host lookup`，真机验收时踩到过）。CI 里有一道产物级断言挡着。
+   （`Failed host lookup`，真机验收时踩到过）。CI 里有一道产物级断言挡着 ——
+   同一道断言还看着应用内更新的两个：`REQUEST_INSTALL_PACKAGES`（拉系统安装界面）
+   与 `FOREGROUND_SERVICE_DATA_SYNC`（下载时的保活前台服务），它们同样只在真机上才炸。
 
 2. **平台插件别放在首帧的关键路径上 `await`**
    （`package_info_plus` 这类在 widget test 宿主里永不返回，界面会一直转圈）。

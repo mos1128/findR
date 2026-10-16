@@ -1,9 +1,12 @@
 name: flutter
 
-# 私有仓库的 Actions 额度有限，而一次 APK 构建十几分钟（RN 版当年同理）：
-#   - checks 作业：push / PR 都跑，便宜，是迁移期的验收网。
-#   - apk    作业：只有 tag（fapk-*）或手动触发才跑，因为它要真出包。
-# 出包 tag 刻意用 **fapk-*** 前缀（RN 版当年是 apk-*），与旧标签区分开。
+# 两个作业的定位（**CI 跑测试这件事已经去掉**：改完在本地跑 `flutter test`，
+# 发版时 `release.sh` 还会先跑一遍；CI 只留「对本机测不出来的东西」的断言）：
+#   - mirror：main 推送时把代码镜像到 Gitee。
+#   - apk   ：打发布 tag（`v*`，由仓库根的 release.sh 打）或手动触发时出包：
+#             构建 → **三道产物级断言** → 发 GitHub 发布 → 同步 Gitee 发行版。
+# 发布 tag 的约定是「一版一 tag、tag = `v` + pubspec 版本号」，tag 的注释里放这次的更新说明
+# （release.sh 会问你要，两边的发行版正文都用它）；另有 **fapk-*** 前缀留给「临时出个包」。
 on:
   workflow_dispatch:
   push:
@@ -11,64 +14,51 @@ on:
       - main
     tags:
       - 'fapk-*'
-  pull_request:
+      - 'v*'
 
 permissions:
   contents: write
 
 jobs:
-  # ── 验收网：core 的纯 Dart 测试 + app 的静态分析与界面冒烟 ────────────────────
-  # 它对「命门」的贡献是**负向**的：只证明工具链能把 SQLite 开起来；
-  # 「打进 APK 的那份」由 apk 作业与本机真机自检屏负责。
-  checks:
+  # ── 把 main 镜像到 Gitee ────────────────────────────────────────────────────
+  # 让 Gitee 上的源码跟着 GitHub 走：本地只要推 GitHub，Gitee 那边由 CI 补上，
+  # 于是「GitHub 是唯一入口、Gitee 是镜像 + 国内发布目的地」这套结构不需要本地配 Gitee 凭据。
+  #
+  # ⚠️ 这一步等于**自动把代码放到公开的 Gitee 仓库**（即开源）。不想这么做就删掉这个作业。
+  # ⚠️ 只推 main、**不推 tag**：Gitee 上的发布 tag 由 apk 作业建发行版时创建 ——
+  #    两边都推同一个 tag 会打架（同一个名字指向不同提交时，git 会拒绝）。
+  # 没配 GITEE_TOKEN 时整步跳过（fork / 还没建令牌之前都不会因此变红）。
+  # 令牌怎么配：三步照抄《开发指南》5.7。
+  mirror:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 5
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v4
 
-      # ⚠️ 版本号**写死**，绝不写 `channel: stable`。
-      # 一旦写 channel，CI 会在某天悄悄换一个 Flutter 版本，表现是「昨天能出包今天不能」，
-      # 且本地复现不了 —— 这是最难查的一类故障。本机那个 SDK 也已 `scoop hold` 冻在同一版本。
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.47.5'
-          cache: true
-
-      - name: 核对工具链版本
+      - name: 镜像 main 到 Gitee
+        if: ${{ secrets.GITEE_TOKEN != '' }}
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
-          flutter --version
-          dart --version
-          flutter --version 2>&1 | grep -q 'Flutter 3\.47\.5' \
-            || { echo "::error::Flutter 版本不是 3.47.5，请检查 flutter-version 是否被改动"; exit 1; }
-
-      - name: 依赖解析
-        # pub workspaces（2026-09-23 起）：app 与 core 共用一份解析，在仓库根跑一次就够。
-        # ⚠️ 必须是 `flutter pub get` 而不是 `dart pub get` —— app 带 Flutter SDK 依赖，
-        #    纯 dart 的 pub 解析不了；在 member 目录里单独 pub get 也不再需要。
-        run: flutter pub get
-
-      - name: core 静态分析
-        working-directory: packages/findr_core
-        run: dart analyze
-
-      - name: core 测试（迁移的主验收网）
-        working-directory: packages/findr_core
-        run: dart test
-
-      - name: app 静态分析
-        run: flutter analyze
-
-      # 这一步会打印命门自检的七项明细，**日志本身就是证据**，出问题时直接看这里。
-      - name: app 冒烟测试（含命门自检）
-        run: flutter test --reporter expanded
+          set -euo pipefail
+          # 令牌只写进这一条命令的地址里，不落进 .git/config（Actions 会把日志里的密文打码）。
+          # ⚠️ 目的地必须写**全** `refs/heads/main`：CI 里是 detached HEAD（拿在某个提交上），
+          #    简写成 `HEAD:main` 时 git 拒绝猜（「not a full refname」，本机实测踩过）。
+          git push "https://ms6:${GITEE_TOKEN}@gitee.com/ms6/findR.git" "HEAD:refs/heads/main"
+          echo "已镜像：https://gitee.com/ms6/findR"
+          # 被拒（Gitee 那边有人直接改过代码）就会红在这一步 —— 别硬推，先看一眼两边的历史
 
   # ── 出包：构建 release APK，并对着**产物本身**断言命门 ─────────────────────────
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/fapk-')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/fapk-') || startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 要读出 tag 注释里那份「更新说明」——tag 对象必须被 fetch 下来（顺带留点历史）
+          fetch-depth: 20
 
       # ubuntu-latest 只有约 14GB 可用，Gradle 中间产物很容易撑爆（RN 那边实测过
       # 「No space left on device」）。这里删掉构建用不到的大件。刻意不碰 NDK。
@@ -121,17 +111,19 @@ jobs:
         #    纯 dart 的 pub 解析不了；在 member 目录里单独 pub get 也不再需要。
         run: flutter pub get
 
-      # 先跑一遍验收网：包还没出就先挂了，省得白等十分钟构建。
-      - name: core 测试
-        working-directory: packages/findr_core
+      # ⚠️ 这里的测试步骤**刻意没有**：测试在本地跑（改完 `flutter test`；发版时 `release.sh`
+      #    还会先跑一遍）。CI 只留「本机测不出来」的东西 —— 也就是下面那三道产物级断言。
+      # 发布约定：**一版一 tag**，tag = `v` + pubspec 的版本号（`0.1.0+1` → `v0.1.0+1`）。
+      # App 的「检查更新」就是读各渠道「最新一次发布」的 tag 来比版本 ⇒
+      # **每次发版必须让 pubspec 的版本号发生变化**（只动 `+` 后面那半也算），
+      # 否则 tag 不变，用户那边永远不会出现「新版本」。这里把版本号读出来给后面两步用。
+      - name: 读取版本号
+        id: ver
         run: |
-          dart analyze
-          dart test
-
-      - name: app 冒烟测试（含命门自检）
-        run: |
-          flutter analyze
-          flutter test --reporter expanded
+          set -euo pipefail
+          pub="$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')"
+          echo "pubspec 版本：$pub ⇒ 发布 tag：v$pub"
+          echo "value=$pub" >> "$GITHUB_OUTPUT"
 
       - name: Guard release signing config
         working-directory: android/app
@@ -150,6 +142,19 @@ jobs:
           # 注意产物名是 `app-release.apk` —— **带 ABI 后缀的 `app-<abi>-release.apk`
           # 只在 `--split-per-abi` 下才有**，别去赌名字（第一次就是栽在这上面）。
           flutter build apk --release --target-platform android-arm64
+
+      # 文件名就是 App 里拼下载地址用的那一个（`lib/platform/update.dart` 的 apkAssetName）。
+      # 改了名字而没同步改 App，用户点「下载」就是 404，而这事只有真机上才看得见 —— 挡在构建期。
+      - name: 断言 APK 文件名是 app-release.apk
+        run: |
+          set -euo pipefail
+          apk="$(ls build/app/outputs/flutter-apk/*.apk | head -1)"
+          base="$(basename "$apk")"
+          echo "产物：$base"
+          if [ "$base" != "app-release.apk" ]; then
+            echo "::error::APK 文件名不是 app-release.apk（App 里按这个名字拼下载地址），实际：$base"
+            exit 1
+          fi
 
       - name: 断言 APK 里那份 SQLite 带 FTS5 + trigram（命门的产物级证据）
         run: |
@@ -190,21 +195,37 @@ jobs:
             fi
           done
 
-      # INTERNET 权限的「release-only」陷阱：debug/profile 清单里 Flutter 模板自带它，
+      # 权限的「release-only」陷阱：debug/profile 清单里 Flutter 模板自带 INTERNET，
       # 所以 `flutter run` / 冒烟测试一切正常；而 release 走 main 清单，一旦漏声明，
       # 所有域名解析失败（Failed host lookup），且只有装到真机才暴露 —— 2026-09-23 实测踩过。
-      # 没有任何插件会替你声明 INTERNET，所以只能对着**产物**断言，在构建期就拦住。
-      - name: 断言合并清单里有 INTERNET 权限
+      # 没有任何插件会替你声明这些，所以只能对着**产物**断言，在构建期就拦住。
+      #
+      # 三个 token 对应三件「真机上才炸」的事：
+      #   · INTERNET：联网（首次撞到的那条，见上）；
+      #   · REQUEST_INSTALL_PACKAGES：应用内更新拉起系统安装界面（缺它 canRequestPackageInstalls()
+      #     恒 false，安装界面根本起不来）；
+      #   · FOREGROUND_SERVICE_DATA_SYNC：下载更新包的前台服务类型（Android 14+ 缺它直接抛异常）。
+      - name: 断言合并清单里有必需权限
         run: |
           set -euo pipefail
           apk="$(ls build/app/outputs/flutter-apk/*.apk | head -1)"
           python3 - "$apk" <<'PY'
           import sys, zipfile
           blob = zipfile.ZipFile(sys.argv[1]).read('AndroidManifest.xml')
-          token = 'android.permission.INTERNET'
-          found = token.encode() in blob or token.encode('utf-16-le') in blob
-          print('INTERNET 已合并进 APK 清单:', found)
-          sys.exit(0 if found else 1)
+          tokens = [
+              'android.permission.INTERNET',
+              'android.permission.REQUEST_INSTALL_PACKAGES',
+              'android.permission.FOREGROUND_SERVICE_DATA_SYNC',
+          ]
+          missing = []
+          for token in tokens:
+              found = token.encode() in blob or token.encode('utf-16-le') in blob
+              print(f'{token} 已合并进 APK 清单:', found)
+              if not found:
+                  missing.append(token)
+          if missing:
+              print('::error::合并后的清单缺少权限: ' + ', '.join(missing))
+          sys.exit(1 if missing else 0)
           PY
 
       - name: Upload APK
@@ -215,19 +236,106 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-      - name: Publish rolling dev release
+      # 发布正文 = **tag 注释里那份手写的更新说明**（release.sh 会问你要）+ 固定的安装须知。
+      # 两个渠道共用这一份（GitHub 用 body_path，Gitee 用 curl 的 `name@文件`）。
+      # ⚠️ 里面**不要写 markdown 强调符**：App 的更新弹窗是按纯文本渲染的。
+      - name: 组装发布正文
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.ver.outputs.value }}"
+          # 手动触发（本地没有这个 tag）或 tag 上没写说明时，给一句人话，别让正文空着
+          notes="$(git for-each-ref "refs/tags/$tag" --format='%(contents)' 2>/dev/null || true)"
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then
+            notes="（本次没有手写更新说明）"
+          fi
+          mkdir -p build
+          {
+            printf '%s\n' "$notes"
+            echo
+            echo "---"
+            echo
+            echo "findR 的开发版 APK（包名 com.findr.app.dev）。"
+            echo
+            echo "- 当前沿用 debug 签名：可以覆盖安装、数据保留。"
+            echo "- 装好后第一件事：在自检屏上确认七项全绿。"
+            echo "- 备份文件（.findrpack）当前是明文 ZIP，谁拿到谁能读。"
+            echo "- 安装时直接覆盖安装（别卸载），本地数据不会丢。"
+          } > build/release-body.md
+          echo "=== 发布正文 ==="
+          cat build/release-body.md
+
+      # 发布：**一版一 tag**。App 的「检查更新」读的就是这条发布的 tag，
+      # 所以它必须是正式 release（打 prerelease 标记的话，`/releases/latest` 会跳过它）。
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: flutter-dev-latest
-          name: Findr 开发版 · Flutter（最新）
-          body: |
-            findR 的开发版 APK（包名 `com.findr.app.dev`）。
-
-            - 当前沿用 **debug 签名**（可覆盖安装、数据保留）。换正式 keystore 必须卸载重装，
-              本地记忆库会清空 —— 那一步推迟到正式版（现有一期只剩发布收尾）。
-            - 装好后**第一件事**：在自检屏上确认七项全绿。那是在真机上验证
-              「打进 APK 的这份 SQLite 带 FTS5 + trigram」，是本方案的命门。
-              只要有 ❌，**先别往下用**，把截图发我。
-            - 备份文件（`.findrpack`）**当前是明文 ZIP**，谁拿到谁能读。
-          prerelease: true
+          tag_name: v${{ steps.ver.outputs.value }}
+          name: Findr 开发版 · Flutter · v${{ steps.ver.outputs.value }}
+          body_path: build/release-body.md
           files: build/app/outputs/flutter-apk/*.apk
+
+      # ── 同步到 Gitee（国内的更新源）────────────────────────────────────────────
+      # App 的「检查更新」**先问 Gitee**（国内直连最稳），Gitee 不通才落到 GitHub ——
+      # 所以两边都得有「最新一次发布」，tag 与 GitHub 那条完全一样。
+      #
+      # ⚠️ GITEE_TOKEN 没配就整步跳过：别人的 fork、以及你还没建令牌之前，不会因此变红。
+      #    令牌怎么配：三步照抄《开发指南》5.7。
+      #
+      # ⚠️ 两个「要真跑一次才知道」的点（见《开发指南》5.6）：
+      #   1. Gitee 是否接受 tag 里带 `+`（`v0.1.0+1`）；
+      #   2. 附件上传接口的字段名是否与文档一致。
+      # 这一步一旦报红，就照报错信息在 Gitee 网页上手动补一次发布 —— App 侧不受影响。
+      - name: 同步到 Gitee 发行版
+        if: ${{ secrets.GITEE_TOKEN != '' }}
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          api="https://gitee.com/api/v5/repos/ms6/findR"
+          tag="v${{ steps.ver.outputs.value }}"
+          # 路径里用百分号编码过的 tag（`v0.1.0+1` → `v0.1.0%2B1`），免得 `+` 被当空格解
+          tag_path="$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1], safe=""))' "$tag")"
+          apk="$(ls build/app/outputs/flutter-apk/*.apk | head -1)"
+
+          # 默认分支名：tag 只能指向 Gitee 自己仓库里的提交（GitHub 的 SHA 在这边不存在）
+          branch="$(curl -sS "$api?access_token=$GITEE_TOKEN" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("default_branch") or "master")')"
+          echo "Gitee 默认分支：$branch"
+
+          # 同名发行版若在（同一版本重跑），先删 —— 附件随之作废，免得同时挂两份
+          old_id="$(curl -sS "$api/releases/tags/$tag_path?access_token=$GITEE_TOKEN" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id","") if isinstance(d,dict) else "")' 2>/dev/null || true)"
+          if [ -n "$old_id" ]; then
+            echo "删除旧发行版 id=$old_id"
+            curl -sS -X DELETE "$api/releases/$old_id?access_token=$GITEE_TOKEN" -o /dev/null || true
+          fi
+
+          # 建发行版。CI 只镜像 main、**不推 tag** ⇒ Gitee 上这个 tag 通常还不存在，用
+          # target_commitish 让 Gitee 自己建；若同一版本重跑、tag 已存在，Gitee 可能拒绝这种建法
+          # ⇒ 去掉 target_commitish（复用已存在的 tag）再试一次。
+          # `--fail-with-body` 让 Gitee 的报错原文直接进日志。
+          create_release() {
+            curl -sS --fail-with-body -X POST "$api/releases" \
+              --data-urlencode "access_token=$GITEE_TOKEN" \
+              --data-urlencode "tag_name=$tag" \
+              --data-urlencode "name=Findr 开发版 · Flutter · $tag" \
+              --data-urlencode "body@build/release-body.md" \
+              --data-urlencode "prerelease=false" \
+              "$@" \
+              -o /tmp/gitee_release.json
+          }
+          if ! create_release --data-urlencode "target_commitish=$branch"; then
+            echo "第一次建发行版没成功（可能 tag 已存在），去掉 target_commitish 再试一次 …"
+            create_release
+          fi
+          new_id="$(python3 -c 'import json;print(json.load(open("/tmp/gitee_release.json"))["id"])')"
+          echo "新发行版 id=$new_id"
+
+          # 附件只有安装包（版本号在 tag 里，不再需要额外的版本文件）
+          curl -sS --fail-with-body -X POST "$api/releases/$new_id/attach_files" \
+            -F "access_token=$GITEE_TOKEN" -F "file=@$apk" -o /tmp/gitee_attach.json
+          python3 -c 'import json;d=json.load(open("/tmp/gitee_attach.json"));print("附件 OK:", d.get("browser_download_url") or d)'
+
+          # ⚠️ **不自动清理旧的发行版**：删东西这事留给人来定。
+          #    要留意的是 Gitee 的容量规矩 —— 单附件 ≤100M、**每仓库附件总量 ≤1G**，
+          #    每发一版挂一个包，大约二十来版就会充满；到那时手动删几个旧发行版即可。
+          #    （GitHub 那边没有总量限制，历史全留。）
+          echo "Gitee 同步完成：https://gitee.com/ms6/findR/releases/tag/$tag_path"

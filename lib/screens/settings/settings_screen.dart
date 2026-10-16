@@ -8,11 +8,15 @@
 /// - 关于：规范版本与关于信息，高级技术参数收拢于调试弹窗
 library;
 
+import 'dart:async';
+
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../platform/runtime.dart';
+import '../../platform/update.dart';
 import '../../selfcheck/self_check_screen.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
@@ -20,6 +24,7 @@ import 'backup_screen.dart';
 import 'categories_screen.dart';
 import 'locations_screen.dart';
 import 'provider_settings_screen.dart';
+import 'update_flow.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -49,22 +54,71 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// 本页统一的弹窗外壳（底色与标题样式只在这一处，别在各弹窗里各写一份）。
+  AlertDialog _alert(
+    BuildContext ctx, {
+    required String title,
+    required Widget content,
+    required List<Widget> actions,
+  }) {
+    final c = FindrColors.of(ctx);
+    return AlertDialog(
+      backgroundColor: c.surface,
+      title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
+      content: content,
+      actions: actions,
+    );
+  }
+
   void _dialog(String title, String body) {
-    final c = FindrColors.of(context);
     showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
-        content: Text(body, style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary)),
+      builder: (ctx) => _alert(
+        ctx,
+        title: title,
+        content: Text(
+          body,
+          style: TextStyle(fontSize: 13, height: 1.5, color: FindrColors.of(ctx).textSecondary),
+        ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('确定', style: TextStyle(color: c.record, fontWeight: FontWeight.w600)),
+            child: Text('确定', style: TextStyle(color: FindrColors.of(ctx).record, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
+  }
+
+  void _toast(String message) {
+    final c = FindrColors.of(context);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
+          backgroundColor: c.surface,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  /// 版本展示串。构建号拿不到就不显示那半 —— 别编一个假值出来。
+  String _versionLabel(RuntimeState rt) {
+    final v = rt.version ?? '1.0.0';
+    final b = rt.buildNumber;
+    return b == null ? v : '$v（+$b）';
+  }
+
+  /// 打开外部链接。**失败要说话** —— 静默失败会被当成「点了没反应」。
+  Future<void> _openUrl(String url) async {
+    var ok = false;
+    try {
+      ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      ok = false;
+    }
+    if (!ok && mounted) _toast('打不开浏览器，请手动访问：$url');
   }
 
   Future<void> _push(Widget screen) async {
@@ -164,7 +218,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         title: Text('系统信息', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
         content: SelectableText(
           '数据库文件：\n${rt.dbPath}\n\n'
-          '版本号：${rt.version ?? '1.0.0'}\n'
+          '版本号：${_versionLabel(rt)}\n'
           '图片处理：长边 ≤1600px，WebP 质量 0.8\n'
           '单卡图片上限：${rt.capture.maxAnalyzeImages} 张',
           style: TextStyle(fontSize: 12, height: 1.6, color: c.textSecondary),
@@ -175,6 +229,136 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Text('好', style: TextStyle(color: c.record)),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 检查更新。**三态分别给三种说法**（理由见 `platform/update.dart` 文件头）——
+  /// 「查不到」不许说成「已是最新」。
+  Future<void> _checkUpdate(RuntimeState rt) async {
+    final version = rt.version;
+    if (version == null) {
+      _dialog('检查更新', '暂时读不到当前版本号，稍后再试。');
+      return;
+    }
+    setState(() => _busy = true);
+    UpdateCheckResult res;
+    try {
+      res = await checkForUpdate(
+        currentVersion: version,
+        currentBuild: int.tryParse(rt.buildNumber ?? '') ?? 0,
+      );
+    } catch (_) {
+      res = const UpdateCheckFailed();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    switch (res) {
+      case UpdateAvailable(:final info):
+        // 怎么更新（选源 → 应用内下载 → 安装）整个交给 update_flow，这里只管「查」
+        unawaited(showUpdateFlow(context, ref, info: info, currentLabel: _versionLabel(rt)));
+      case UpToDate():
+        _dialog('检查更新', '当前已是最新版本 ${_versionLabel(rt)}。');
+      case UpdateCheckFailed():
+        _showUpdateFailedDialog();
+    }
+  }
+
+  void _showUpdateFailedDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final c = FindrColors.of(ctx);
+        return _alert(
+          ctx,
+          title: '检查更新',
+          content: Text(
+            '暂时拿不到更新信息（可能网络不稳）。\n可以稍后再试，或前往下载页手动查看。',
+            style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                _openUrl(releasePageUrl);
+              },
+              child: Text('前往下载页', style: TextStyle(color: c.record, fontWeight: FontWeight.w600)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('取消', style: TextStyle(color: c.textSecondary)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 开源仓库：GitHub / Gitee 两个入口，用系统浏览器打开。
+  void _showRepoDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        final c = FindrColors.of(ctx);
+        return _alert(
+          ctx,
+          title: '开源仓库',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _repoTile(ctx, name: 'GitHub', url: githubRepoUrl),
+              const SizedBox(height: Spacing.two),
+              _repoTile(ctx, name: 'Gitee', url: giteeRepoUrl),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: Text('关闭', style: TextStyle(color: c.textSecondary)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _repoTile(BuildContext ctx, {required String name, required String url}) {
+    final c = FindrColors.of(ctx);
+    return InkWell(
+      borderRadius: BorderRadius.circular(Radii.md),
+      onTap: () {
+        Navigator.of(ctx).pop();
+        _openUrl(url);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: Spacing.three),
+        decoration: BoxDecoration(
+          color: c.surfaceSunken,
+          borderRadius: BorderRadius.circular(Radii.md),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.code, size: 18, color: c.record),
+            const SizedBox(width: Spacing.three),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text)),
+                  const SizedBox(height: 2),
+                  Text(
+                    url.replaceFirst(RegExp(r'^https?://'), ''),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: c.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.open_in_new_rounded, size: 18, color: c.textMuted),
+          ],
+        ),
       ),
     );
   }
@@ -343,7 +527,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '版本 ${rt.version ?? '1.0.0'}',
+                              '版本 ${_versionLabel(rt)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(fontSize: 12, color: c.textMuted),
                             ),
                           ],
@@ -355,11 +541,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       variant: FindrButtonVariant.secondary,
                       compact: true,
                       expand: false,
-                      onPressed: () {
-                        // 预留接口，暂不执行逻辑
-                      },
+                      loading: _busy,
+                      onPressed: () => _checkUpdate(rt),
                     ),
                   ],
+                ),
+                FindrDivider(),
+                ListRow(
+                  title: '开源仓库',
+                  subtitle: '在 GitHub 或 Gitee 查看源码与发布',
+                  onTap: _showRepoDialog,
+                  right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
               ],
             ),

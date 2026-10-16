@@ -72,7 +72,6 @@ final class P2Output {
     this.matchMode = MatchMode.any,
     this.scenario,
     this.aspects = const <String>[],
-    this.normalizedQuery,
   });
 
   final SearchMode mode;
@@ -90,8 +89,6 @@ final class P2Output {
   /// 仅 advise：该情景通常需要的**类别**（不是具体物品名），用于给裁决提供方向。
   final List<String> aspects;
 
-  final String? normalizedQuery;
-
   /// 只换 [synonyms]，其余原样。
   ///
   /// 别名扩展后的词表会覆盖这里的 `synonyms`。
@@ -108,7 +105,6 @@ final class P2Output {
     matchMode: matchMode,
     scenario: scenario,
     aspects: aspects,
-    normalizedQuery: normalizedQuery,
   );
 }
 

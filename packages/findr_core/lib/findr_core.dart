@@ -74,6 +74,7 @@ export 'search/service.dart';
 export 'selfcheck.dart';
 export 'settings.dart';
 export 'types.dart' hide unset;
+export 'update/update_info.dart';
 export 'util/base64.dart';
 export 'util/iso.dart';
 export 'util/utf8.dart';
