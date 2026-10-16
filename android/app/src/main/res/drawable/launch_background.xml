@@ -1,12 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- 启动窗口：Flutter 引擎画出第一帧之前显示的那一屏。
+     底色用品牌蓝，中间放应用图标的**前景层** —— 就是「记忆卡片 + 定位针」那个图形。
+     前景层本身是透明底的，直接压在蓝底上即可，不必再单独导出一张启动图。
+     ⚠️ 冷启动很快，这一屏通常一闪而过；它的作用是挡掉「先闪一下白屏」。
+     位图由 tool/gen_icons.dart 生成，改图形请改那个脚本、别手改这里的图。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
-
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
+    <item android:drawable="@color/launch_background" />
+    <item>
         <bitmap
             android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+            android:src="@drawable/ic_launcher_foreground" />
+    </item>
 </layer-list>

@@ -1,34 +1,87 @@
 # 品牌素材（应用图标 / 启动图）
 
-应用图标与启动图的素材，做发布收尾时直接取用。
+**已接入**（2026-10-16）。手机桌面上的图标、冷启动那一屏，用的就是这里的图形。
 
-**目前尚未接入**（`android/app/src/main/res/mipmap-*/ic_launcher.png` 仍是 Flutter 模板默认图）。
-接入属于「发布收尾」那一步，见 `开发指南.md` 第七节。
+图形本身**不在本目录**，而是由脚本生成后落到安卓资源目录 —— 本目录只留一份设计稿存档，
+方便日后改配色或换形状时对照。
 
-## 文件
+## 改图标怎么做
+
+```bash
+dart run tool/gen_icons.dart        # 仓库根执行
+```
+
+脚本按固定设计稿（160 逻辑单位的方形画布）重出**全部**尺寸，一次覆盖：
+
+| 产物 | 用途 |
+|---|---|
+| `android/app/src/main/res/mipmap-*/ic_launcher.png` | 传统方形图标（蓝底圆角），API < 26 与部分启动器用 |
+| `android/app/src/main/res/drawable-*/ic_launcher_foreground.png` | 自适应图标 · 前景层（透明底） |
+| `android/app/src/main/res/drawable-*/ic_launcher_monochrome.png` | 自适应图标 · 单色层（Android 13+ 主题图标） |
+| 本目录 `icon.png` / `android-icon-*.png` / `splash-icon.png` | 设计稿存档 |
+
+自适应图标的**背景层是纯色、不占位图**：定义在
+`android/app/src/main/res/values/colors.xml` 的 `brand_blue`。
+图标底色、启动屏底色、本文件下表记的品牌蓝，三处必须是同一个值 —— 改一处要改三处
+（脚本顶部的 `kBlue` 也要同步）。
+
+## 设计稿
+
+| 项 | 值 |
+|---|---|
+| 图形 | 记忆卡片 + 定位针（记下一件东西，还知道它在哪） |
+| 主色 | `#208AEF` |
+| 点缀色 | `#FFB25E`（定位针） |
+| 卡片内容线 | `#B5D4F4` |
+| 画布 | 160 逻辑单位方形（= 自适应图标的 108dp 画布，1 单位 = 0.675dp） |
+| 内容缩放 | `kContentScale = 0.72` —— 见下节「安全区」 |
+| 圆角 | 34（仅传统方形图标用；自适应图标由系统裁切） |
+
+### 安全区（内容为什么要缩小）
+
+安卓自适应图标的三个数字（官方规范，别记混）：
+
+| 数字 | 含义 |
+|---|---|
+| **108 dp** | 前景 / 背景两层各自的画布，即本设计稿的 160 单位 |
+| **72 dp** | 真正显示出来的可视区（遮罩只在这块地里做文章）⇒ 圆形遮罩的直径就是 72dp |
+| **66 dp** | **安全区**：中心这个圆，任何厂商的遮罩都切不到。半径 33dp ≈ 本设计稿 48.9 单位 |
+
+脚本里的图形原本把安全区撑破了（卡片四角离画布中心 60~65 单位 ≈ 40.8dp）——
+后果是**圆形遮罩下卡片四个角会被切掉**，卡片就不像卡片了。所以要做两件事，缺一不可：
+
+1. 按 `kContentScale` 把内容整体缩小（0.72）；
+2. 把**卡片几何中心对齐到画布中心** —— 画稿里卡片偏下（中心 y=89，画布中心 80），
+   只缩不居中照样越界。
+
+缩完内容包围圆 ≈ 48.5 单位 ≈ 32.7dp，落在 33dp 安全区内。每次跑生成脚本，结尾都会打一行自检：
+
+```
+内容包围圆半径 48.5 单位 = 32.7 dp（安全区 33 dp / 遮罩可视 36 dp）  ✅ 在安全区内
+```
+
+显示 ❌ 就说明 `kContentScale` 调大了，圆形遮罩会切到内容。
+
+### 主题图标（单色层）的画法
+
+安卓 13+ 的「主题图标」会**丢掉这一层的颜色、只取形状**，再用系统色重新染一遍（背景也由系统自备）。
+所以结构只能靠留白表达，这里的画法与彩色稿不同：
+
+- 卡片 → **描边**（内部全透明），粗细 `kMonoStroke`
+- 定位针 → 保持**实心**，针孔镂空
+- 两者交界处 → 留一圈空隙 `kMonoGap`，把针和卡片描边切开
+
+⚠️ **不能照彩色稿把卡片画成实心**：实心卡片和压在上面的定位针是同一种颜色、还彼此重叠，
+结果是一整块实心色块（只剩针孔一个缺口），完全看不出画的是什么。
+
+## 存档文件
 
 | 文件 | 尺寸 | 用途 |
 |---|---|---|
-| `icon.png` | 780 KB | 主图标（iOS / 通用，方形圆角） |
-| `android-icon-foreground.png` | 77 KB | 安卓自适应图标 · 前景层 |
-| `android-icon-background.png` | 17 KB | 安卓自适应图标 · 背景层 |
-| `android-icon-monochrome.png` | 4 KB | 安卓自适应图标 · 单色层（Android 13+ 主题图标） |
-| `splash-icon.png` | 3 KB | 启动图中间的那个图标 |
-
-## 素材参数
-
-- **应用名**：`Findr`
-- **自适应图标背景色**：`#E6F4FE`
-- **启动图背景色**：`#208AEF`
-- **启动图图标宽度**：`76`（原始素材单位，Flutter 侧按实际分辨率换算）
-- 图标为竖屏应用（`orientation: portrait`）
-
-## 接入方式（将来做时二选一）
-
-1. **用工具**：`flutter_launcher_icons` + `flutter_native_splash`，把上面参数填进 `pubspec.yaml` 的配置段，一条命令生成各档位图。
-2. **手动**：按 Android 各密度档位（mdpi 48 / hdpi 72 / xhdpi 96 / xxhdpi 144 / xxxhdpi 192 px）
-   从 `icon.png` 缩放后替换 `android/app/src/main/res/mipmap-*/ic_launcher.png`；
-   自适应图标另建 `mipmap-anydpi-v26/ic_launcher.xml`，引用前景/背景两张图；
-   启动图改 `android/app/src/main/res/drawable/launch_background.xml`。
+| `icon.png` | 1024 px | 主图标（通用，方形圆角） |
+| `android-icon-foreground.png` | 432 px | 自适应图标 · 前景层 |
+| `android-icon-background.png` | 432 px | 自适应图标 · 背景层（纯色，仅存档） |
+| `android-icon-monochrome.png` | 432 px | 自适应图标 · 单色层 |
+| `splash-icon.png` | 216 px | 启动图中间那个图形（实际用的是 `ic_launcher_foreground`） |
 
 ⚠️ 换图标**不需要**卸载重装（只有换签名才要），改完覆盖安装即可。

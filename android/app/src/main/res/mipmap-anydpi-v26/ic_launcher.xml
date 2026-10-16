@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标（Android 8.0+）：系统会把下面三层拼起来，并按各厂商自己的形状裁切
+     （圆形 / 方形 / 泪滴形…）。所以前景与单色两层的图形必须落在中心安全区内 ——
+     tool/gen_icons.dart 里 160 逻辑单位的设计稿天然满足（图形占约 60%，安全区是 61%）。
+
+     位图由 tool/gen_icons.dart 生成，都放在 drawable-<密度>/ 下；
+     背景层用纯色（见 values/colors.xml），不占位图。 -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <!-- 单色层供 Android 13+ 的「主题图标」使用：系统会忽略其中颜色、只取形状并统一染色，
+         背景也由系统自备。因此这一层的结构只能靠留白表达 —— 卡片是描边（内部透明）、
+         定位针实心、两者之间留一圈空隙；若照彩色稿画成实心，整张图会糊成一块色块。
+         具体参数见 tool/gen_icons.dart 的 kMonoStroke / kMonoGap。 -->
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>
