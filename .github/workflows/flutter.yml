@@ -31,7 +31,7 @@ jobs:
   # ⚠️ 早退写在 run 里而不是 `if:` 里 —— 原因见下面那一步的注释（`secrets` 不能出现在 if 中）。
   # 令牌怎么配：三步照抄《开发指南》5.7。
   mirror:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
@@ -60,7 +60,10 @@ jobs:
 
   # ── 出包：构建 release APK，并对着**产物本身**断言命门 ─────────────────────────
   apk:
-    runs-on: ubuntu-latest
+    # ⚠️ 刻意钉死 24.04 而不是 `ubuntu-latest`：2026-10-19 起 `ubuntu-latest` 会迁到 Ubuntu 26，
+    #    而下面几步都依赖 runner 镜像的具体形态（预装 Android SDK 的路径、清理里写死的目录）。
+    #    镜像换代时这些假设可能不成立，表现就是发版当天构建莫名其妙红掉 —— 钉住，等主动升级。
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/fapk-') || startsWith(github.ref, 'refs/tags/v')
     steps:
