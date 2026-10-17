@@ -23,12 +23,18 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
-        versionCode = flutter.versionCode
+        // versionName 来自 pubspec.yaml（就是 `1.0.0` 这种三段版本名），它是**给人看的字符串**。
         versionName = flutter.versionName
+        // versionCode 是 Android 判断「谁更新」用的**整数**（只能是整数，不能塞 "1.0.0" 进去），
+        // 所以这里由版本名推出来：`1.0.0` → 10000、`1.0.1` → 10001、`1.2.3` → 10203。
+        // 这样版本名一变它就自动跟着涨，不用再维护第二个数字；同一个版本名重出包时两者都相同
+        // （系统视为同一版，正合我们的语义）。⚠️ 不去读 pubspec 的 `+N` —— 版本号已经改成三段，
+        // 没有那个数了（不写 `+N` 时 Flutter 的 `flutter.versionCode` 恒为 1，那样每版都同号）。
+        versionCode = run {
+            val parts = flutter.versionName.split(".").map { it.trim().toIntOrNull() ?: 0 }
+            fun part(i: Int) = parts.getOrElse(i) { 0 }.coerceIn(0, 99)
+            part(0) * 10000 + part(1) * 100 + part(2)
+        }
     }
 
     buildTypes {
