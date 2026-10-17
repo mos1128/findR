@@ -35,7 +35,12 @@ jobs:
     timeout-minutes: 5
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
+      # ⚠️ 必须拿**完整历史**（fetch-depth: 0）：checkout 默认是浅克隆（只 1 层），
+      #    而服务端会拒绝「从浅克隆推上去」——报 `! [remote rejected] HEAD -> main
+      #    (shallow update not allowed)`（2026-10-17 首次镜像实测）。仓库很小，拉全量不心疼。
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 镜像 main 到 Gitee
         env:
