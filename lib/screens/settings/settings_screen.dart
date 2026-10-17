@@ -103,12 +103,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       );
   }
 
-  /// 版本展示串。构建号拿不到就不显示那半 —— 别编一个假值出来。
-  String _versionLabel(RuntimeState rt) {
-    final v = rt.version ?? '1.0.0';
-    final b = rt.buildNumber;
-    return b == null ? v : '$v（+$b）';
-  }
+  /// 版本展示串。**只显示版本号**，不再挂「（+构建号）」——
+  /// 版本号现在就是三段 `X.Y.Z`、不带 `+N`，Android 的 versionCode 恒定是 1，
+  /// 把它印出来只会让人以为还存在另一套编号。构建号仍参与「检查更新」的比较（见下）。
+  String _versionLabel(RuntimeState rt) => rt.version ?? '1.0.0';
 
   /// 打开外部链接。**失败要说话** —— 静默失败会被当成「点了没反应」。
   Future<void> _openUrl(String url) async {

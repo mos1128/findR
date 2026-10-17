@@ -128,5 +128,16 @@ void main() {
     final older = parseReleaseInfo('{"tag_name":"v0.0.9+99"}')!;
     expect(isNewerThan(older, currentVersion: '0.1.0', currentBuild: 0), isFalse,
         reason: '构建号再大也盖不过版本号');
+
+    // 当前发版约定：版本号就是三段 `X.Y.Z`（不带 `+N`，Android 的 versionCode 固定是 1），
+    // **最后一位加一就算新版**。这条是整个「检查更新」的地基，别改坏。
+    final patchBump = parseReleaseInfo('{"tag_name":"v1.0.1"}')!;
+    expect(isNewerThan(patchBump, currentVersion: '1.0.0', currentBuild: 1), isTrue);
+    expect(isNewerThan(parseReleaseInfo('{"tag_name":"v1.0.10"}')!, currentVersion: '1.0.9', currentBuild: 1),
+        isTrue,
+        reason: '按数字比，不是按字符串比');
+    final sameVersion = parseReleaseInfo('{"tag_name":"v1.0.0"}')!;
+    expect(isNewerThan(sameVersion, currentVersion: '1.0.0', currentBuild: 1), isFalse,
+        reason: '同版本号重发包发现不了 ⇒ 要发版就得把最后一位加一');
   });
 }

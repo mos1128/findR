@@ -53,9 +53,10 @@ final class RuntimeState {
   /// App 版本号，写进备份 manifest。
   final String? version;
 
-  /// App 构建号（pubspec `0.1.0+1` 里 `+` 后面那个数）。
-  /// 与 [version] 由同一次平台通道调用填入，同样可能一直是 `null`；
-  /// 检查更新拿它兜「版本号没变、但重出了一个包」的情形。
+  /// App 构建号（Android 的 versionCode）。
+  /// 与 [version] 由同一次平台通道调用填入，同样可能一直是 `null`。
+  /// ⚠️ 现在版本号是三段 `X.Y.Z`、不带 `+N` ⇒ 这里恒为 **1**；它只在「远端 tag 恰好带了
+  /// `+构建号`」时才可能起作用（同版本号重出包那种情形），日常发版靠的是 [version] 的最后一位。
   final String? buildNumber;
 
   /// 只覆盖版本号与构建号。**刻意只开这一个口子**：别让它长成通用的 `copyWith`，
