@@ -32,7 +32,7 @@ jobs:
   # 令牌怎么配：三步照抄《开发指南》5.7。
   mirror:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     steps:
       # ⚠️ 必须拿**完整历史**（fetch-depth: 0）：checkout 默认是浅克隆（只 1 层），
@@ -59,7 +59,9 @@ jobs:
           # 令牌只写进这一条命令的地址里，不落进 .git/config（Actions 会把日志里的密文打码）。
           # ⚠️ 目的地必须写**全** `refs/heads/main`：CI 里是 detached HEAD（拿在某个提交上），
           #    简写成 `HEAD:main` 时 git 拒绝猜（「not a full refname」，本机实测踩过）。
-          git push "https://ms6:${GITEE_TOKEN}@gitee.com/ms6/findR.git" "HEAD:refs/heads/main"
+          # ⚠️ `--progress` 是为了看得见速度：GitHub 的 runner 在境外，推 gitee.com 很慢
+          #    （首次 2.9MB 推了 4 分半，≈11KB/s）。没有它日志会干等、看不出是在传还是卡住。
+          git push --progress "https://ms6:${GITEE_TOKEN}@gitee.com/ms6/findR.git" "HEAD:refs/heads/main"
           echo "已镜像：https://gitee.com/ms6/findR"
           # 被拒（Gitee 那边有人直接改过代码）就会红在这一步 —— 别硬推，先看一眼两边的历史
 
@@ -69,7 +71,7 @@ jobs:
     #    而下面几步都依赖 runner 镜像的具体形态（预装 Android SDK 的路径、清理里写死的目录）。
     #    镜像换代时这些假设可能不成立，表现就是发版当天构建莫名其妙红掉 —— 钉住，等主动升级。
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/fapk-') || startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
@@ -352,8 +354,11 @@ jobs:
           echo "新发行版 id=$new_id"
 
           # 附件只有安装包（版本号在 tag 里，不再需要额外的版本文件）
+          # `-w` 打出耗时与上传速度：runner 在境外、推 gitee.com 很慢（git 推 2.9MB 用了 4 分半），
+          # 21MB 的包到底传了多久，只有这行数字说得清。
           curl -sS --fail-with-body -X POST "$api/releases/$new_id/attach_files" \
-            -F "access_token=$GITEE_TOKEN" -F "file=@$apk" -o /tmp/gitee_attach.json
+            -F "access_token=$GITEE_TOKEN" -F "file=@$apk" -o /tmp/gitee_attach.json \
+            -w '附件上传耗时 %{time_total}s，平均 %{speed_upload} B/s\n'
           python3 -c 'import json;d=json.load(open("/tmp/gitee_attach.json"));print("附件 OK:", d.get("browser_download_url") or d)'
 
           # ⚠️ **不自动清理旧的发行版**：删东西这事留给人来定。
