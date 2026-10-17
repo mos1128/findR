@@ -76,8 +76,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # 要读出 tag 注释里那份「更新说明」——tag 对象必须被 fetch 下来（顺带留点历史）
           fetch-depth: 20
+
+      # 🚨 这一步**不能省**：checkout 是按「提交 SHA」取 tag 的，落地成的是**轻量 tag**
+      #    （指向提交、没有注释），于是后面 `%(contents)` 读出来是那条**提交信息**，
+      #    根本不是我手写的更新说明（2026-10-18 首版 v0.0.1 就这么发错了）。
+      #    把 origin 的 tags 重新拉一遍、`--force` 覆盖成真正的注释式 tag 对象，说明才读得到。
+      #    手动触发（workflow_dispatch）时没有 tag，这一步什么也拉不到，不影响。
+      - name: 取回带注释的 tag（更新说明在它里面）
+        run: git fetch --tags --force origin
 
       # ubuntu-latest 只有约 14GB 可用，Gradle 中间产物很容易撑爆（RN 那边实测过
       # 「No space left on device」）。这里删掉构建用不到的大件。刻意不碰 NDK。
