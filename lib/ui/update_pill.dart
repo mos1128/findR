@@ -1,4 +1,4 @@
-/// 全局「更新进度」小图标 —— 悬浮在所有页面之上，可缩成一个胶囊、点开成一张小卡片。
+/// 全局「更新进度」小图标 —— 悬浮在所有页面之上，可缩成一个小块、点开成一张小卡片。
 ///
 /// **为什么挂在 MaterialApp.builder 的 Stack 里**（见 `main.dart`）：下载是从设置页发起的，
 /// 但用户点完就会去干别的 —— 小图标必须活在**所有路由之上**，挂 `home` 会被 push 出来的
@@ -44,7 +44,16 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
       bottom: Spacing.six + 72,
       child: _maybeDirectionality(
         context,
-        _expanded ? _card(context, c, state) : _chip(context, c, state),
+        // ⚠️ 收起/展开**只让尺寸变**，圆角两个状态用同一个值。
+        //    以前收起是胶囊（Radii.pill=999）、展开是卡片（Radii.lg=16），而 Material 会
+        //    自己把形状补间 200ms —— 于是「变成大椭圆再变成卡片」，看着很怪（真机反馈）。
+        //    圆角统一 + AnimatedSize 之后，就是一个干净的放大/缩小。
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.bottomRight,
+          child: _expanded ? _card(context, c, state) : _chip(context, c, state),
+        ),
       ),
     );
   }
@@ -89,12 +98,13 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
       elevation: 8,
       shadowColor: c.shadow,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(Radii.pill),
+        // 和展开态用同一个圆角（太小的方块用 999 会触发形状补间，见上面 AnimatedSize 那条注释）
+        borderRadius: BorderRadius.circular(Radii.lg),
         side: BorderSide(color: c.borderStrong),
       ),
       child: InkWell(
         onTap: _toggle,
-        borderRadius: BorderRadius.circular(Radii.pill),
+        borderRadius: BorderRadius.circular(Radii.lg),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: Spacing.two + 2),
           child: Row(

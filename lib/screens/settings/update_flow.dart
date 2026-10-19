@@ -62,7 +62,6 @@ AlertDialog _sourceDialog(
 }) {
   final c = FindrColors.of(ctx);
   final primary = channels.first;
-  final others = channels.skip(1).toList();
   final notes = releaseNotesForApp(info.notes) ?? '暂无更新说明。';
   return AlertDialog(
     backgroundColor: c.surface,
@@ -92,35 +91,27 @@ AlertDialog _sourceDialog(
             style: TextStyle(fontSize: 11.5, height: 1.5, color: c.textMuted),
           ),
           const SizedBox(height: Spacing.five),
-          _zone(c, '一键更新', '直接从 ${primary.name} 下；不行的话在小卡片里换源'),
+          // 选源交给用户：两个源并列、一样大、**同一个样式** ——
+          // 不设"默认源"的视觉暗示（真机上反馈过：把 GitHub 塞进"手动"里读着别扭）。
+          Row(
+            children: <Widget>[
+              for (var i = 0; i < channels.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(width: Spacing.two),
+                Expanded(
+                  child: FindrButton(
+                    title: '${channels[i].name} 下载',
+                    variant: FindrButtonVariant.secondary,
+                    onPressed: () => Navigator.of(ctx).pop(channels[i]),
+                  ),
+                ),
+              ],
+            ],
+          ),
           const SizedBox(height: Spacing.two),
           FindrButton(
-            title: '立即更新',
-            onPressed: () => Navigator.of(ctx).pop(primary),
-          ),
-          const SizedBox(height: Spacing.four),
-          _zone(c, '手动更新', '自己选源，或者用浏览器打开下载页'),
-          const SizedBox(height: Spacing.two),
-          Wrap(
-            spacing: Spacing.two,
-            runSpacing: Spacing.two,
-            children: <Widget>[
-              for (final channel in others)
-                FindrButton(
-                  title: '${channel.name} 下载',
-                  variant: FindrButtonVariant.secondary,
-                  compact: true,
-                  expand: false,
-                  onPressed: () => Navigator.of(ctx).pop(channel),
-                ),
-              FindrButton(
-                title: '浏览器打开',
-                variant: FindrButtonVariant.secondary,
-                compact: true,
-                expand: false,
-                onPressed: () => Navigator.of(ctx).pop(_BrowserChoice(primary.url)),
-              ),
-            ],
+            title: '浏览器打开下载页',
+            variant: FindrButtonVariant.ghost,
+            onPressed: () => Navigator.of(ctx).pop(_BrowserChoice(primary.url)),
           ),
         ],
       ),
@@ -133,19 +124,6 @@ AlertDialog _sourceDialog(
     ],
   );
 }
-
-/// 分区小标题：「一键更新」/「手动更新」，下面跟一句灰字说清那块在干什么。
-Widget _zone(FindrColors c, String title, String hint) => Column(
-  crossAxisAlignment: CrossAxisAlignment.start,
-  children: <Widget>[
-    Text(
-      title,
-      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: c.text),
-    ),
-    const SizedBox(height: 2),
-    Text(hint, style: TextStyle(fontSize: 11, height: 1.4, color: c.textMuted)),
-  ],
-);
 
 /// 把源交给控制器。三种「不用重下」的情形在这里挡掉，别打断正在跑的任务。
 Future<void> _startDownload(

@@ -306,7 +306,30 @@ Future<DownloadOutcome> downloadApkToFile({
 
     final http.StreamedResponse res;
     try {
-      res = await c.send(req).timeout(responseTimeout);
+      // 🚨 `send()` 在**拿到响应头之前**是取消不掉的（`package:http` 没有 abort）。
+      //    所以这里必须和取消牌**赛跑**：谁先到算谁的。否则用户在"已下载 0 B"那一刻点
+      //    「取消下载」会毫无反应 —— GitHub 那条跳转链慢，真机上就是这么撞上的。
+      final send = c.send(req);
+      if (cancel == null) {
+        res = await send.timeout(responseTimeout);
+      } else {
+        final first = await Future.any<Object?>(<Future<Object?>>[
+          send,
+          cancel.whenCancelled.then<Object?>((_) => null),
+        ]).timeout(responseTimeout);
+        if (first is! http.StreamedResponse) {
+          // 取消先到：把还在路上的响应接住再倒掉，别让它变成未捕获异常或悬挂的连接
+          unawaited(
+            send.then<void>(
+              (late) => late.stream.drain<void>().catchError((Object _) {}),
+              onError: (Object _) {},
+            ),
+          );
+          if (part.existsSync()) part.deleteSync();
+          return const DownloadCancelled();
+        }
+        res = first;
+      }
     } on TimeoutException {
       return const DownloadFailed('连接发布服务器超时');
     }

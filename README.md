@@ -17,7 +17,7 @@ Findr（长程记忆助手）的**安卓客户端**。仓库根就是它；`lib/
 | `assets/branding/` | 品牌素材（图标 / 启动图）—— **已接入**；改图形只改 `tool/gen_icons.dart` 顶部常量，参数与坑见该目录的 README |
 
 **纯逻辑在 `packages/findr_core/`**（零 Flutter 依赖的纯 Dart 包：数据库 / 检索 / 模型调用 / 备份格式）。
-那边的测试是主验收网（299 条，`dart test`），这里的 widget 测试是补充（116 条，`flutter test`）。
+那边的测试是主验收网（300 条，`dart test`），这里的 widget 测试是补充（117 条，`flutter test`）。
 
 ## 常用命令
 

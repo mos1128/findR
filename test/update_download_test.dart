@@ -136,7 +136,7 @@ void main() {
       }
     });
 
-    test('取消：连接卡着也能立刻停，删掉 .part、不出 .apk', () async {
+    test('取消：数据流卡着也能立刻停，删掉 .part、不出 .apk', () async {
       final gate = StreamController<List<int>>();
       final client = MockClient.streaming(
         (_, _) async => http.StreamedResponse(gate.stream, 200, contentLength: 1000),
@@ -155,6 +155,34 @@ void main() {
       expect(apkPartFileFor(_tag).existsSync(), isFalse, reason: '取消 = 不要了，不留续传的尾巴');
       expect(apkFileFor(_tag).existsSync(), isFalse);
       await gate.close();
+    });
+
+    test('取消：连响应头都还没拿到（连接阶段）也要立刻停', () async {
+      // 真机上的现象：GitHub 那条跳转链慢，界面上「已下载 0 B、还没开始下」，
+      // 这时候点「取消下载」毫无反应 —— 因为 `send()` 拿不到响应头就取消不掉。
+      final headerGate = Completer<void>();
+      final client = MockClient.streaming((_, _) async {
+        await headerGate.future;
+        return http.StreamedResponse(const Stream<List<int>>.empty(), 200);
+      });
+      final cancel = DownloadCancelToken();
+
+      final future = downloadApkToFile(
+        url: _gitee.url,
+        tag: _tag,
+        client: client,
+        cancel: cancel,
+        responseTimeout: const Duration(seconds: 30),
+      );
+      await pumpEventQueue();
+      cancel.cancel();
+
+      // 不等那 30 秒的连接超时，取消必须马上返回
+      final outcome = await future.timeout(const Duration(seconds: 2));
+      expect(outcome, isA<DownloadCancelled>());
+      expect(apkPartFileFor(_tag).existsSync(), isFalse);
+      expect(apkFileFor(_tag).existsSync(), isFalse);
+      headerGate.complete();
     });
 
     test('断点续传：已有一半时带 Range 请求，206 接着写、前缀保住', () async {
