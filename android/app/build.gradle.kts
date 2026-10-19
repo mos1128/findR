@@ -66,6 +66,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 🚨 调试包也签**同一把正式证书**。否则 `flutter run` 打出的 debug 包（debug 证书）
+            //    与正式包（正式证书）**包名相同、签名不同** ⇒ 系统拒绝覆盖安装
+            //    （INSTALL_FAILED_UPDATE_INCOMPATIBLE），来回切一次就得卸载一次、记忆库全没。
+            //    签同一把之后：debug 包 ⇄ 正式包可以互相覆盖，数据一直留着。
+            //    ⚠️ 只改「用哪个密钥签」，热重载等调试能力一点没少；debug 包依然是 debuggable。
+            //    没有 key.properties 时（别人 clone 下来跑）退回 debug 证书，开箱照样能跑。
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
+        }
         release {
             // 有 android/key.properties 就用正式证书；没有则退回 debug 并**大声警告**
             // （CI 里另有一道断言：打出来的包若还是 debug 证书就让构建直接红 —— 见 workflow）。
