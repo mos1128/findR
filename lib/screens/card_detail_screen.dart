@@ -190,7 +190,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
         _toast(msg, isError: false);
       }
     } catch (e) {
-      final msg = '$label 失败：$e';
+      final msg = '$label 失败：${plainError(e)}';
       setState(() => _actionResult = _ActionResult(message: msg, isError: true));
       _toast(msg, isError: true);
     } finally {

@@ -709,3 +709,21 @@ class FindrTopBar extends StatelessWidget implements PreferredSizeWidget {
 
 /// 屏幕宽度（给布局判断用，顺便让测试能覆盖「窄屏」这一档）。
 double screenWidth(BuildContext context) => MediaQuery.sizeOf(context).width;
+
+/// 异常转成人话。
+///
+/// Dart 的 `toString()` 会把类型名当代词缀在前头 —— `Bad state: 尚未配置主模型`、
+/// `Exception: xxx`。这类前缀对用户没有信息量，还会让同一件事在不同入口长得不一样
+/// （一个说「尚未配置主模型」，另一个甩出「Bad state:」），所以统一剥掉。
+String plainError(Object e) {
+  final s = '$e';
+  for (final prefix in const <String>[
+    'Bad state: ',
+    'Exception: ',
+    'Invalid argument(s): ',
+    'FormatException: ',
+  ]) {
+    if (s.startsWith(prefix)) return s.substring(prefix.length);
+  }
+  return s;
+}

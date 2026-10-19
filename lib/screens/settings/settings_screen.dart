@@ -48,7 +48,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final msg = await body(_rt);
       if (mounted && msg != null) _dialog(title ?? '完成', msg);
     } catch (e) {
-      if (mounted) _dialog(title == null ? '失败' : '$title失败', '$e');
+      if (mounted) _dialog(title == null ? '失败' : '$title失败', plainError(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -184,6 +184,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onPressed: () {
                   Navigator.of(ctx).pop();
                   _run((rt) async {
+                    // 没配主模型时 requireDeps 会抛，这里先挡一道 —— 两条队列入口的提示要一致，
+                    // 否则会出现「推进队列」说人话、「语音转写重试」却甩出 Bad state。
+                    if (!llmConfigured(rt.llm)) return '尚未配置主模型，转写未执行。';
                     final res = await retryAllTranscriptions(requireDeps(rt));
                     await ref.read(runtimeProvider.notifier).refresh();
                     return '重置 ${res.reset} 条任务，已成功完成 ${res.run.settled} 条。';

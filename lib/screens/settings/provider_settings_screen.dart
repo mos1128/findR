@@ -325,7 +325,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                           ? 'https://api.anthropic.com'
                           : 'https://api.openai.com')
                       : 'https://api.openai.com',
-                  hint: '公网 API 或局域网反代地址',
+                  hint: '公网或局域网地址',
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(

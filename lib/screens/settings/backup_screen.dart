@@ -275,7 +275,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         ),
         children: <Widget>[
           Text(
-            '换设备或重装后，用这个文件（$backupExt）恢复全部卡片与媒体。',
+            '备份文件用于换机或重装后恢复数据。',
             style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
           ),
           Notice(
@@ -284,7 +284,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
             icon: Icons.shield_outlined,
             surface: true,
             text:
-                '包是明文的，含全部卡片与媒体。别传到公共渠道。',
+                '明文存档，含全部卡片与媒体。请勿上传至公共渠道。',
           ),
 
           // ── 导出 ─────────────────────────────────────────
@@ -296,7 +296,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
               children: <Widget>[
                 ListRow(
                   title: '包含模型 API 密钥',
-                  subtitle: '换机后不用重配密钥；只在可信设备间传',
+                  subtitle: '导入后无需重配，可直接使用。仅在可信设备间传输。',
                   right: Switch(
                     value: _includeKeys,
                     onChanged: (v) => setState(() => _includeKeys = v),
@@ -344,8 +344,8 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Text(
-                  '两边都改过的卡，留修改时间新的；分类与位置按名字对齐，'
-                  '对不上才新建。媒体按路径覆盖。',
+                  '同一张卡两处都改过时，保留修改时间较新的；分类与位置按名字对齐，'
+                  '未匹配则新建；媒体按路径覆盖。',
                   style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
                 ),
                 const SizedBox(height: Spacing.four),

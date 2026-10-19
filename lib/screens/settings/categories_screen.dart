@@ -215,8 +215,8 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                 ),
                 const SizedBox(height: Spacing.three),
                 Text(
-                  '分类只决定归到哪一类。卡片长什么样（有没有位置和步骤）'
-                  '由内容自己决定，不用在这里配。',
+                  '分类只决定归属。卡片结构（位置、步骤）'
+                  '由内容自动决定。',
                   style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
                 ),
                 const SizedBox(height: Spacing.four),

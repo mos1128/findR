@@ -284,10 +284,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
             title: '位置树',
             hint: '点击设为父级',
             child: all.isEmpty
-                ? const EmptyState(
-                    title: '还没有位置',
-                    hint: '不用手工建。录入时模型认出位置会自动加进来。',
-                  )
+                ? const EmptyState(title: '还没有位置')
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: _renderTree(all, byId, null, 0),
@@ -296,7 +293,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
           Panel(
             title: '说明',
             child: Text(
-              '不用先建。模型认出位置会自动加进来，也能在这里改层级或名字。',
+              '位置在录入时由模型自动生成，也可在此调整层级或名称。',
               style: TextStyle(fontSize: 12, height: 1.6, color: c.textMuted),
             ),
           ),
