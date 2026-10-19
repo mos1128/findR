@@ -140,4 +140,16 @@ void main() {
     expect(isNewerThan(sameVersion, currentVersion: '1.0.0', currentBuild: 1), isFalse,
         reason: '同版本号重发包发现不了 ⇒ 要发版就得把最后一位加一');
   });
+
+  test('弹窗只显示 `---` 之前的更新说明（之后是给网页看的安装须知）', () {
+    final body = '第一个版本。\n\n新增检查更新。\n\n---\n\nfindR 的开发版 APK（包名 com.findr.app.dev）。\n\n- 备份是明文 ZIP。';
+    expect(releaseNotesForApp(body), '第一个版本。\n\n新增检查更新。');
+
+    expect(releaseNotesForApp('没有分隔线就整段都要'), '没有分隔线就整段都要');
+    expect(releaseNotesForApp('---\n只有须知'), isNull, reason: '切完是空的 → 交给调用方说"暂无"');
+    expect(releaseNotesForApp(null), isNull);
+    expect(releaseNotesForApp('   \n  '), isNull);
+    // 分隔线两边带空格也算（手写说明时很容易多敲一个空格）
+    expect(releaseNotesForApp('说明\n --- \n须知'), '说明');
+  });
 }

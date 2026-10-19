@@ -1,12 +1,18 @@
-/// 「检查更新」查到新版本之后的两个弹窗：选源（Gitee / GitHub / 浏览器 / 稍后）与
-/// 「浏览器下载」二级入口。
+/// 「检查更新」查到新版本之后的那个弹窗：分成「一键更新」与「手动更新」两块。
 ///
 /// **这里不做下载**：点完源就把活交给 `state/update_download.dart` 的控制器 ——
 /// 下载在后台跑，进度看右下角的小图标（`ui/update_pill.dart`）。所以这个文件很小：
 /// 它只负责「问清楚用户想要什么」和「兜底开浏览器」。
 ///
-/// 正文里那句「安装时直接覆盖安装（别卸载），本地数据不会丢」是硬口径，**别删**
-/// —— 它成立的前提是「所有版本都签同一把证书」（debug 包也一样，见 build.gradle.kts）。
+/// 三条界面上的硬约束（真机反馈改出来的，别再退回去）：
+/// 1. **按钮横排** —— 竖着排四个按钮会把弹窗撑得又长又没主次；
+/// 2. **不再有二级弹窗** —— 「浏览器下载」以前还要再弹一次问走哪个渠道，纯属多余：
+///    它本来就是个兜底，直接开默认渠道（Gitee）的下载页；
+/// 3. **正文只显示 `---` 之前的更新说明**（`releaseNotesForApp`）—— 之后的安装须知
+///    是给发布页读者看的，塞进弹窗既占地方又要跟着版本维护。
+///
+/// 正文里那句「覆盖安装即可，数据不会丢」是硬口径，**别删** ——
+/// 它成立的前提是「所有版本都签同一把证书」（debug 包也一样，见 build.gradle.kts）。
 library;
 
 import 'package:findr_core/findr_core.dart';
@@ -17,10 +23,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../platform/update.dart';
 import '../../state/update_download.dart';
 import '../../theme/tokens.dart';
+import '../../ui/kit.dart';
 
-/// 选源弹窗里「浏览器下载」这个选项（它不是某个渠道，单独当一种结果传出来）。
+/// 弹窗里「开浏览器」这个选择（它不是某个渠道，单独当一种结果传出来）。
 final class _BrowserChoice {
-  const _BrowserChoice();
+  const _BrowserChoice(this.url);
+
+  final String url;
 }
 
 /// 发现新版本时弹「怎么更新」。用户点了某个源就交给控制器开始下载。
@@ -31,6 +40,7 @@ Future<void> showUpdateFlow(
   required String currentLabel,
 }) async {
   final channels = downloadChannels(info);
+  if (channels.isEmpty) return;
   final pick = await showDialog<Object?>(
     context: context,
     builder: (ctx) => _sourceDialog(ctx, info: info, currentLabel: currentLabel, channels: channels),
@@ -39,8 +49,8 @@ Future<void> showUpdateFlow(
   switch (pick) {
     case UpdateChannel channel:
       await _startDownload(context, ref, info, channel);
-    case _BrowserChoice():
-      await _showBrowserDialog(context, channels);
+    case _BrowserChoice(:final url):
+      await _openUrl(context, url);
   }
 }
 
@@ -51,34 +61,71 @@ AlertDialog _sourceDialog(
   required List<UpdateChannel> channels,
 }) {
   final c = FindrColors.of(ctx);
+  final primary = channels.first;
+  final others = channels.skip(1).toList();
+  final notes = releaseNotesForApp(info.notes) ?? '暂无更新说明。';
   return AlertDialog(
     backgroundColor: c.surface,
-    title: Text(
-      '发现新版本 v${info.version}',
-      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text),
+    titlePadding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.four, Spacing.four, 0),
+    contentPadding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.three, Spacing.four, Spacing.three),
+    actionsPadding: const EdgeInsets.fromLTRB(Spacing.four, 0, Spacing.four, Spacing.two),
+    title: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          '发现新版本 v${info.version}',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text),
+        ),
+        const SizedBox(height: 2),
+        Text('当前版本 $currentLabel', style: TextStyle(fontSize: 12, color: c.textMuted)),
+      ],
     ),
     content: SingleChildScrollView(
-      child: Text(
-        '当前版本 $currentLabel\n\n'
-        '${info.notes ?? '暂无更新说明。'}\n\n'
-        '安装时直接覆盖安装（别卸载），本地数据不会丢。\n'
-        '下载在 App 内进行，可以缩成右下角的小图标，边用边下。',
-        style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(notes, style: TextStyle(fontSize: 13, height: 1.55, color: c.textSecondary)),
+          const SizedBox(height: Spacing.three),
+          Text(
+            '覆盖安装即可，数据不会丢；下载时可缩成右下角小图标，边用边下。',
+            style: TextStyle(fontSize: 11.5, height: 1.5, color: c.textMuted),
+          ),
+          const SizedBox(height: Spacing.five),
+          _zone(c, '一键更新', '直接从 ${primary.name} 下；不行的话在小卡片里换源'),
+          const SizedBox(height: Spacing.two),
+          FindrButton(
+            title: '立即更新',
+            onPressed: () => Navigator.of(ctx).pop(primary),
+          ),
+          const SizedBox(height: Spacing.four),
+          _zone(c, '手动更新', '自己选源，或者用浏览器打开下载页'),
+          const SizedBox(height: Spacing.two),
+          Wrap(
+            spacing: Spacing.two,
+            runSpacing: Spacing.two,
+            children: <Widget>[
+              for (final channel in others)
+                FindrButton(
+                  title: '${channel.name} 下载',
+                  variant: FindrButtonVariant.secondary,
+                  compact: true,
+                  expand: false,
+                  onPressed: () => Navigator.of(ctx).pop(channel),
+                ),
+              FindrButton(
+                title: '浏览器打开',
+                variant: FindrButtonVariant.secondary,
+                compact: true,
+                expand: false,
+                onPressed: () => Navigator.of(ctx).pop(_BrowserChoice(primary.url)),
+              ),
+            ],
+          ),
+        ],
       ),
     ),
     actions: <Widget>[
-      for (final channel in channels)
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(channel),
-          child: Text(
-            '${channel.name} 更新',
-            style: TextStyle(color: c.record, fontWeight: FontWeight.w600),
-          ),
-        ),
-      TextButton(
-        onPressed: () => Navigator.of(ctx).pop(const _BrowserChoice()),
-        child: Text('浏览器下载', style: TextStyle(color: c.record)),
-      ),
       TextButton(
         onPressed: () => Navigator.of(ctx).pop(),
         child: Text('稍后再说', style: TextStyle(color: c.textSecondary)),
@@ -87,40 +134,18 @@ AlertDialog _sourceDialog(
   );
 }
 
-/// 「浏览器下载」的二级弹窗：两个渠道各开一个下载页。
-/// 它既是「不想在 App 里下」的入口，也是自动下载失败后的兜底（小图标卡片里也会走到这）。
-Future<void> _showBrowserDialog(BuildContext context, List<UpdateChannel> channels) async {
-  final pick = await showDialog<UpdateChannel>(
-    context: context,
-    builder: (ctx) {
-      final c = FindrColors.of(ctx);
-      return AlertDialog(
-        backgroundColor: c.surface,
-        title: Text('浏览器下载', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
-        content: Text(
-          '在系统浏览器里打开下载页。\n自动下载不成功时，这里总能走通。',
-          style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
-        ),
-        actions: <Widget>[
-          for (final channel in channels)
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(channel),
-              child: Text(
-                '${channel.name} 下载页',
-                style: TextStyle(color: c.record, fontWeight: FontWeight.w600),
-              ),
-            ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('取消', style: TextStyle(color: c.textSecondary)),
-          ),
-        ],
-      );
-    },
-  );
-  if (pick == null || !context.mounted) return;
-  await _openUrl(context, pick.url);
-}
+/// 分区小标题：「一键更新」/「手动更新」，下面跟一句灰字说清那块在干什么。
+Widget _zone(FindrColors c, String title, String hint) => Column(
+  crossAxisAlignment: CrossAxisAlignment.start,
+  children: <Widget>[
+    Text(
+      title,
+      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: c.text),
+    ),
+    const SizedBox(height: 2),
+    Text(hint, style: TextStyle(fontSize: 11, height: 1.4, color: c.textMuted)),
+  ],
+);
 
 /// 把源交给控制器。三种「不用重下」的情形在这里挡掉，别打断正在跑的任务。
 Future<void> _startDownload(

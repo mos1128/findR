@@ -310,6 +310,8 @@ jobs:
             notes="（本次没有手写更新说明）"
           fi
           mkdir -p build
+          # ⚠️ 约定：`---` 之前是**给 App 更新弹窗**显示的更新说明，之后是给网页读者看的安装须知。
+          #    App 侧按这条切（`releaseNotesForApp`，有单测），所以别在这里加第二根 `---`。
           {
             printf '%s\n' "$notes"
             echo
@@ -317,7 +319,7 @@ jobs:
             echo
             echo "findR 的开发版 APK（包名 com.findr.app.dev）。"
             echo
-            echo "- 当前沿用 debug 签名：可以覆盖安装、数据保留。"
+            echo "- 用正式证书签名：新版本直接覆盖安装，不用卸载，数据保留。"
             echo "- 装好后第一件事：在自检屏上确认七项全绿。"
             echo "- 备份文件（.findrpack）当前是明文 ZIP，谁拿到谁能读。"
             echo "- 安装时直接覆盖安装（别卸载），本地数据不会丢。"

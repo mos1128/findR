@@ -81,11 +81,17 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
       ),
       UpdateDownloadFailed() => (Icon(Icons.error_outline_rounded, size: 18, color: c.danger), '下载失败'),
     };
+    // ⚠️ 一块「浮在页面上」的东西必须看得出来是浮着的：比卡片面（surface）**再亮一档**、
+    //    描一圈边、投影加重。用 surface 时它和设置页的卡片几乎同色，用户会以为那行字是
+    //    页面的一部分（真机反馈："和背景有点不好区分"）。
     return Material(
-      color: c.surface,
-      elevation: 3,
-      shadowColor: Colors.black26,
-      borderRadius: BorderRadius.circular(Radii.pill),
+      color: c.surfaceAlt,
+      elevation: 8,
+      shadowColor: c.shadow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(Radii.pill),
+        side: BorderSide(color: c.borderStrong),
+      ),
       child: InkWell(
         onTap: _toggle,
         borderRadius: BorderRadius.circular(Radii.pill),
@@ -111,10 +117,13 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
 
   Widget _card(BuildContext context, FindrColors c, UpdateTaskState state) {
     return Material(
-      color: c.surface,
-      elevation: 6,
-      shadowColor: Colors.black26,
-      borderRadius: BorderRadius.circular(Radii.lg),
+      color: c.surfaceAlt,
+      elevation: 12,
+      shadowColor: c.shadow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(Radii.lg),
+        side: BorderSide(color: c.borderStrong),
+      ),
       child: Container(
         width: 272,
         padding: const EdgeInsets.all(Spacing.four),

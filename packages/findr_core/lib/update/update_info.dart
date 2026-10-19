@@ -118,6 +118,25 @@ UpdateInfo? parseReleaseInfo(String body) {
   return (version, build);
 }
 
+/// 发布正文里**只该给 App 看**的那一段。
+///
+/// 约定：正文里单独一行的 `---` 之后是**给网页读者**的安装须知（签名、自检、备份明文这些），
+/// 更新弹窗不该显示它们 —— 否则用户点开更新看到的是"包名 com.findr.app.dev"和一堆免责说明，
+/// 既占地方又要跟着版本维护（0.0.2 那次就有一条"当前沿用 debug 签名"过期了）。
+/// 拼正文的那一侧在 `.github/workflows/flutter.yml`（组装发布正文那步），两边靠这条约定对齐。
+///
+/// 没有 `---` 就整段都算说明；切完是空的则返回 `null`（调用方显示"暂无更新说明"）。
+String? releaseNotesForApp(String? body) {
+  if (body == null) return null;
+  final head = <String>[];
+  for (final line in body.split('\n')) {
+    if (line.trim() == '---' || line.trim() == '***') break;
+    head.add(line);
+  }
+  final text = head.join('\n').trim();
+  return text.isEmpty ? null : text;
+}
+
 /// 比较两段版本号（点分数字段，容忍 `v` 前缀与 `+构建号` 尾巴）。
 ///
 /// 返回 `>0` 表示 [a] 新于 [b]，`0` 表示相等，`<0` 表示 [a] 旧于 [b]。

@@ -492,57 +492,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
 
           // ── 关于 ──────────────────────────────────────
+          // 整块都用 ListRow：和上面那些块一个节奏（标题 + 副标题 + 右侧箭头）。
+          // 以前「检查更新」是一枚塞在身份行右边的实心按钮 —— 它是这一屏里唯一的按钮，
+          // 行高和别的行不一样，看着就"没对齐"（真机反馈）。改成一行之后自然齐了。
           Panel(
             title: '关于 Findr',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: c.record,
-                        borderRadius: BorderRadius.circular(Radii.md),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        'F',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: c.recordText),
-                      ),
+                ListRow(
+                  leading: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: c.record,
+                      borderRadius: BorderRadius.circular(Radii.md),
                     ),
-                    const SizedBox(width: Spacing.three),
-                    Expanded(
-                      child: GestureDetector(
-                        onLongPress: () => _showDevDetails(rt),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            Text(
-                              'FindR',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.text),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '版本 ${_versionLabel(rt)}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 12, color: c.textMuted),
-                            ),
-                          ],
-                        ),
-                      ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      'F',
+                      style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: c.recordText),
                     ),
-                    FindrButton(
-                      title: '检查更新',
-                      variant: FindrButtonVariant.secondary,
-                      compact: true,
-                      expand: false,
-                      loading: _busy,
-                      onPressed: () => _checkUpdate(rt),
-                    ),
-                  ],
+                  ),
+                  title: 'Findr',
+                  subtitle: '版本 ${_versionLabel(rt)}',
+                  onLongPress: () => _showDevDetails(rt),
+                ),
+                FindrDivider(),
+                ListRow(
+                  title: '检查更新',
+                  subtitle: _busy ? '正在检查…' : '看看有没有新版本',
+                  onTap: _busy ? null : () => _checkUpdate(rt),
+                  right: _busy
+                      ? SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: c.record),
+                        )
+                      : Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
                 FindrDivider(),
                 ListRow(
