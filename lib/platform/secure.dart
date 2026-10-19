@@ -1,7 +1,7 @@
 /// API Key 的安全存储。
 ///
 /// Key **只进 Android Keystore / iOS Keychain**：DB 的 settings 与导出的备份都不含它
-/// （《技术设计.md》第四节）。这是机密性的第一道屏障；第二道是备份 manifest 的
+/// 。这是机密性的第一道屏障；第二道是备份 manifest 的
 /// `settings_public` 白名单（见 core 的 `backup/manifest.dart`）——
 /// **两道都别拆，任何一道单独都不够**。
 library;

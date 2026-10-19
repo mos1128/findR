@@ -162,9 +162,9 @@ CapabilityResult _classify(Object e) {
 
 String _clip(String value, int max) => value.length > max ? value.substring(0, max) : value;
 
-/// 能力探测：用内嵌微型样本发一次 chat，能正常返回即视为该能力可用（技术设计四）。
+/// 能力探测：用内嵌微型样本发一次 chat，能正常返回即视为该能力可用。
 ///
-/// 注意「用户主动关闭图片分析」与「模型不支持图片」是两回事（需求 5.1）：
+/// 注意「用户主动关闭图片分析」与「模型不支持图片」是两回事：
 /// 这里探测的是后者，结果用于把图片分析开关**置灰锁定**。
 Future<CapabilityResult> probeCapability(
   LlmProviderAdapter adapter,

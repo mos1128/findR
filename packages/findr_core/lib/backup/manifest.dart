@@ -190,7 +190,7 @@ final class ReportAcc {
   );
 }
 
-/// 合并策略（技术设计七）：按 id 幂等 upsert、`updated_at` 新者胜、
+/// 合并策略：按 id 幂等 upsert、`updated_at` 新者胜、
 /// **不删除本地任何数据**、分类/位置同名冲突保留本地并把外来 id 重映射到本地 id。
 ///
 /// 只碰 DB；媒体文件由 `pack.dart` 在调用本函数**之前**写入磁盘。
@@ -220,7 +220,7 @@ Map<String, String> _mergeCategories(
       continue;
     }
     // 同名不同 id：保留本地那条，把外来 id 映射过去。
-    // 刻意不往 aliases 写这条（技术设计七说「写进 aliases」，但 aliases.kind 只有
+    // 刻意不往 aliases 写这条（原设想是「写进 aliases」，但 aliases.kind 只有
     // entity/location 两种，且分类名一致时 resolveCategoryId 本来就按名字命中本地分类，
     // 补一条空挂在 aliases 里只会留垃圾行）。冲突记进报告，由 UI 决定要不要提示用户。
     final byName = db.prepare('SELECT id FROM categories WHERE name = ?').get(<Object?>[c.name]);

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'driver.dart';
 
 /// settings 表只存非机密项（JSON 值）；API Key 一律走安全存储，
-/// 导出备份也永不包含（技术设计四「Key 与配置分离」）。
+/// 导出备份也永不包含（Key 与配置分离）。
 ///
 
 T? getSetting<T>(SqliteDriver db, String key) {

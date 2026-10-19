@@ -29,7 +29,7 @@ void main() {
   });
 
   test('pending 的文案是「待解析」而不是「解析中」', () {
-    // 与《需求.md》状态表对齐（pending = 待解析）。
+    // 与状态表对齐（pending = 待解析）。
     // 没配模型时卡片会一直停在这一步，写成「解析中」会让人以为正在跑、白等。
     expect(badgeLabel(CardBadge.processing, ctx), '待解析');
   });

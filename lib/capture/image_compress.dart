@@ -14,7 +14,7 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
-/// 入库压缩参数：长边 ≤1600px、WebP quality 0.8（技术设计二）。
+/// 入库压缩参数：长边 ≤1600px、WebP quality 0.8。
 const int maxLongEdge = 1600;
 
 /// ⚠️⚠️ **必须和 `lossless: false` 一起用** —— `image` 包的 `encodeWebP` 默认是

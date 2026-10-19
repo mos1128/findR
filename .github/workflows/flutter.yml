@@ -29,7 +29,7 @@ jobs:
   #    两边都推同一个 tag 会打架（同一个名字指向不同提交时，git 会拒绝）。
   # 没配 GITEE_TOKEN 时这一步自己早退（fork / 还没建令牌之前都不会因此变红）。
   # ⚠️ 早退写在 run 里而不是 `if:` 里 —— 原因见下面那一步的注释（`secrets` 不能出现在 if 中）。
-  # 令牌怎么配：三步照抄《开发指南》5.7。
+  # 令牌怎么配：Gitee → 设置 → 私人令牌（权限只勾 projects）→ 存成仓库密钥 GITEE_TOKEN。
   mirror:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -50,10 +50,10 @@ jobs:
           # ⚠️「配没配令牌」的判断只能写在 run 里，**不能写成 `if: secrets.GITEE_TOKEN != ''`** ——
           #    `secrets` 上下文在 `if` 里不可用（if 在作业下发到 runner 之前求值，那时还没有密钥）。
           #    写了不会只跳过这一步，而是让 GitHub 判定**整个 workflow 文件无效**：
-          #    表现为工作流 0 秒失败、连日志都没有（本仓库栽过一次，见《开发指南》5.6）。
+          #    表现为工作流 0 秒失败、连日志都没有（本仓库栽过一次）。
           #    令牌也只挂在**这一步**的 env 上，不抬到作业级 —— 别让其他 action 顺手读到它。
           if [ -z "${GITEE_TOKEN:-}" ]; then
-            echo "未配 GITEE_TOKEN，跳过镜像（配法见《开发指南》5.7）。"
+            echo "未配 GITEE_TOKEN，跳过镜像（Gitee 私人令牌 → 仓库密钥 GITEE_TOKEN，权限只勾 projects）。"
             exit 0
           fi
           # 令牌只写进这一条命令的地址里，不落进 .git/config（Actions 会把日志里的密文打码）。
@@ -167,7 +167,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${KEYSTORE_BASE64:-}" ]; then
-            echo "::error::没有 KEYSTORE_BASE64 密钥 —— release 包必须用正式签名，配法见《开发指南》5.8"
+            echo "::error::没有 KEYSTORE_BASE64 密钥 —— release 包必须用正式签名（.jks 的 base64 + KEYSTORE_PASSWORD / KEY_ALIAS / KEY_PASSWORD 四个仓库密钥）"
             exit 1
           fi
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/findr-release.jks
@@ -340,7 +340,7 @@ jobs:
       # 所以两边都得有「最新一次发布」，tag 与 GitHub 那条完全一样。
       #
       # ⚠️ GITEE_TOKEN 没配就整步跳过：别人的 fork、以及你还没建令牌之前，不会因此变红。
-      #    令牌怎么配：三步照抄《开发指南》5.7。
+      #    令牌怎么配：Gitee → 设置 → 私人令牌（权限只勾 projects）→ 存成仓库密钥 GITEE_TOKEN。
       #    ⚠️ 这个「跳过」只能靠 run 里早退实现，**不能写成 `if: secrets.GITEE_TOKEN != ''`** ——
       #       `secrets` 在 `if` 里不可用，写了会让整个 workflow 文件被判无效（0 秒失败、无日志）。
       #
@@ -355,7 +355,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${GITEE_TOKEN:-}" ]; then
-            echo "未配 GITEE_TOKEN，跳过 Gitee 发行版同步（配法见《开发指南》5.7）。"
+            echo "未配 GITEE_TOKEN，跳过 Gitee 发行版同步（同镜像那一步：仓库密钥里加 GITEE_TOKEN）。"
             exit 0
           fi
           api="https://gitee.com/api/v5/repos/ms6/findR"

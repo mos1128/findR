@@ -59,7 +59,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // 技术设计五：App 回前台补跑队列（补齐在后台/无网时没跑完的解析）
+    // App 回前台补跑队列（补齐在后台/无网时没跑完的解析）
     if (state == AppLifecycleState.resumed) {
       unawaited(_drainQueue());
     }

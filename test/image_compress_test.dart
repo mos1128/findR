@@ -131,7 +131,7 @@ void main() {
     });
 
     test('参数就是 maxLongEdge / webpQuality / 非无损这三件', () {
-      // 这三个常量是「技术设计二」写死的口径，改动必须是有意识的
+      // 这三个常量是写死的口径，改动必须是有意识的
       expect(maxLongEdge, 1600);
       expect(webpQuality, 80);
       expect(webpLossless, isFalse);

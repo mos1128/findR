@@ -15,7 +15,7 @@
 # （Gitee 与 GitHub 用同一份），App 的「发现新版本」弹窗显示的也是它。
 #
 # ⚠️ CI 里那一步「镜像代码到 Gitee」等于**把代码放到公开的 Gitee 仓库**（开源）。不想要就删掉
-#    workflow 里的那一步（口径见《开发指南》5.6）。
+#    workflow 里的那一步。
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -104,7 +104,7 @@ if [ "${SKIP_TESTS:-0}" = "1" ]; then
   say "[3/5] 按 SKIP_TESTS=1 跳过本地验收网"
 else
   if ! command -v flutter >/dev/null 2>&1 && [ -x "$FLUTTER_BIN_DIR/flutter" ]; then
-    # scoop 装的 Flutter 只在新的用户环境里进 PATH；git bash 里要显式加（见《开发指南》3.2）
+    # scoop 装的 Flutter 只在新的用户环境里进 PATH；git bash 里要显式加
     export PATH="$FLUTTER_BIN_DIR:$PATH"
   fi
   if ! command -v flutter >/dev/null 2>&1; then

@@ -83,7 +83,7 @@ android {
             if (releaseSigning == null) {
                 logger.warn(
                     "⚠️ 没有 android/key.properties ⇒ release 包会用 debug 证书。" +
-                        "这种包用户装不上下一版（签名不一致），别拿它发布。见《开发指南》5.8。",
+                        "这种包用户装不上下一版（签名不一致），别拿它发布。",
                 )
                 signingConfig = signingConfigs.getByName("debug")
             } else {

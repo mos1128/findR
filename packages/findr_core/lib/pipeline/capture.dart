@@ -25,7 +25,7 @@ import '../util/iso.dart';
 /// 单卡送模型分析的图片上限。需求把「可配 N 张」列为非 MVP，这里是固定的请求体护栏。
 const int defaultMaxAnalyzeImages = 6;
 
-/// 音频容器：录音直出 m4a/AAC，不转码（技术设计二）。
+/// 音频容器：录音直出 m4a/AAC，不转码。
 const String audioMime = 'audio/m4a';
 
 /// 推进卡片需要的一切外部件。
@@ -221,7 +221,7 @@ Future<UnderstandingResult> runUnderstanding(
   }
   parts.add(TextPart(buildP1User(text)));
 
-  // 两种「仅文本」变体的文案不同（需求 5.1 / prompt设计.md 一）
+  // 两种「仅文本」变体的文案不同
   final TextOnlyMode? textOnly = !visionSupported
       ? TextOnlyMode.unsupported
       : (images.isNotEmpty && imagesToSend.isEmpty ? TextOnlyMode.off : null);

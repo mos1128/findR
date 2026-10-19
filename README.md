@@ -26,7 +26,7 @@ flutter pub get
 flutter analyze
 flutter test
 flutter run                 # 需要连着设备
-bash release.sh             # 发版：改版本号 → 打 tag → 推 GitHub（CI 出包并同步 Gitee，见《开发指南》5.6）
+bash release.sh             # 发版：改版本号 → 打 tag → 推 GitHub（CI 出包并同步 Gitee，见 docs/开发指南.md 5.6）
 ```
 
 ⚠️ 本机没装 Android SDK 时**出包只能走 CI**（`.github/workflows/flutter.yml` 的 `apk` 作业）。
@@ -47,4 +47,15 @@ bash release.sh             # 发版：改版本号 → 打 tag → 推 GitHub�
 
 ## 文档
 
-项目文档都在仓库根目录。**新会话第一份读 `开发指南.md`**（环境搭建、踩坑记录与铁律）。
+都在 `docs/`（只有本 README 在根目录）。**新会话第一份读《开发指南》**。
+
+| 文档 | 讲什么 |
+|---|---|
+| [开发指南](docs/开发指南.md) | **新会话第一份读**：环境搭建、踩坑记录、十二条铁律、工程约定、真机验收、当前状态与待办 |
+| [需求](docs/需求.md) | 产品要什么：定位与三条红线、功能模块、交互、字段的**业务含义**、验收口径 |
+| [技术设计](docs/技术设计.md) | 数据模型与 DDL、Provider 适配、录入流水线、检索实现、备份格式、测试策略、CI 与发布 |
+| [Prompt 设计](docs/prompt设计.md) | 四段 prompt 的设计意图、行为约束与调用侧约定（**文案本身在代码里**：`packages/findr_core/lib/prompts/`）|
+| [图标与启动图](assets/branding/README.md) | 改图标只看这份：设计稿参数、66dp 安全区、安卓 13+ 主题图标怎么画 |
+
+> 就这 5 份（+ 本 README），各有唯一职责、互不重复。**别再新增文档** ——
+> 新内容并进上面最接近的那份，一主题一权威。

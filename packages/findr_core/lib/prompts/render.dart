@@ -64,7 +64,7 @@ String describeCardFields(MemoryCard card) {
 /// 编辑结构化字段后重新生成 desc（需求四「编辑闭环」）。
 ///
 /// 把用户已确认的字段作为既定事实注入，避免模型又按自己的理解改写回去。
-/// 设计见《prompt设计.md》一「重新生成 desc」；文案权威在本文件。
+/// 设计意图见 `docs/prompt设计.md`「重新生成 desc」；文案权威在本文件。
 String buildRegenerateDescUser(MemoryCard card) {
   final base = buildP1User(card.transcript);
   final locked = describeCardFields(card);

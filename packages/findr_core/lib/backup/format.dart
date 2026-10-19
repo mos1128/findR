@@ -1,6 +1,6 @@
 /// `.findrpack` 容器。
 ///
-/// 布局见《技术设计.md》第七节：
+/// 布局：
 ///
 ///   magic "FINDR"(5B) + format version u16 (=1) + 载荷（标准 ZIP，STORE 不压缩）
 ///
