@@ -1,13 +1,41 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// ── 正式签名 ────────────────────────────────────────────────────────────────
+// 凭据在 `android/key.properties`（**不进版本库**，见 android/.gitignore），
+// 证书在 `android/app/findr-release.jks`（同样不进版本库）。
+// ⚠️ 为什么要正式证书而不是 debug：debug 证书是「谁构建、用谁机器上的」——
+//    CI 每次在临时虚拟机上构建，证书和上一版对不上，系统会拒绝覆盖安装
+//    （INSTALL_FAILED_UPDATE_INCOMPATIBLE），「应用内更新」直接失效。
+//    2026-10-19 实测：CI 发的包与本机打的包，证书指纹就是两个。
+val keystorePropsFile = rootProject.file("key.properties")
+val keystoreProps = Properties().apply {
+    if (keystorePropsFile.exists()) {
+        FileInputStream(keystorePropsFile).use { load(it) }
+    }
+}
+
 android {
     namespace = "com.findr.findr_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
+
+    signingConfigs {
+        if (keystorePropsFile.exists()) {
+            create("release") {
+                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storePassword = keystoreProps.getProperty("storePassword")
+                keyAlias = keystoreProps.getProperty("keyAlias")
+                keyPassword = keystoreProps.getProperty("keyPassword")
+            }
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -39,9 +67,18 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // 有 android/key.properties 就用正式证书；没有则退回 debug 并**大声警告**
+            // （CI 里另有一道断言：打出来的包若还是 debug 证书就让构建直接红 —— 见 workflow）。
+            val releaseSigning = signingConfigs.findByName("release")
+            if (releaseSigning == null) {
+                logger.warn(
+                    "⚠️ 没有 android/key.properties ⇒ release 包会用 debug 证书。" +
+                        "这种包用户装不上下一版（签名不一致），别拿它发布。见《开发指南》5.8。",
+                )
+                signingConfig = signingConfigs.getByName("debug")
+            } else {
+                signingConfig = releaseSigning
+            }
         }
     }
 }

@@ -153,15 +153,32 @@ jobs:
           echo "pubspec 版本：$pub ⇒ 发布 tag：v$pub"
           echo "value=$pub" >> "$GITHUB_OUTPUT"
 
-      - name: Guard release signing config
-        working-directory: android/app
+      # ── 正式签名 ────────────────────────────────────────────────────────────
+      # 证书与密码只存在仓库密钥里：KEYSTORE_BASE64（.jks 的 base64）+ 三个口令。
+      # 🚨 为什么必须是正式证书：debug 证书是「谁构建、用谁机器上的」—— runner 每次都是
+      #    全新虚拟机，证书与上一版对不上 ⇒ 系统拒绝覆盖安装（INSTALL_FAILED_UPDATE_INCOMPATIBLE）
+      #    ⇒ 「应用内更新」直接失效。2026-10-19 实测：CI 发的包与本机打的包，证书指纹就是两个。
+      - name: 还原正式签名证书
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # 目前刻意沿用 debug 签名（可覆盖安装、数据保留）。Flutter 模板一旦变更会静默
-          # 变成未签名，到真机上就是「解析包错误」，所以在这里挡住。
-          if ! grep -q 'signingConfig = signingConfigs.getByName("debug")' build.gradle.kts; then
-            echo "::error::release 未使用 debug 签名，请检查 Flutter Gradle 模板变化"
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::没有 KEYSTORE_BASE64 密钥 —— release 包必须用正式签名，配法见《开发指南》5.8"
             exit 1
           fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > android/app/findr-release.jks
+          # 口令走环境变量再写文件：heredoc 里直接插 `${{ secrets.* }}` 会被 shell 再展开一次。
+          {
+            echo "storeFile=findr-release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > android/key.properties
+          echo "证书已就位：$(wc -c < android/app/findr-release.jks) 字节"
 
       - name: Build release APK
         run: |
@@ -170,6 +187,22 @@ jobs:
           # 注意产物名是 `app-release.apk` —— **带 ABI 后缀的 `app-<abi>-release.apk`
           # 只在 `--split-per-abi` 下才有**，别去赌名字（第一次就是栽在这上面）。
           flutter build apk --release --target-platform android-arm64
+
+      # 🚨 这一道是**签名**的兜底断言：证书一旦没还原成功，Gradle 会退回 debug 证书且
+      #    不报错（只在日志里警告一句），包里就又是一个「用户装不上的版本」。
+      #    直接查产物：证书主体里出现 "CN=Android Debug" 就红。
+      - name: 断言这个包用的是正式签名
+        run: |
+          set -euo pipefail
+          apk="$(ls build/app/outputs/flutter-apk/*.apk | head -1)"
+          signer="$(ls "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)"
+          out="$("$signer" verify --print-certs "$apk")"
+          printf '%s\n' "$out"
+          if printf '%s' "$out" | grep -qi "CN=Android Debug"; then
+            echo "::error::这个包还是 debug 证书 —— 用户装不上下一版、商店也会拒。检查 KEYSTORE_* 四个密钥"
+            exit 1
+          fi
+          echo "✓ 正式签名"
 
       # 文件名就是 App 里拼下载地址用的那一个（`lib/platform/update.dart` 的 apkAssetName）。
       # 改了名字而没同步改 App，用户点「下载」就是 404，而这事只有真机上才看得见 —— 挡在构建期。
