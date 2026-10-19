@@ -103,7 +103,7 @@ void main() {
     expect(find.text('记一笔…（回车即存）'), findsOneWidget);
     expect(find.text('存'), findsOneWidget);
     // 未配模型时的提示条**必须在文档流里**（曾经做成浮层盖住搜索框，真机反馈「找不到搜索入口」）
-    expect(find.textContaining('还没配置模型：内容都留在本地'), findsOneWidget);
+    expect(find.textContaining('还没配模型，点这里填写'), findsOneWidget);
   });
 
   testWidgets('打字录入 → 先落盘，卡片立刻出现在流里（不依赖模型）', (tester) async {
@@ -151,7 +151,7 @@ void main() {
 
     expect(find.textContaining('检索结果'), findsOneWidget);
     expect(
-      find.textContaining('还没配置模型，按关键词字面检索'),
+      find.textContaining('还没配模型，按字面检索'),
       findsOneWidget,
       reason: '不说清走的是哪条路，用户会把「字面没搜到」读成「卡片丢了」',
     );
@@ -170,7 +170,7 @@ void main() {
 
     expect(find.text('没找到相关记忆'), findsOneWidget);
     expect(find.text('还没有记忆'), findsNothing);
-    expect(find.textContaining('把几个关键词用空格分开'), findsOneWidget);
+    expect(find.textContaining('或用空格分开'), findsOneWidget);
   });
 
   testWidgets('回到记忆流：结果态与答案一起清掉', (tester) async {

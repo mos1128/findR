@@ -169,7 +169,7 @@ void main() {
     await tester.pump();
     expect(find.text('需要允许安装'), findsOneWidget);
     expect(find.text('去设置'), findsOneWidget);
-    expect(find.textContaining('返回后会自动继续安装'), findsOneWidget);
+    expect(find.textContaining('返回后自动继续'), findsOneWidget);
   });
 
   testWidgets('下载失败：胶囊变「下载失败」，卡片能续传 / 换源 / 走浏览器', (tester) async {

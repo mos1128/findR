@@ -88,7 +88,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
       _toast(editing == null ? '已添加' : '已保存');
     } catch (e) {
       // 分类名有唯一索引 —— P1 的路由按名字匹配，重名会让路由结果不确定
-      _toast('保存失败：分类名不能重复（AI 归类按名字匹配）。');
+      _toast('分类名不能重复（AI 按名字归类）。');
     }
   }
 
@@ -100,7 +100,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
         backgroundColor: c2.surface,
         title: Text('删除「${c.name}」？', style: TextStyle(fontSize: 16, color: c2.text)),
         content: Text(
-          '用到这个分类的卡片会变成「无分类」，卡片本身不会丢。',
+          '卡片会变成「无分类」，不会丢。',
           style: TextStyle(fontSize: 13, height: 1.5, color: c2.textSecondary),
         ),
         actions: <Widget>[
@@ -158,9 +158,9 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
         children: <Widget>[
           Panel(
             title: '分类池',
-            hint: 'AI 自动路由到这个池子，选不出才问你',
+            hint: 'AI 拿不准时归到这里',
             child: categories.isEmpty
-                ? const EmptyState(title: '还没有分类', hint: '预设分类被删光了吗？在下面新建一个。')
+                ? const EmptyState(title: '还没有分类', hint: '预设分类已删光，在下面新建一个。')
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
@@ -215,8 +215,8 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                 ),
                 const SizedBox(height: Spacing.three),
                 Text(
-                  '分类只决定「这条记忆归到哪一类」。卡片长什么样（有没有位置、有没有步骤）'
-                  '由内容自己决定，不需要在这里配结构类型。',
+                  '分类只决定归到哪一类。卡片长什么样（有没有位置和步骤）'
+                  '由内容自己决定，不用在这里配。',
                   style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
                 ),
                 const SizedBox(height: Spacing.four),

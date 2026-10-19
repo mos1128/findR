@@ -1020,8 +1020,8 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                           const SizedBox(height: 2),
                           Text(
                             !widget.visionCapable
-                                ? '当前模型不支持视觉分析，将作为附件保存'
-                                : (_vision ? '开启：由大模型分析图中物品并提取记忆' : '关闭：仅作为图片附件保存，不发给模型'),
+                                ? '模型不支持视觉分析，将作为附件保存'
+                                : (_vision ? '模型分析图中物品并提取记忆' : '仅存为图片，不发给模型'),
                             style: TextStyle(
                               fontSize: 12,
                               color: !widget.visionCapable ? c.textMuted : c.textSecondary,
@@ -1070,7 +1070,7 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            _extractFiles ? '开启：将文字内容追加到记忆正文供搜索' : '关闭：仅作为附件保存，不解析正文',
+                            _extractFiles ? '文字追加到正文，可被搜到' : '只存附件，不解析正文',
                             style: TextStyle(fontSize: 12, color: c.textSecondary),
                           ),
                         ],
@@ -1091,7 +1091,7 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Text(
-                  '💡 提示：当前未输入任何文字且未开启 AI 分析，将存为纯附件卡片（后续只能通过分类或标签查看）。',
+                  '没文字又不做分析，只能靠分类和标签找。',
                   style: TextStyle(fontSize: 11.5, height: 1.4, color: c.danger),
                 ),
               ),

@@ -231,7 +231,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     final online = ref.watch(onlineProvider).value ?? true;
     if (!online) {
       return const Notice(
-        text: '当前无网络：先拍照或打字，稍后联网会自动补上解析。',
+        text: '无网络。先记下来，联网后自动解析。',
         tone: NoticeTone.warn,
       );
     }
@@ -339,7 +339,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
                 extra: answer.suggest.isEmpty ? null : answer.suggest,
                 footer: answer.hitIds.isEmpty
                     ? null
-                    : '依据 ${answer.hitIds.length} 张卡片，已在上方高亮',
+                    : '依据 ${answer.hitIds.length} 张卡片 · 上方已高亮',
                 usage: answer.usage,
                 searchUsage: search?.usage,
               ),
@@ -364,21 +364,21 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
                 text: s!.answerError!,
                 tone: NoticeTone.warn,
                 action: Text(
-                  cards.isNotEmpty ? '卡片列表不受影响，可以点「AI 总结」重试。' : '可以换个说法再搜一次。',
+                  cards.isNotEmpty ? '卡片列表不受影响，点「AI 总结」可重试。' : '可以换个说法再搜一次。',
                   style: TextStyle(fontSize: 11.5, color: FindrColors.of(context).textMuted),
                 ),
               ),
             // 空态。正在组织答案时先不喊「没找到」，否则会先闪一句空话再被答案推翻。
-            // 建议型结果也一样：卡片可能一条都没挑出来，但那一屏有价值的是「你还缺什么」。
+            // 建议型结果也一样：卡片可能一条都没挑出来，但那一屏有价值的是「还缺什么」。
             if (showEmpty)
               EmptyState(
                 icon: search != null ? Icons.search_off_rounded : Icons.inbox_outlined,
                 title: search != null ? '没找到相关记忆' : '还没有记忆',
                 hint: search != null
                     ? (llmConfigured(ref.read(runtimeProvider).value?.llm)
-                          ? '换个说法试试，或者先看看底部怎么记一笔'
-                          : '当前没有可用模型，只做了关键词字面匹配。试试更具体的词，'
-                                '或把几个关键词用空格分开，比如「护照 柜子」。')
+                          ? '换个说法试试'
+                          : '没配模型，只做字面匹配。试试更具体的词，'
+                                '或用空格分开，比如「护照 柜子」。')
                     : '用底部的输入框记下第一笔',
               ),
           ],
@@ -409,7 +409,7 @@ String? _adviceNote(AdviceResult? a, String cardId) {
   }
   for (final m in a.maybe) {
     if (m.id == cardId) {
-      return '看情况：${m.why.isEmpty ? '取决于你的具体情况' : m.why}';
+      return '看情况：${m.why.isEmpty ? '视具体情况而定' : m.why}';
     }
   }
   return null;
@@ -681,7 +681,7 @@ class _SearchBarState extends State<_SearchBar> {
                           const SizedBox(width: Spacing.two),
                           Expanded(
                             child: Text(
-                              '还没配置模型：内容都留在本地，随时能翻找和编辑。点这里填写 →',
+                              '还没配模型，点这里填写 →',
                               style: TextStyle(fontSize: 11.5, color: c.textSecondary),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -724,7 +724,7 @@ class _ResultsHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final countText = advice != null ? '为你挑出 $count 条' : '检索结果 $count 条';
+    final countText = advice != null ? '挑出 $count 条' : '检索结果 $count 条';
     return Row(
       children: <Widget>[
         Expanded(
@@ -810,7 +810,7 @@ class _AnswerCard extends StatelessWidget {
     final aTokens = usage?.total ?? 0;
     String? usageText;
     if (sTokens > 0 && aTokens > 0) {
-      usageText = '总用量：${sTokens + aTokens} tokens（搜索 $sTokens + 总结 $aTokens）';
+      usageText = '${sTokens + aTokens} tokens（搜索 $sTokens · 总结 $aTokens）';
     } else if (aTokens > 0) {
       usageText = '用量：$aTokens tokens';
     } else if (sTokens > 0) {

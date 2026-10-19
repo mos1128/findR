@@ -89,9 +89,9 @@ CompressResult compressToWebp(Uint8List source) {
     // 解不出来的最常见原因是 HEIC（iPhone 直出的格式）。
     // 与其笼统说「读不出来」，不如把这一种点名 —— 它有明确的绕行办法。
     if (isHeic(source)) {
-      return const CompressFailed('这是 iPhone 的 HEIC 格式，暂时读不了。可以在系统设置里把相机改成「兼容性最佳」，或先截图再选。');
+      return const CompressFailed('HEIC 格式暂时读不了。把相机格式改成「兼容性最佳」，或先截图。');
     }
-    return const CompressFailed('这张图没能读出来（不是常见的 JPEG / PNG / WebP 格式）。');
+    return const CompressFailed('读不了这张图（不是 JPEG / PNG / WebP）。');
   }
 
   // ⚠️⚠️ **这一段刻意什么都不做** —— 写下来免得下次又来「补一刀」。

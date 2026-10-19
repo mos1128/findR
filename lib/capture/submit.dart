@@ -165,5 +165,5 @@ Future<MemoryCard> persistCapture(
 /// 图片超过软阈值时的那句提示文案（需求 5.1：**只提示确认，不做硬截断**）。
 /// 没超返回 null。
 String? overImageLimitHint(int count) => count > maxCaptureImagesWarn
-    ? '这条已经有 $count 张图（建议不超过 $maxCaptureImagesWarn 张）。继续也可以，只是会更占存储。'
+    ? '已有 $count 张图（建议不超过 $maxCaptureImagesWarn 张）。继续会更占存储。'
     : null;

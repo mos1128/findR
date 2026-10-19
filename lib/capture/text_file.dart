@@ -76,7 +76,7 @@ Future<TextFileResult> decodePlainText({
   if (!plainTextExtensions.contains(ext)) {
     return TextFileRejected(
       '只支持纯文本文件（${plainTextExtensions.join(' / ')}）。'
-      'PDF / Word 这类请改成截图发我，或者把文字复制进来。',
+      'PDF / Word 请改截图，或把文字复制进来。',
     );
   }
 
@@ -85,7 +85,7 @@ Future<TextFileResult> decodePlainText({
     text = utf8.decode(await readBytes());
   } catch (e) {
     // 编码不对是常态（Windows 记事本存的 GBK、Excel 导出的 GB18030）
-    return const TextFileRejected('这个文件不是 UTF-8 编码的文本，读不出来。可以另存为 UTF-8 再试。');
+    return const TextFileRejected('不是 UTF-8 文本。另存为 UTF-8 再试。');
   }
 
   // 去掉 BOM，否则会变成一个看不见的字符跟着标题走
@@ -97,7 +97,7 @@ Future<TextFileResult> decodePlainText({
   if (trimmed.length > maxPlainTextChars) {
     return TextFileRejected(
       '这个文件有 ${trimmed.length} 字，超过 $maxPlainTextChars 字的上限了。'
-      '可以拆成几个文件，或者直接截取需要的部分粘进来。',
+      '可拆成几个文件，或只粘需要的部分。',
     );
   }
 

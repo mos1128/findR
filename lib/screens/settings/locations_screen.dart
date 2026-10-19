@@ -147,7 +147,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
         backgroundColor: c.surface,
         title: Text('删除「${node.name}」？', style: TextStyle(fontSize: 16, color: c.text)),
         content: Text(
-          '有子节点、或被卡片引用的位置不能删 —— 静默删掉会让卡片的路径指向空洞。',
+          '下面还有子位置，或被卡片用着，删不了。',
           style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
         ),
         actions: <Widget>[
@@ -167,7 +167,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
     if (!res.ok) {
       _toast(
         res.reason == DeleteLocationRejection.hasChildren
-            ? '删不掉：它下面还有 ${res.count} 个子位置，先把子位置处理掉。'
+            ? '删不掉：下面还有 ${res.count} 个子位置。'
             : '删不掉：有 ${res.count} 张卡片用了这个位置。',
       );
       return;
@@ -286,7 +286,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
             child: all.isEmpty
                 ? const EmptyState(
                     title: '还没有位置',
-                    hint: '位置不一定要手工建 —— 录入时模型提到存放位置就会自动长出来。',
+                    hint: '不用手工建。录入时模型认出位置会自动加进来。',
                   )
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -296,7 +296,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
           Panel(
             title: '说明',
             child: Text(
-              '位置树为可选项，无需预先手动创建。AI 分析卡片时若识别到存放位置会自动生成并归类；您也可在此手动梳理层级或修改位置名称。',
+              '不用先建。模型认出位置会自动加进来，也能在这里改层级或名字。',
               style: TextStyle(fontSize: 12, height: 1.6, color: c.textMuted),
             ),
           ),

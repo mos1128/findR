@@ -211,17 +211,17 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
       //（这里是「模型没从库里挑出直接相关的」，不是「模型不可达」），所以先判它。
       String? note;
       if (res.advice != null) {
-        note = res.usedFallback ? '模型没从库里挑出直接相关的东西，下面是字面命中的条目，供你参考。' : null;
+        note = res.usedFallback ? '模型没挑出直接相关的内容，下面是字面命中的条目。' : null;
       } else if (res.relaxed == true) {
-        note = '模型给的条件太严（分类 / 时间 / 位置，或要求全词命中），已放宽后匹配到以下结果。';
+        note = '模型给的条件太严（分类 / 时间 / 位置 / 全词命中），已放宽。';
       } else if (res.unclear) {
         note = res.cards.isEmpty
             ? '模型没听懂这句话，换个说法试试。'
-            : '模型没听懂这句话，已退化为按关键词字面检索，结果可能不全。';
+            : '模型没听懂，已退回字面检索，结果可能不全。';
       } else if (res.usedFallback) {
         note = llmConfigured(_rt.llm)
-            ? '模型当前不可达，已退化为按关键词字面检索（没有同义词扩展与分类/位置约束）。'
-            : '还没配置模型，按关键词字面检索。多个关键词用空格分开会更准。';
+            ? '模型不可达，已退回字面检索（无同义词扩展、无分类/位置约束）。'
+            : '还没配模型，按字面检索。多个关键词用空格分开更准。';
       }
 
       state = AsyncData(current.copyWith(

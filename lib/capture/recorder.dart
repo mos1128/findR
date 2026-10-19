@@ -69,7 +69,7 @@ final class LongPressRecorder {
       final rec = _rec ??= AudioRecorder();
       // 没授权时这个调用会顺带把系统弹窗带出来
       if (!await rec.hasPermission()) {
-        throw const RecorderError('没有麦克风权限，无法录音。可以在系统设置里给 Findr 打开麦克风。');
+        throw const RecorderError('没有麦克风权限。在系统设置里给 Findr 打开麦克风。');
       }
       final path = nextTempRecordingPath();
       await rec.start(

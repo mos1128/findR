@@ -274,8 +274,8 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                 const SizedBox(height: Spacing.three),
                 Text(
                   isLlm
-                      ? '主模型负责多模态图像理解、卡片总结生成与结构抽取。'
-                      : '语音识别服务为可选配置，负责录音自动转写为文字。',
+                      ? '主模型负责读图、总结与结构化抽取。'
+                      : '语音识别可选，负责把录音转成文字。',
                   style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
                 ),
               ],
@@ -325,7 +325,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                           ? 'https://api.anthropic.com'
                           : 'https://api.openai.com')
                       : 'https://api.openai.com',
-                  hint: '支持公网 API 接口或局域网反向代理服务地址',
+                  hint: '公网 API 或局域网反代地址',
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(
@@ -359,7 +359,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                     label: 'User-Agent（可选）',
                     controller: _userAgent,
                     placeholder: 'Findr/1.0',
-                    hint: '自定义客户端标识头，通常保持为空即可',
+                    hint: '自定义客户端标识头，一般留空',
                   ),
                 ],
               ],
@@ -418,7 +418,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     };
     final tail = caps.text
         ? ''
-        : '\n\n排查提示：请核对接口地址 (Base URL)、API Key 与模型名称是否正确。';
+        : '\n\n核对 Base URL、API Key 与模型名。';
     return '$connectivity\n$vision$tail';
   }
 }

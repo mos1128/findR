@@ -87,7 +87,7 @@ AlertDialog _sourceDialog(
           Text(notes, style: TextStyle(fontSize: 13, height: 1.55, color: c.textSecondary)),
           const SizedBox(height: Spacing.three),
           Text(
-            '覆盖安装即可，数据不会丢；下载时可缩成右下角小图标，边用边下。',
+            '覆盖安装即可，数据不丢；下载时可缩成小图标，边用边下。',
             style: TextStyle(fontSize: 11.5, height: 1.5, color: c.textMuted),
           ),
           const SizedBox(height: Spacing.five),

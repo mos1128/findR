@@ -124,7 +124,7 @@ class _AudioPlayBarState extends State<AudioPlayBar> {
             const SizedBox(width: Spacing.two),
             Expanded(
               child: Text(
-                '这段录音的文件不在了（可能已被清理，或来自一份不含媒体的备份）。',
+                '录音文件不在了（可能已清理，或备份不含媒体）。',
                 style: TextStyle(fontSize: 11.5, height: 1.4, color: c.textMuted),
               ),
             ),

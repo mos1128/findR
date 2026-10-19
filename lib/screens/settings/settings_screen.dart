@@ -157,7 +157,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               const SizedBox(height: Spacing.one),
               Text(
-                '管理后台排队解析任务与设备运行状态自检',
+                '处理排队任务与设备自检',
                 style: TextStyle(fontSize: 12, color: c.textMuted),
               ),
               const SizedBox(height: Spacing.four),
@@ -257,7 +257,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         // 怎么更新（选源 → 应用内下载 → 安装）整个交给 update_flow，这里只管「查」
         unawaited(showUpdateFlow(context, ref, info: info, currentLabel: _versionLabel(rt)));
       case UpToDate():
-        _dialog('检查更新', '当前已是最新版本 ${_versionLabel(rt)}。');
+        _dialog('检查更新', '已是最新版本 ${_versionLabel(rt)}。');
       case UpdateCheckFailed():
         _showUpdateFailedDialog();
     }
@@ -272,7 +272,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ctx,
           title: '检查更新',
           content: Text(
-            '暂时拿不到更新信息（可能网络不稳）。\n可以稍后再试，或前往下载页手动查看。',
+            '拿不到更新信息（可能网络不稳）。\n稍后再试，或前往下载页。',
             style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
           ),
           actions: <Widget>[
@@ -413,7 +413,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: <Widget>[
                 ListRow(
                   title: '多模态图片分析',
-                  subtitle: '录入图片时自动解析画面主体、细节与文字内容',
+                  subtitle: '录入图片时自动解析画面与文字',
                   right: Switch(
                     value: rt.capture.visionDefault,
                     onChanged: (v) {
@@ -432,7 +432,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 FindrDivider(),
                 ListRow(
                   title: '搜索智能解答',
-                  subtitle: '检索时自动综合多条相关记忆并生成直接答复',
+                  subtitle: '检索时综合多条记忆，直接给答复',
                   right: Switch(
                     value: rt.search.autoAnswer,
                     onChanged: (v) {
@@ -476,14 +476,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: <Widget>[
                 ListRow(
                   title: '数据备份与恢复',
-                  subtitle: '导出或导入记忆档案包 (.findrpack)',
+                  subtitle: '导出或导入档案包 (.findrpack)',
                   onTap: () => _push(const BackupScreen()),
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
                 FindrDivider(),
                 ListRow(
                   title: '处理队列与诊断',
-                  subtitle: '重试未完成的转写与模型解析，运行系统自检',
+                  subtitle: '重试转写与解析，运行自检',
                   onTap: _showDiagnosticsSheet,
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
@@ -534,7 +534,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 FindrDivider(),
                 ListRow(
                   title: '开源仓库',
-                  subtitle: '在 GitHub 或 Gitee 查看源码与发布',
+                  subtitle: '在 GitHub / Gitee 看源码与发布',
                   onTap: _showRepoDialog,
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),

@@ -189,7 +189,7 @@ void main() {
     test('不是图片的字节：说「读不出来」', () {
       final r = compressToWebp(Uint8List.fromList(List<int>.filled(64, 7)));
       expect(r, isA<CompressFailed>());
-      expect((r as CompressFailed).reason, contains('没能读出来'));
+      expect((r as CompressFailed).reason, contains('读不了'));
     });
 
     test('超过单张上限：直接拒绝，且把上限说出来', () {

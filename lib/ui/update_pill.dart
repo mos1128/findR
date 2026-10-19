@@ -206,10 +206,10 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
         return <Widget>[
           Text(
             needsPermission
-                ? '系统还没允许 Findr 安装应用。点「去设置」打开开关，返回后会自动继续安装。'
+                ? '系统还没允许安装应用。点「去设置」打开开关，返回后自动继续。'
                 : lastInstall == InstallOutcome.unavailable || lastInstall == InstallOutcome.failed
-                    ? '这台设备上拉不起系统安装界面，请用浏览器下载后手动安装。'
-                    : '安装包已下载好（${_fileSize(file)}）。安装时直接覆盖安装（别卸载），本地数据不会丢。',
+                    ? '拉不起系统安装界面，改用浏览器下载后手动安装。'
+                    : '安装包已就绪（${_fileSize(file)}）。直接覆盖安装，别卸载，数据不会丢。',
             style: TextStyle(fontSize: 12, height: 1.45, color: c.textSecondary),
           ),
           const SizedBox(height: Spacing.three),
@@ -279,7 +279,7 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
       ok = false;
     }
     if (!ok && mounted) {
-      setState(() => _note = '打不开浏览器，请手动访问：${state.channel.url}');
+      setState(() => _note = '打不开浏览器，手动访问：${state.channel.url}');
     }
   }
 

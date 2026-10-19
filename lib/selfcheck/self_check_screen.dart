@@ -110,8 +110,8 @@ class _SelfCheckScreenState extends State<SelfCheckScreen> {
           padding: const EdgeInsets.all(16),
           children: <Widget>[
             const Text(
-              '检测底层数据库模块完整性、全文索引检索能力与真机沙盒读写状态。\n'
-              '所有检测项通过表示设备运行环境良好。',
+              '检查数据库、全文索引与沙盒读写。\n'
+              '全部通过表示环境正常。',
             ),
             const SizedBox(height: 12),
             if (_error != null)
@@ -119,7 +119,7 @@ class _SelfCheckScreenState extends State<SelfCheckScreen> {
                 color: theme.colorScheme.errorContainer,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
-                  child: Text('自检本身抛异常（这本身就是失败）：\n$_error'),
+                  child: Text('自检本身出错：\n$_error'),
                 ),
               ),
             if (core != null) ...<Widget>[

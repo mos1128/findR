@@ -136,9 +136,9 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         backgroundColor: c.surface,
         title: Text('导出安全提示', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
         content: Text(
-          '导出的备份包为离线便携档案，包含您的全部卡片记录、关联照片及录音素材。\n\n'
-          '${withKeys ? '⚠️ 您已选择「包含 API 密钥」—— 模型访问密钥将一并打包，便于换机后直接恢复使用。请确保仅在受信任的个人存储中保存该文件。\n\n' : ''}'
-          '建议妥善保存在私有云盘或受信任的个人存储介质中。',
+          '这份备份没有加密 —— 谁拿到文件，谁就能看到全部卡片、照片和录音。\n\n'
+          '${withKeys ? '⚠️ 已选择包含 API 密钥：密钥会一起打包，换机后可直接恢复。文件别传到公共渠道。\n\n' : ''}'
+          '建议只存在私有云盘或可信的设备上。',
           style: TextStyle(fontSize: 13, height: 1.6, color: c.textSecondary),
         ),
         actions: <Widget>[
@@ -195,7 +195,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       _toast('备份文件已成功导入，本地数据已更新');
     } catch (e) {
       if (mounted) {
-        _dialog('导入失败', '$e\n\n最常见的原因：文件不是 Findr 的备份，或者传输过程中损坏了。');
+        _dialog('导入失败', '$e\n\n常见原因：不是 Findr 备份，或传输中损坏。');
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -275,7 +275,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         ),
         children: <Widget>[
           Text(
-            '通过备份档案文件（$backupExt），可在更换设备或重装系统后恢复您的全部卡片与媒体数据。',
+            '换设备或重装后，用这个文件（$backupExt）恢复全部卡片与媒体。',
             style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
           ),
           Notice(
@@ -284,7 +284,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
             icon: Icons.shield_outlined,
             surface: true,
             text:
-                '导出的备份包包含您的全部卡片与媒体内容。请妥善保存于受信任的个人私有云盘或本地存储中，避免在公共渠道传播。',
+                '包是明文的，含全部卡片与媒体。别传到公共渠道。',
           ),
 
           // ── 导出 ─────────────────────────────────────────
@@ -296,7 +296,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
               children: <Widget>[
                 ListRow(
                   title: '包含模型 API 密钥',
-                  subtitle: '导入新设备后无需重新配置模型密钥；请仅在个人受信设备间传输',
+                  subtitle: '换机后不用重配密钥；只在可信设备间传',
                   right: Switch(
                     value: _includeKeys,
                     onChanged: (v) => setState(() => _includeKeys = v),
@@ -344,8 +344,8 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Text(
-                  '同一张卡在两台机器上都改过时，修改时间较新的那份保留；分类与位置按名字对齐，'
-                  '对齐不上才新建。媒体按相对路径覆盖。',
+                  '两边都改过的卡，留修改时间新的；分类与位置按名字对齐，'
+                  '对不上才新建。媒体按路径覆盖。',
                   style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
                 ),
                 const SizedBox(height: Spacing.four),
@@ -389,10 +389,10 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                     title: 'API Key',
                     tone: NoticeTone.info,
                     text: _keyRestore!.restored > 0
-                        ? '已从备份恢复 ${_keyRestore!.restored} 把 Key，现在就能直接用。'
-                            '${_keyRestore!.skipped > 0 ? '\n另有 ${_keyRestore!.skipped} 把没动 —— 本机已经配过了，保留你现在的。' : ''}'
-                        : '这份备份带了 ${_keyRestore!.skipped} 把 Key，但本机都已经配过，'
-                            '所以一把都没改（要换 Key 请去「设置 → 模型」里改）。',
+                        ? '已恢复 ${_keyRestore!.restored} 把 Key，可以直接用。'
+                            '${_keyRestore!.skipped > 0 ? '\n另有 ${_keyRestore!.skipped} 把没动 —— 本机已配过，保留本机那把。' : ''}'
+                        : '备份带了 ${_keyRestore!.skipped} 把 Key，但本机都已配过，'
+                            '一把没改（换 Key 去「设置 → 模型」）。',
                   ),
                 ],
               ],
@@ -410,17 +410,17 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   String _importSummary(ImportResult r) {
     final rep = r.report;
     final lines = <String>[
-      '卡片：新增 ${rep.cardsInserted} / 更新 ${rep.cardsUpdated} / 保留本机 ${rep.cardsKeptLocal}',
-      '媒体：写入 ${rep.mediaWritten}（覆盖 ${rep.mediaOverwritten}）',
-      '分类：新增 ${rep.categoriesInserted} / 保留本机 ${rep.categoriesKeptLocal}',
-      '位置：新增 ${rep.locationsInserted} / 保留本机 ${rep.locationsKeptLocal}',
-      '别名：新增 ${rep.aliasesInserted} · 设置：写入 ${rep.settingsWritten} / 保留本机 ${rep.settingsKeptLocal}',
+      '卡片 新增 ${rep.cardsInserted} · 更新 ${rep.cardsUpdated} · 保留 ${rep.cardsKeptLocal}',
+      '媒体 写入 ${rep.mediaWritten} · 覆盖 ${rep.mediaOverwritten}',
+      '分类 新增 ${rep.categoriesInserted} · 保留 ${rep.categoriesKeptLocal}',
+      '位置 新增 ${rep.locationsInserted} · 保留 ${rep.locationsKeptLocal}',
+      '别名 新增 ${rep.aliasesInserted} · 设置 写入 ${rep.settingsWritten} · 保留 ${rep.settingsKeptLocal}',
     ];
     if (rep.remappedCategoryRefs + rep.remappedLocationRefs > 0) {
-      lines.add('按名字重新对齐的引用：分类 ${rep.remappedCategoryRefs} · 位置 ${rep.remappedLocationRefs}');
+      lines.add('按名字重对齐：分类 ${rep.remappedCategoryRefs} · 位置 ${rep.remappedLocationRefs}');
     }
     if (rep.droppedRefs > 0) {
-      lines.add('⚠ 有 ${rep.droppedRefs} 处引用对不上、只能置空');
+      lines.add('⚠ ${rep.droppedRefs} 处引用对不上，已置空');
     }
     if (rep.conflicts.isNotEmpty) {
       final names = rep.conflicts

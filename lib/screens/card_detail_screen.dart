@@ -206,7 +206,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
         backgroundColor: c.surface,
         title: Text('删除这张卡片？', style: TextStyle(fontSize: 16, color: c.text)),
         content: Text(
-          '卡片和它的图片、录音都会一起删掉，不可恢复。',
+          '图片和录音会一起删掉，不可恢复。',
           style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
         ),
         actions: <Widget>[
@@ -267,7 +267,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
               Padding(
                 padding: const EdgeInsets.all(Spacing.three),
                 child: Text(
-                  '如需管理空间层级，可前往「设置 → 空间位置树」进行配置。',
+                  '层级在「设置 → 空间位置树」里改。',
                   style: TextStyle(fontSize: 11.5, color: c.textMuted),
                 ),
               ),
@@ -454,7 +454,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 else
                   Text(
                     card.audioPath != null
-                        ? '语音转写尚未完成，可在下方「详细记录」中手动补充。'
+                        ? '还没转写，可在「详细记录」里补。'
                         : '暂无文字记录。',
                     style: TextStyle(fontSize: 13, height: 1.5, color: c.textMuted),
                   ),
@@ -635,7 +635,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 const SizedBox(height: Spacing.two),
                 if (categories.isEmpty)
                   Text(
-                    '还没有分类。可前往「设置 → 分类标签」进行添加。',
+                    '没有分类。在「设置 → 分类标签」里加。',
                     style: TextStyle(fontSize: 12, color: c.textMuted),
                   )
                 else
@@ -836,7 +836,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 else
                   ListRow(
                     title: '暂未指定位置',
-                    subtitle: '点击选择该物品所在的房间、家具或收纳容器',
+                    subtitle: '选所在房间、家具或容器',
                     onTap: () => _pickLocation(locations),
                     right: Text(
                       '选择',
@@ -871,7 +871,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 FindrField(
                   label: '实体名称（核心标识）',
                   controller: _entity,
-                  placeholder: '物品或备忘的明确名称，如「备用钥匙」',
+                  placeholder: '名称，如「备用钥匙」',
                   onChanged: (v) => _patch(CardPatch(entity: v)),
                 ),
                 const SizedBox(height: Spacing.four),
@@ -1046,7 +1046,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
         backgroundColor: c.surface,
         title: Text('补分析会覆盖结构化字段', style: TextStyle(fontSize: 16, color: c.text)),
         content: Text(
-          '模型重跑后，实体名、位置、标签等都会按图片重写。',
+          '重跑后，实体、位置、标签都按图片重写。',
           style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
         ),
         actions: <Widget>[
