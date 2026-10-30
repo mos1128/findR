@@ -101,7 +101,7 @@ bash release.sh
 3. APK 签名是正式证书（非 `CN=Android Debug`）
 
 **应用内更新**：
-- 启动时静默检查（24 小时节流，失败不写节流），有新版本在首页设置入口打红点（`lib/state/update_check.dart`）
+- 启动时静默检查（12 小时节流，失败不写节流），有新版本在首页设置入口打红点（`lib/state/update_check.dart`）
 - 检查：先问 Gitee，失败再问 GitHub（读 `/releases/latest`）
 - 下载：应用内下载（Gitee/GitHub 源可选）+ 浏览器下载兜底
 - 安装：下完拉系统安装界面，首次需允许「安装未知应用」

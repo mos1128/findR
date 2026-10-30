@@ -1,7 +1,7 @@
-/// 启动时静默检查更新（24 小时节流）的自动化测试。
+/// 启动时静默检查更新（12 小时节流）的自动化测试。
 ///
 /// 钉住的都是「用户看不见但代价明显」的口径：
-/// - 24 小时内不重复请求（发布接口按 IP 限流）；
+/// - 12 小时内不重复请求（发布接口按 IP 限流）；
 /// - 查不到不写节流时间（断一次网不该让接下来一天都不再查）；
 /// - 节流期内只凭上次记下的 tag 判断红点，不能凭印象。
 library;
@@ -25,7 +25,7 @@ http.Response _release(String tag) => http.Response.bytes(
   200,
 );
 
-/// 记录实际打出去的请求 —— 「24 小时内不请求」这条只能靠数次数验证。
+/// 记录实际打出去的请求 —— 「12 小时内不请求」这条只能靠数次数验证。
 http.Client _client(List<String> hits, {String tag = 'v9.9.9', bool fail = false}) =>
     MockClient((req) async {
       hits.add(req.url.toString());
@@ -38,7 +38,7 @@ void main() {
   setUp(() => db = _db());
   tearDown(() => db.close());
 
-  test('24 小时内不再发请求，直接用上次记下的 tag', () async {
+  test('12 小时内不再发请求，直接用上次记下的 tag', () async {
     recordUpdateCheck(db, latestTag: 'v9.9.9');
     final hits = <String>[];
     final tag = await runAutoUpdateCheck(
@@ -51,7 +51,7 @@ void main() {
     expect(hits, isEmpty);
   });
 
-  test('24 小时内、上次的 tag 不比本机新 —— 不给红点', () async {
+  test('12 小时内、上次的 tag 不比本机新 —— 不给红点', () async {
     recordUpdateCheck(db, latestTag: 'v0.9.0');
     final hits = <String>[];
     final tag = await runAutoUpdateCheck(
@@ -64,8 +64,8 @@ void main() {
     expect(hits, isEmpty);
   });
 
-  test('超过 24 小时才发请求；发现新版本写入 tag 与时间', () async {
-    setSetting(db, kUpdateCheckAtKey, DateTime.now().subtract(const Duration(hours: 25)).millisecondsSinceEpoch);
+  test('超过 12 小时才发请求；发现新版本写入 tag 与时间', () async {
+    setSetting(db, kUpdateCheckAtKey, DateTime.now().subtract(const Duration(hours: 13)).millisecondsSinceEpoch);
     final before = DateTime.now().millisecondsSinceEpoch;
     final hits = <String>[];
     final tag = await runAutoUpdateCheck(
@@ -80,8 +80,8 @@ void main() {
     expect(getSetting<int>(db, kUpdateCheckAtKey), greaterThanOrEqualTo(before));
   });
 
-  test('超过 24 小时、已是最新 —— 清掉旧 tag', () async {
-    setSetting(db, kUpdateCheckAtKey, DateTime.now().subtract(const Duration(hours: 25)).millisecondsSinceEpoch);
+  test('超过 12 小时、已是最新 —— 清掉旧 tag', () async {
+    setSetting(db, kUpdateCheckAtKey, DateTime.now().subtract(const Duration(hours: 13)).millisecondsSinceEpoch);
     setSetting(db, kUpdateLatestTagKey, 'v9.9.9');
     final tag = await runAutoUpdateCheck(
       db: db,
@@ -94,7 +94,7 @@ void main() {
   });
 
   test('查不到 —— 不写节流时间，下次启动还会再试', () async {
-    final oldAt = DateTime.now().subtract(const Duration(hours: 25)).millisecondsSinceEpoch;
+    final oldAt = DateTime.now().subtract(const Duration(hours: 13)).millisecondsSinceEpoch;
     setSetting(db, kUpdateCheckAtKey, oldAt);
     final hits = <String>[];
     final tag = await runAutoUpdateCheck(

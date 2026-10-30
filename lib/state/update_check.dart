@@ -1,7 +1,7 @@
-/// 启动时静默检查更新（24 小时节流）—— 首页的设置入口据此显示红点。
+/// 启动时静默检查更新（12 小时节流）—— 首页的设置入口据此显示红点。
 ///
 /// **为什么要节流**：发布接口按 IP 限流（GitHub 未登录 60 次/小时/IP）。
-/// 24 小时内不重复请求；节流期内直接用上次记下的 tag 判断红点。
+/// 12 小时内不重复请求；节流期内直接用上次记下的 tag 判断红点。
 ///
 /// 查不到（断网 / 限流）**不写节流时间** —— 断一次网不该让接下来一天都不再检查。
 library;
@@ -20,8 +20,8 @@ import '../platform/update.dart';
 const String kUpdateCheckAtKey = 'update_check_at';
 const String kUpdateLatestTagKey = 'update_latest_tag';
 
-/// 自动检查的最小间隔。
-const Duration updateAutoCheckInterval = Duration(hours: 24);
+/// 自动检查的最小间隔（每天最多两次）。
+const Duration updateAutoCheckInterval = Duration(hours: 12);
 
 /// 记下这次检查的结果。手动点「检查更新」后也要调它，红点才不会说谎。
 void recordUpdateCheck(SqliteDriver db, {required String? latestTag}) {
