@@ -6,13 +6,10 @@
 ///
 /// 三条界面上的硬约束（真机反馈改出来的，别再退回去）：
 /// 1. **按钮横排** —— 竖着排四个按钮会把弹窗撑得又长又没主次；
-/// 2. **不再有二级弹窗** —— 「浏览器下载」以前还要再弹一次问走哪个渠道，纯属多余：
-///    它本来就是个兜底，直接开默认渠道（Gitee）的下载页；
+/// 2. **浏览器兜底收进长按** —— 不再单独放「浏览器打开下载页」按钮：
+///    长按 Gitee / GitHub 下载按钮就在浏览器打开该渠道的**发布页**；
 /// 3. **正文只显示 `---` 之前的更新说明**（`releaseNotesForApp`）—— 之后的安装须知
 ///    是给发布页读者看的，塞进弹窗既占地方又要跟着版本维护。
-///
-/// 正文里那句「覆盖安装即可，数据不会丢」是硬口径，**别删** ——
-/// 它成立的前提是「所有版本都签同一把证书」（debug 包也一样，见 build.gradle.kts）。
 library;
 
 import 'package:findr_core/findr_core.dart';
@@ -62,7 +59,6 @@ AlertDialog _sourceDialog(
   required List<UpdateChannel> channels,
 }) {
   final c = FindrColors.of(ctx);
-  final primary = channels.first;
   final notes = releaseNotesForApp(info.notes) ?? '暂无更新说明。';
   return AlertDialog(
     backgroundColor: c.surface,
@@ -88,7 +84,7 @@ AlertDialog _sourceDialog(
           Text(notes, style: TextStyle(fontSize: 13, height: 1.55, color: c.textSecondary)),
           const SizedBox(height: Spacing.three),
           Text(
-            '覆盖安装即可，数据不丢；下载时可缩成小图标，边用边下。',
+            '长按下载按钮可以在浏览器打开',
             style: TextStyle(fontSize: 11.5, height: 1.5, color: c.textMuted),
           ),
           const SizedBox(height: Spacing.five),
@@ -99,20 +95,19 @@ AlertDialog _sourceDialog(
               for (var i = 0; i < channels.length; i++) ...<Widget>[
                 if (i > 0) const SizedBox(width: Spacing.two),
                 Expanded(
-                  child: FindrButton(
-                    title: '${channels[i].name} 下载',
-                    variant: FindrButtonVariant.secondary,
-                    onPressed: () => Navigator.of(ctx).pop(channels[i]),
+                  child: GestureDetector(
+                    onLongPress: () => Navigator.of(ctx).pop(
+                      _BrowserChoice(releasePageFor(channels[i])),
+                    ),
+                    child: FindrButton(
+                      title: '${channels[i].name} 下载',
+                      variant: FindrButtonVariant.secondary,
+                      onPressed: () => Navigator.of(ctx).pop(channels[i]),
+                    ),
                   ),
                 ),
               ],
             ],
-          ),
-          const SizedBox(height: Spacing.two),
-          FindrButton(
-            title: '浏览器打开下载页',
-            variant: FindrButtonVariant.ghost,
-            onPressed: () => Navigator.of(ctx).pop(_BrowserChoice(primary.url)),
           ),
         ],
       ),

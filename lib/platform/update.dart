@@ -176,6 +176,11 @@ String _downloadUrl(UpdateInfo info, String repoUrl, String host) {
   return '$repoUrl/releases/download/${Uri.encodeComponent(info.tag)}/$apkAssetName';
 }
 
+/// 某个下载渠道对应的**发布页**（长按下载按钮时在浏览器打开）。
+/// 是列出所有版本的页面，不是某个 APK 的直链。
+String releasePageFor(UpdateChannel channel) =>
+    channel.name == 'Gitee' ? '$giteeRepoUrl/releases' : '$githubRepoUrl/releases';
+
 /// 另一个下载渠道 —— 「换源重试」用：两个里挑不是 [current] 的那个。
 /// 只有一个渠道时返回 `null`（界面据此少给一个按钮）。
 UpdateChannel? otherChannel(UpdateInfo info, UpdateChannel current, {String? accelPrefix}) {

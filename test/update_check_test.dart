@@ -162,4 +162,15 @@ void main() {
     expect(plain[1].url, 'https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk');
     expect(plain[1].fallbackUrls, isEmpty);
   });
+
+  test('长按下载按钮打开的是发布页（releases 列表），不是 APK 直链', () {
+    expect(
+      releasePageFor(const UpdateChannel(name: 'Gitee', url: 'https://x')),
+      'https://gitee.com/ms6/findR/releases',
+    );
+    expect(
+      releasePageFor(const UpdateChannel(name: 'GitHub', url: 'https://x')),
+      'https://github.com/mos1128/findR/releases',
+    );
+  });
 }
