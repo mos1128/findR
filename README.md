@@ -6,6 +6,7 @@
 [![Flutter](https://img.shields.io/badge/Flutter-3.47.5-blue.svg)](https://flutter.dev/)
 [![Dart](https://img.shields.io/badge/Dart-3.13.4-0175C2.svg)](https://dart.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-FTS5%20%2B%20trigram-003B57.svg)](https://www.sqlite.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
