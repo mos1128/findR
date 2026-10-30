@@ -325,6 +325,32 @@ void main() {
       expect(platform.calls, <String>['keepStart', 'keepStop:false']);
     });
 
+    test('加速源失败 → 自动回原站重下（用户不用再点一次）', () async {
+      final body = _fakeApk(100);
+      final hits = <String>[];
+      final client = MockClient.streaming((req, _) async {
+        hits.add(req.url.toString());
+        // 加速镜像挂了；原站正常
+        if (req.url.host == 'accel.example') return _response(const <List<int>>[], status: 500);
+        return _response(<List<int>>[body]);
+      });
+      final platform = _FakePlatform();
+      final container = _container(client, platform);
+
+      await container.read(updateDownloadProvider.notifier).start(
+        info: _info(_tag),
+        channel: const UpdateChannel(
+          name: 'GitHub',
+          url: 'https://accel.example/findr.apk',
+          fallbackUrls: <String>['https://github.example/findr.apk'],
+        ),
+      );
+
+      expect(hits, <String>['https://accel.example/findr.apk', 'https://github.example/findr.apk']);
+      expect(container.read(updateDownloadProvider), isA<UpdateReady>());
+      expect(apkFileFor(_tag).readAsBytesSync(), body);
+    });
+
     test('系统没允许安装：状态带标记、授权页只自动开一次、回前台自动接着装', () async {
       apkFileFor(_tag).writeAsBytesSync(_fakeApk(64));
       final platform = _FakePlatform()..next = InstallOutcome.needPermission;

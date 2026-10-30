@@ -144,12 +144,15 @@ void main() {
     expect(channels.map((c) => c.name), <String>['Gitee', 'GitHub']);
     expect(channels[0].url, contains('gitee.com'), reason: 'Gitee 在前');
     expect(channels[0].url, endsWith('/v0.2.0+1/app-release.apk'), reason: '用附件给的地址');
-    expect(channels[1].url, contains('github.com'));
-    expect(channels[1].url, contains('v0.2.0%2B1'), reason: '没有附件就按 tag 拼、+ 编码');
+    expect(channels[1].url, startsWith(githubAccelPrefix), reason: 'GitHub 先走加速镜像');
+    expect(channels[1].url, endsWith('https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk'));
+    expect(channels[1].fallbackUrls, hasLength(1), reason: '镜像失败自动回原站');
 
     final noAssets = parseReleaseInfo(_release(tag: 'v0.2.0+1'))!;
     final built = downloadChannels(noAssets);
     expect(built[0].url, 'https://gitee.com/ms6/findR/releases/download/v0.2.0%2B1/app-release.apk');
-    expect(built[1].url, 'https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk');
+    expect(built[1].url, '${githubAccelPrefix}https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk');
+    expect(built[1].fallbackUrls.single,
+        'https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk');
   });
 }

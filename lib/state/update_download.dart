@@ -159,17 +159,33 @@ final class UpdateDownloadNotifier extends Notifier<UpdateDownloadState> {
     state = UpdateDownloading(info: info, channel: channel);
     await _platform.startKeepAlive('正在下载 Findr 更新 v${info.version}');
 
-    final outcome = await downloadApkToFile(
-      url: channel.url,
-      tag: info.tag,
-      client: ref.read(updateHttpClientProvider),
-      cancel: cancel,
-      onProgress: (received, total) => _onProgress(info, channel, cancel, received, total),
-    );
-    if (_disposed) return;
+    // 主地址失败就试下一个（目前只有 GitHub 有备用地址：加速镜像 → 原站）。
+    // **换地址不续传**：不同来源的字节不保证能对上（同 `retryWith` 的口径）。
+    final urls = channel.urls;
+    DownloadOutcome? outcome;
+    for (var i = 0; i < urls.length; i++) {
+      if (_disposed || cancel.isCancelled) break;
+      if (i > 0) {
+        final part = apkPartFileFor(info.tag);
+        if (part.existsSync()) part.deleteSync();
+        _lastUiPercent = -1;
+        _lastNotifyPercent = -1;
+      }
+      outcome = await downloadApkToFile(
+        url: urls[i],
+        tag: info.tag,
+        client: ref.read(updateHttpClientProvider),
+        cancel: cancel,
+        onProgress: (received, total) => _onProgress(info, channel, cancel, received, total),
+      );
+      if (_disposed) return;
+      if (outcome is DownloadDone || outcome is DownloadCancelled) break;
+    }
     _cancel = null;
+    final result = outcome ??
+        (cancel.isCancelled ? const DownloadCancelled() : const DownloadFailed('没有可用的下载地址'));
 
-    switch (outcome) {
+    switch (result) {
       case DownloadDone(:final file):
         await _platform.stopKeepAlive(ready: true);
         if (_disposed) return;
