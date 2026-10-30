@@ -32,7 +32,7 @@ cd packages/findr_core && dart test          # 只测 core（快）
 bash release.sh                              # 发版
 ```
 
-**基线不许破**：core 300 条 + app 124 条，静态分析干净。
+**基线不许破**：core 300 条 + app 128 条，静态分析干净。
 
 ## 关键约束
 
@@ -104,7 +104,7 @@ bash release.sh
 - 启动时静默检查（12 小时节流，失败不写节流），有新版本在首页设置入口打红点（`lib/state/update_check.dart`）
 - 检查：先问 Gitee，失败再问 GitHub（读 `/releases/latest`）
 - 下载：应用内下载（Gitee/GitHub 源可选）+ 浏览器下载兜底
-- GitHub 源先走国内加速镜像 `gh-proxy.com`，失败**自动**回 GitHub 原站（`UpdateChannel.fallbackUrls`）
+- GitHub 源可走加速镜像：设置里开关 + **地址可自定义**（默认 `gh-proxy.com`，留空即不加速），失败**自动**回 GitHub 原站（`UpdateChannel.fallbackUrls`）
 - 安装：下完拉系统安装界面，首次需允许「安装未知应用」
 - 附件名：`app-release.apk`（CI 与 App 的约定）
 

@@ -37,6 +37,16 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _busy = false;
 
+  /// GitHub 加速地址输入框（初值在第一次拿到运行时快照时填入，见 build）。
+  final _accelCtrl = TextEditingController();
+  bool _accelInited = false;
+
+  @override
+  void dispose() {
+    _accelCtrl.dispose();
+    super.dispose();
+  }
+
   RuntimeState get _rt {
     final v = ref.read(runtimeProvider).value;
     if (v == null) throw StateError('运行时还没就绪');
@@ -381,6 +391,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final llmName = rt.llm == null ? '未配置' : '${rt.llm!.model}（${rt.llm!.providerType.wire}）';
     final asrName = rt.asr?.model ?? '未配置';
 
+    // 加速设置是本机偏好，直接读写 settings 表（不经过运行时快照，改完立即可用）
+    final accelEnabled = readUpdateAccelEnabled(rt.driver);
+    if (!_accelInited) {
+      _accelCtrl.text = readUpdateAccelPrefix(rt.driver);
+      _accelInited = true;
+    }
+
     return Scaffold(
       appBar: FindrTopBar(title: '设置'),
       body: ScreenBody.column(
@@ -540,6 +557,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         )
                       : Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
+                FindrDivider(),
+                ListRow(
+                  title: 'GitHub 下载加速',
+                  subtitle: '更新包经加速镜像下载，失败自动回原站',
+                  right: Switch(
+                    value: accelEnabled,
+                    onChanged: (v) {
+                      writeUpdateAccel(rt.driver, enabled: v, prefix: _accelCtrl.text);
+                      ref.invalidate(updateAccelPrefixProvider);
+                      setState(() {});
+                    },
+                  ),
+                ),
+                if (accelEnabled)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      Spacing.four,
+                      Spacing.two,
+                      Spacing.four,
+                      Spacing.three,
+                    ),
+                    child: FindrField(
+                      label: '加速地址',
+                      controller: _accelCtrl,
+                      placeholder: 'https://gh-proxy.com/',
+                      note: '填你自己搭建的加速服务；留空则直接走 GitHub 原站。',
+                      onChanged: (v) {
+                        writeUpdateAccel(rt.driver, enabled: true, prefix: v);
+                        ref.invalidate(updateAccelPrefixProvider);
+                      },
+                    ),
+                  ),
                 FindrDivider(),
                 ListRow(
                   title: '开源仓库',

@@ -146,27 +146,25 @@ Future<UpdateInfo?> fetchReleaseInfo(http.Client client, String url, Duration ti
   }
 }
 
-/// GitHub 下载地址的国内加速前缀（第三方反向代理，只做转发）。
-///
-/// **为什么可以放心用**：下完仍按 ZIP 魔数验真身，装的时候系统还会验签名 ——
-/// 转发路上被换成假包也装不上。它挂了的代价只是这一次下载失败，自动回 GitHub 原站。
-const String githubAccelPrefix = 'https://gh-proxy.com/';
-
 /// 弹窗里的下载渠道：Gitee 在前（国内直连稳），GitHub 在后（国外用户）。
 ///
 /// 地址优先用发布里挂的**附件地址**（那是服务端自己给的，最不容易拼错）；
 /// 附件里找不到（或不属于这个域名）就按固定文件名拼。
 ///
-/// GitHub 这一路先走加速镜像，失败自动回原站 —— 界面仍是一个按钮。
-List<UpdateChannel> downloadChannels(UpdateInfo info) {
+/// [accelPrefix] 非空时 GitHub 这一路先走加速镜像（前缀 + 原始地址），
+/// 失败自动回原站 —— 界面仍是一个按钮。前缀由设置提供（默认 `gh-proxy.com`），
+/// 用户也可以填自己搭的。
+List<UpdateChannel> downloadChannels(UpdateInfo info, {String? accelPrefix}) {
   final github = _downloadUrl(info, githubRepoUrl, 'github.com');
-  final accel = github.startsWith('https://github.com/') ? '$githubAccelPrefix$github' : github;
+  final accel = accelPrefix != null &&
+      accelPrefix.isNotEmpty &&
+      github.startsWith('https://github.com/');
   return <UpdateChannel>[
     UpdateChannel(name: 'Gitee', url: _downloadUrl(info, giteeRepoUrl, 'gitee.com')),
     UpdateChannel(
       name: 'GitHub',
-      url: accel,
-      fallbackUrls: accel == github ? const <String>[] : <String>[github],
+      url: accel ? '$accelPrefix$github' : github,
+      fallbackUrls: accel ? <String>[github] : const <String>[],
     ),
   ];
 }
@@ -180,8 +178,8 @@ String _downloadUrl(UpdateInfo info, String repoUrl, String host) {
 
 /// 另一个下载渠道 —— 「换源重试」用：两个里挑不是 [current] 的那个。
 /// 只有一个渠道时返回 `null`（界面据此少给一个按钮）。
-UpdateChannel? otherChannel(UpdateInfo info, UpdateChannel current) {
-  for (final c in downloadChannels(info)) {
+UpdateChannel? otherChannel(UpdateInfo info, UpdateChannel current, {String? accelPrefix}) {
+  for (final c in downloadChannels(info, accelPrefix: accelPrefix)) {
     if (c.name != current.name) return c;
   }
   return null;

@@ -10,6 +10,7 @@ library;
 import 'dart:convert';
 
 import 'package:findr_app/platform/update.dart';
+import 'package:findr_app/state/update_check.dart';
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -140,19 +141,25 @@ void main() {
         ],
       ),
     )!;
-    final channels = downloadChannels(withAssets);
+    final channels = downloadChannels(withAssets, accelPrefix: kUpdateAccelPrefixDefault);
     expect(channels.map((c) => c.name), <String>['Gitee', 'GitHub']);
     expect(channels[0].url, contains('gitee.com'), reason: 'Gitee 在前');
     expect(channels[0].url, endsWith('/v0.2.0+1/app-release.apk'), reason: '用附件给的地址');
-    expect(channels[1].url, startsWith(githubAccelPrefix), reason: 'GitHub 先走加速镜像');
+    expect(channels[1].url, startsWith(kUpdateAccelPrefixDefault), reason: 'GitHub 先走加速镜像');
     expect(channels[1].url, endsWith('https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk'));
     expect(channels[1].fallbackUrls, hasLength(1), reason: '镜像失败自动回原站');
 
     final noAssets = parseReleaseInfo(_release(tag: 'v0.2.0+1'))!;
-    final built = downloadChannels(noAssets);
+    final built = downloadChannels(noAssets, accelPrefix: kUpdateAccelPrefixDefault);
     expect(built[0].url, 'https://gitee.com/ms6/findR/releases/download/v0.2.0%2B1/app-release.apk');
-    expect(built[1].url, '${githubAccelPrefix}https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk');
+    expect(built[1].url,
+        '${kUpdateAccelPrefixDefault}https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk');
     expect(built[1].fallbackUrls.single,
         'https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk');
+
+    // 加速关闭（不传前缀）时直接走原站，也不该有回退地址
+    final plain = downloadChannels(noAssets);
+    expect(plain[1].url, 'https://github.com/mos1128/findR/releases/download/v0.2.0%2B1/app-release.apk');
+    expect(plain[1].fallbackUrls, isEmpty);
   });
 }

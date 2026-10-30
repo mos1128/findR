@@ -93,6 +93,30 @@ void main() {
     expect(getSetting<String>(db, kUpdateLatestTagKey), isNull);
   });
 
+  group('GitHub 加速设置', () {
+    test('默认开启，地址为 gh-proxy.com（带尾斜杠）', () {
+      expect(readUpdateAccelEnabled(db), isTrue);
+      expect(effectiveUpdateAccelPrefix(db), kUpdateAccelPrefixDefault);
+    });
+
+    test('关掉开关 ⇒ 不加速', () {
+      writeUpdateAccel(db, enabled: false, prefix: 'https://my-accel.example/');
+      expect(effectiveUpdateAccelPrefix(db), isNull);
+    });
+
+    test('自定义地址：缺尾斜杠自动补上', () {
+      writeUpdateAccel(db, enabled: true, prefix: 'https://my-accel.example');
+      expect(effectiveUpdateAccelPrefix(db), 'https://my-accel.example/');
+    });
+
+    test('留空或不是 http(s) 地址 ⇒ 不加速', () {
+      writeUpdateAccel(db, enabled: true, prefix: '   ');
+      expect(effectiveUpdateAccelPrefix(db), isNull);
+      writeUpdateAccel(db, enabled: true, prefix: 'my-accel.example');
+      expect(effectiveUpdateAccelPrefix(db), isNull);
+    });
+  });
+
   test('查不到 —— 不写节流时间，下次启动还会再试', () async {
     final oldAt = DateTime.now().subtract(const Duration(hours: 13)).millisecondsSinceEpoch;
     setSetting(db, kUpdateCheckAtKey, oldAt);

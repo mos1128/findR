@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../platform/update.dart';
 import '../platform/update_install.dart';
+import '../state/update_check.dart';
 import '../state/update_download.dart';
 import '../theme/tokens.dart';
 
@@ -223,7 +224,11 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
           ]),
         ];
       case UpdateDownloadFailed(:final reason):
-        final other = otherChannel(state.info, state.channel);
+        final other = otherChannel(
+          state.info,
+          state.channel,
+          accelPrefix: ref.read(updateAccelPrefixProvider),
+        );
         return <Widget>[
           Text(reason, style: TextStyle(fontSize: 12, height: 1.45, color: c.textSecondary)),
           const SizedBox(height: Spacing.three),

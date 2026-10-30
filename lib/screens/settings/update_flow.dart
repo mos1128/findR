@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../platform/update.dart';
+import '../../state/update_check.dart';
 import '../../state/update_download.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
@@ -39,7 +40,7 @@ Future<void> showUpdateFlow(
   required UpdateInfo info,
   required String currentLabel,
 }) async {
-  final channels = downloadChannels(info);
+  final channels = downloadChannels(info, accelPrefix: ref.read(updateAccelPrefixProvider));
   if (channels.isEmpty) return;
   final pick = await showDialog<Object?>(
     context: context,

@@ -20,6 +20,35 @@ import '../platform/update.dart';
 const String kUpdateCheckAtKey = 'update_check_at';
 const String kUpdateLatestTagKey = 'update_latest_tag';
 
+/// GitHub 下载加速：开关与地址前缀（同样是本机偏好，不进备份）。
+///
+/// 用户自己搭了加速服务的，把地址填进来即可；留空或关掉就走 GitHub 原站。
+const String kUpdateAccelEnabledKey = 'update_accel_enabled';
+const String kUpdateAccelPrefixKey = 'update_accel_prefix';
+
+const bool kUpdateAccelEnabledDefault = true;
+const String kUpdateAccelPrefixDefault = 'https://gh-proxy.com/';
+
+bool readUpdateAccelEnabled(SqliteDriver db) =>
+    getSetting<bool>(db, kUpdateAccelEnabledKey) ?? kUpdateAccelEnabledDefault;
+
+String readUpdateAccelPrefix(SqliteDriver db) =>
+    getSetting<String>(db, kUpdateAccelPrefixKey) ?? kUpdateAccelPrefixDefault;
+
+void writeUpdateAccel(SqliteDriver db, {required bool enabled, required String prefix}) {
+  setSetting(db, kUpdateAccelEnabledKey, enabled);
+  setSetting(db, kUpdateAccelPrefixKey, prefix.trim());
+}
+
+/// 生效的加速前缀：关掉、留空、或不是 http(s) 地址 ⇒ `null`（直接走原站）。
+String? effectiveUpdateAccelPrefix(SqliteDriver db) {
+  if (!readUpdateAccelEnabled(db)) return null;
+  final raw = readUpdateAccelPrefix(db).trim();
+  if (raw.isEmpty) return null;
+  if (!raw.startsWith('http://') && !raw.startsWith('https://')) return null;
+  return raw.endsWith('/') ? raw : '$raw/';
+}
+
 /// 自动检查的最小间隔（每天最多两次）。
 const Duration updateAutoCheckInterval = Duration(hours: 12);
 
@@ -71,6 +100,11 @@ Future<String?> runAutoUpdateCheck({
 /// 节流期内只存了 tag：按版本号比一次（`compareVersions` 会剥掉 `v` 前缀）。
 String? _newerTagOrNull(String tag, String currentVersion) =>
     compareVersions(tag, currentVersion) > 0 ? tag : null;
+
+/// 当前生效的 GitHub 加速前缀（`null` = 不加速）。设置里改完记得 `ref.invalidate`。
+final updateAccelPrefixProvider = Provider<String?>(
+  (ref) => effectiveUpdateAccelPrefix(ref.watch(dbProvider)),
+);
 
 /// 供设置入口显示红点。版本号还没取到时返回 null，取到后会自动重跑。
 final updateHintProvider = FutureProvider<String?>((ref) async {
