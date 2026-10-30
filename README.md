@@ -1,14 +1,11 @@
 # Findr
 
-<div align="center">
-<strong>本地优先的长程记忆助手 | 拍照语音极速记 · 自然语言秒级查 · 数据全在手机</strong>
+**本地优先的长程记忆助手 | 拍照语音极速记 · 自然语言秒级查 · 数据全在手机**
 
 [![Flutter](https://img.shields.io/badge/Flutter-3.47.5-blue.svg)](https://flutter.dev/)
 [![Dart](https://img.shields.io/badge/Dart-3.13.4-0175C2.svg)](https://dart.dev/)
 [![SQLite](https://img.shields.io/badge/SQLite-FTS5%20%2B%20trigram-003B57.svg)](https://www.sqlite.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-
-</div>
 
 ## 📖 简介
 
@@ -37,7 +34,7 @@ Findr 是一款手机端个人长程记忆与检索应用。解决三类低频�
 
 ## 💡 功能说明
 
-> 这里只对关键功能做释义，方便快速上手。
+> 只对关键交互做释义，方便快速上手。
 
 ### 录入
 
@@ -59,19 +56,6 @@ Findr 是一款手机端个人长程记忆与检索应用。解决三类低频�
 - 解析成功即入库，没有「待确认」这一步。分类选不出、新建了位置层级，都不需要用户操作，详情页随时可改。
 - 理解失败重试一次仍失败时，卡片保留原文并打「待整理」角标。
 
-### 备份
-
-- `.findrpack` 格式：7 字节头 + 标准 ZIP，带每成员 CRC32 校验。
-- **当前为明文，不加密** —— 导出前会弹确认框明确告知。拿到文件的人不需要密码就能打开。
-- API Key 可选择性随备份带走（默认带、可关），导入时只填本机为空的槽位。
-
-### 更新
-
-- 设置页「检查更新」先问 Gitee、失败再问 GitHub；查到新版可在 App 内选择下载源。
-- 下载期间切走或息屏会继续（前台服务保活），界面缩成右下角小图标；下完自动拉起系统安装界面。
-- 首次安装新版需在系统设置里允许一次「安装未知应用」；「浏览器下载」始终保留作兜底。
-- **不做静默安装（不是 OTA）**，每次都要在系统界面点确认。
-
 ---
 
 ## 🚀 快速开始
@@ -80,18 +64,13 @@ Findr 是一款手机端个人长程记忆与检索应用。解决三类低频�
 
 1. 前往 [GitHub Releases](https://github.com/mos1128/findR/releases) 或 [Gitee 发行版](https://gitee.com/ms6/findR/releases) 下载最新的 `app-release.apk`。
 2. 传到手机安装；首次需允许「安装未知应用」。
-3. 打开 App → 设置 → 填入主 LLM 的地址 / 模型名 / API Key → 点「探测」确认可用。
+3. 打开 App → 设置 → 填入主 LLM 的协议 / 地址 / 模型名 / API Key → 点「探测」确认可用。
 
 > **升级提示**：安装新版直接覆盖即可，数据保留。**别卸载** —— 记忆库在应用私有目录里，卸载会清空，除非先导出备份。
 
 ### 方式二：从源码构建
 
-#### 环境要求
-
-- Flutter 3.47.5（Dart 3.13.4）
-- Android SDK（本机出包时需要）
-
-#### 构建
+环境要求：Flutter 3.47.5（Dart 3.13.4）、Android SDK（本机出包时需要）。
 
 ```bash
 # 安装依赖（仓库根执行一次即可，pub workspaces 统一解析）
@@ -104,60 +83,8 @@ flutter run
 flutter build apk --target-platform android-arm64
 ```
 
-> 正式发版不用本机构建：打 tag 后 CI 自动出包并发布到 GitHub + Gitee（见 [DEVELOPMENT.md](DEVELOPMENT.md)）。
-
-> 仓库根 = Flutter app，`packages/findr_core/` = 纯 Dart 核心逻辑包，两者由 pub workspaces 统一解析依赖，**只在仓库根跑 `flutter pub get`**。
-
----
-
-## ⚙️ 配置指南
-
-Findr 不内置任何模型。首次使用需在设置页配置：
-
-| 槽位 | 必填 | 说明 |
-| --- | --- | --- |
-| **主 LLM** | 是 | 协议 + 地址（`baseUrl`）+ 模型名 + API Key。三种协议可选：**Anthropic** / **OpenAI 兼容** / **OpenAI Responses**。优先选支持图片输入的模型；不支持图片也能正常用，图片降级为纯附件 |
-| **ASR** | 否 | 语音转写专用槽位，固定走 OpenAI 兼容的 `/v1/audio/transcriptions`。未配置时语音卡保留音频、标记「待转写」，补一句文字即可入库 |
-
-配置后点「探测」：
-- **配置连通性**：地址、Key 是否正确 —— 一眼分清「配错了」还是「模型没这个能力」。
-- **图片能力**：模型是否支持视觉输入；不支持时图片分析开关会置灰锁定为关。
-
-### 常用 Provider 配置示例
-
-| 服务 | 协议 | baseUrl | 模型名示例 |
-| --- | --- | --- | --- |
-| Anthropic | Anthropic | `https://api.anthropic.com` | `claude-sonnet-5-5` |
-| OpenAI | OpenAI 兼容 | `https://api.openai.com` | `gpt-4o` |
-| DeepSeek | OpenAI 兼容 | `https://api.deepseek.com` | `deepseek-chat` |
-| 通义千问 | OpenAI 兼容 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-vl-max` |
-
-**地址填写规则**：尾部斜杠会被忽略；**已带 `/v1` 就不会重复补**。所以填 `https://api.deepseek.com` 与 `https://api.deepseek.com/v1` 等价。
-
-> 以各服务商文档为准；中转服务按其提供的地址填写。**Gemini 协议暂不支持。**
-
----
-
-## 🧱 项目结构
-
-```
-findR/
-├─ lib/                     # 界面 + 平台接线
-│  ├─ platform/             # 设备侧：DB / 媒体 / 备份 / 网络 / 更新
-│  ├─ capture/              # 录入链路
-│  ├─ ui/ screens/ state/ theme/
-├─ packages/findr_core/     # 核心逻辑（纯 Dart，零 Flutter 依赖）
-│  ├─ db/                   # SQLite + FTS5 trigram
-│  ├─ search/               # 三级检索
-│  ├─ providers/            # 模型适配
-│  ├─ prompts/              # P1 理解 / P2 查询 / P3 答案 / P4 裁决
-│  ├─ pipeline/             # 录入流水线
-│  └─ backup/               # .findrpack 格式
-├─ android/  assets/  test/
-└─ tool/                    # 图标与启动图生成脚本
-```
-
-开发须知（环境、约束、发布流程、真机验收）见 [DEVELOPMENT.md](DEVELOPMENT.md)。
+> 正式发版不用本机构建：打 tag 后 CI 自动出包并发布到 GitHub + Gitee。
+> 开发须知（环境、约束、发布流程、真机验收）见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
 ---
 
@@ -175,6 +102,4 @@ findR/
 
 ---
 
-<div align="center">
-<strong>如果这个项目对你有帮助，请给一个 ⭐️ Star 支持一下！</strong>
-</div>
+**如果这个项目对你有帮助，请给一个 ⭐️ Star 支持一下！**
