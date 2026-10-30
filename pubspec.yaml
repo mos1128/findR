@@ -6,7 +6,7 @@
 name: findr_app
 description: "findR —— 本地优先的口述记忆库：说一句、拍一张，剩下交给它整理。"
 publish_to: 'none'
-version: 0.0.7
+version: 1.0.0
 
 environment:
   sdk: ^3.13.4
