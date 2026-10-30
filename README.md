@@ -1,61 +1,117 @@
-# findr_app —— Findr 的 Flutter 工程（安卓）
+# Findr —— 本地优先的长程记忆助手
 
-Findr（长程记忆助手）的**安卓客户端**。仓库根就是它；`lib/` 里只放**平台接线 + 界面**，纯逻辑不在这。
+**拍照 / 语音极速记，自然语言秒级查。** 让 AI 帮你记住每件东西放在哪、每个流程怎么做、每项待办是什么。
 
-> **仓库结构**：根目录 = 这个 Flutter app，`packages/findr_core/` = 共享逻辑包。
-> 两者用 **Dart 官方的 pub workspaces** 统一解析 ⇒ 全仓只有一份 `pubspec.lock` / `.dart_tool/`，
-> **在仓库根跑一次 `flutter pub get` 就够**（别进 `packages/` 单独 pub get）。
+## 核心特性
 
-| 目录 | 放什么 |
-|---|---|
-| `lib/platform/` | 设备侧实现：DB 驱动、媒体读写、安全存储、备份、运行时（`runtime`）、检查更新与下载（`update`）、安装与保活通道（`update_install`）|
-| `lib/capture/` | 录入链路：拍照/相册、压缩、录音、文本文件、提交 |
-| `lib/ui/` | 通用组件（`kit.dart` 基础件、卡片行、媒体查看、音频回放、更新进度小图标 `update_pill`）|
-| `lib/screens/` | 页面：记忆流主页、卡片详情、设置（5 屏）+ 自检屏 |
-| `lib/state/` | Riverpod 状态（含 `update_download`：应用内更新的下载状态机）|
-| `lib/theme/` | 设计令牌（配色 / 圆角 / 间距）|
-| `assets/branding/` | 品牌素材（图标 / 启动图）—— **已接入**；改图形只改 `tool/gen_icons.dart` 顶部常量，参数与坑见该目录的 README |
+- 📸 **极速录入** - 连拍/语音/文字，先落盘后解析，素材永不丢失
+- 🧠 **AI 理解** - 自动提取实体、分类、位置、步骤，生成可检索的描述
+- 🔍 **智能检索** - 自然语言提问，三级检索（本地定位/答案组织/建议裁决）
+- 🏠 **本地优先** - 数据全在手机，只有当次录入的素材会发给模型
+- 🔧 **模型自配** - 支持 Anthropic / OpenAI / DeepSeek / 通义等，BYOK
+- 💾 **完整备份** - 一键导出/导入，换机无忧
 
-**纯逻辑在 `packages/findr_core/`**（零 Flutter 依赖的纯 Dart 包：数据库 / 检索 / 模型调用 / 备份格式）。
-那边的测试是主验收网（300 条，`dart test`），这里的 widget 测试是补充（117 条，`flutter test`）。
+## 快速开始
 
-## 常用命令
+### 环境要求
+
+- Flutter SDK 3.47.5+
+- Dart 3.13.4+
+- Android SDK（仅需本机出包时）
+
+### 安装依赖
 
 ```bash
+# 在仓库根目录执行一次即可
 flutter pub get
-flutter analyze
-flutter test
-flutter run                 # 需要连着设备
-bash release.sh             # 发版：改版本号 → 打 tag → 推 GitHub（CI 出包并同步 Gitee，见 docs/开发指南.md 5.6）
 ```
 
-⚠️ 本机没装 Android SDK 时**出包只能走 CI**（`.github/workflows/flutter.yml` 的 `apk` 作业）。
+> **仓库结构**：根目录 = Flutter app，`packages/findr_core/` = 纯 Dart 核心逻辑包。
+> 两者用 **pub workspaces** 统一解析 ⇒ 全仓只有一份 `pubspec.lock` / `.dart_tool/`。
 
-## 两个必须知道的坑
+### 目录结构
 
-1. **release 包必须自己声明 `INTERNET` 权限**
-   （`android/app/src/main/AndroidManifest.xml`）。
-   没有任何插件会替你带它，而 Flutter 模板在 `debug/`、`profile/` 清单里自带
-   ⇒ **`flutter run` 一切正常、release 包装到真机后所有域名解析失败**
-   （`Failed host lookup`，真机验收时踩到过）。CI 里有一道产物级断言挡着 ——
-   同一道断言还看着应用内更新的两个：`REQUEST_INSTALL_PACKAGES`（拉系统安装界面）
-   与 `FOREGROUND_SERVICE_DATA_SYNC`（下载时的保活前台服务），它们同样只在真机上才炸。
+| 目录 | 职责 |
+|---|---|
+| `lib/platform/` | 设备侧实现：DB 驱动、媒体读写、安全存储、备份、网络、检查更新与下载、安装与保活通道 |
+| `lib/capture/` | 录入链路：拍照/相册、压缩、录音、文本文件、提交 |
+| `lib/ui/` | 通用组件（基础件、卡片行、媒体查看、音频回放、更新进度小图标）|
+| `lib/screens/` | 页面：记忆流主页、卡片详情、设置（5 屏）+ 自检屏 |
+| `lib/state/` | Riverpod 状态管理（含应用内更新的下载状态机）|
+| `lib/theme/` | 设计令牌（配色 / 圆角 / 间距）|
+| `assets/branding/` | 品牌素材（图标 / 启动图）—— 改图形只改 `tool/gen_icons.dart` 顶部常量 |
+| `packages/findr_core/` | **核心逻辑**：数据库 / 检索 / 模型调用 / 备份格式（零 Flutter 依赖）|
 
-2. **平台插件别放在首帧的关键路径上 `await`**
-   （`package_info_plus` 这类在 widget test 宿主里永不返回，界面会一直转圈）。
-   做法见 `lib/platform/runtime.dart`：先返回，再 `unawaited` 补版本号。
+**测试覆盖**：core 300 条（`dart test`）+ app 117 条（`flutter test`）= 417 条基线。
+
+### 常用命令
+
+```bash
+# 开发
+flutter pub get              # 安装依赖
+flutter analyze              # 静态分析
+flutter test                 # 运行测试（app + core）
+flutter run                  # 运行到设备
+
+# 核心包单独测试（更快）
+cd packages/findr_core
+dart analyze && dart test
+
+# 发版（一键完成：改版本号 → 打 tag → 推送 → CI 自动构建并双发布）
+bash release.sh
+```
+
+**CI 自动化**：推送 tag 后自动构建 APK，并发布到 GitHub + Gitee 双渠道。
+
+## 技术亮点
+
+### 架构设计
+
+- **端口与适配器** - core 通过接口注入所有 IO/网络，零 Flutter 依赖，测试毫秒级
+- **本地优先** - 数据全在手机，SQLite + FTS5 trigram 分词，离线可用
+- **渐进式检索** - L1 本地结果立刻返回，L2/L3 异步追加，不阻塞用户
+- **先落盘后解析** - 素材立刻本地存储，网络失败可重试，永不丢数据
+
+### 质量保障
+
+- ✅ **417 条自动化测试** - 覆盖数据库/检索/备份/状态机等关键路径
+- ✅ **CI 产物断言** - 验证 SQLite FTS5/trigram、权限声明、正式签名
+- ✅ **真机验收清单** - 10 条场景验收（含离线/断网/更新链路）
+- ✅ **自检系统** - 7 项核心检测，随包发布，用户可自查
 
 ## 文档
 
-都在 `docs/`（只有本 README 在根目录）。**新会话第一份读《开发指南》**。
-
-| 文档 | 讲什么 |
+| 文档 | 内容 |
 |---|---|
-| [开发指南](docs/开发指南.md) | **新会话第一份读**：环境搭建、踩坑记录、十二条铁律、工程约定、真机验收、当前状态与待办 |
-| [需求](docs/需求.md) | 产品要什么：定位与三条红线、功能模块、交互、字段的**业务含义**、验收口径 |
-| [技术设计](docs/技术设计.md) | 数据模型与 DDL、Provider 适配、录入流水线、检索实现、备份格式、测试策略、CI 与发布 |
-| [Prompt 设计](docs/prompt设计.md) | 四段 prompt 的设计意图、行为约束与调用侧约定（**文案本身在代码里**：`packages/findr_core/lib/prompts/`）|
-| [图标与启动图](assets/branding/README.md) | 改图标只看这份：设计稿参数、66dp 安全区、安卓 13+ 主题图标怎么画 |
+| [开发指南](docs/开发指南.md) | 环境搭建、踩坑记录、十二条铁律、工程约定、真机验收、发布流程 |
+| [需求](docs/需求.md) | 产品定位、三条红线、功能模块、交互规范、字段业务含义 |
+| [技术设计](docs/技术设计.md) | 数据模型与 DDL、Provider 适配、检索算法、备份格式、测试策略 |
+| [Prompt 设计](docs/prompt设计.md) | 四段 prompt 的设计意图与调用约定（文案在 `packages/findr_core/lib/prompts/`）|
+| [图标与启动图](assets/branding/README.md) | 设计稿参数、66dp 安全区、安卓 13+ 主题图标绘制要点 |
 
-> 就这 5 份（+ 本 README），各有唯一职责、互不重复。**别再新增文档** ——
-> 新内容并进上面最接近的那份，一主题一权威。
+> 共 5 份文档，各有唯一职责。新内容并入最接近的那份，保持一主题一权威。
+
+## 功能完成度
+
+**已完成并通过真机验收**：
+
+- ✅ 多模态录入（拍照/连拍/相册/语音/文字/文件）
+- ✅ AI 理解与结构化（自动分类、位置提取、步骤识别）
+- ✅ 三级智能检索（L1 本地/L2 答案/L3 建议裁决）
+- ✅ 数据管理（分类/位置树/别名/编辑闭环）
+- ✅ 备份导出/导入（.findrpack 格式）
+- ✅ 应用内更新（双渠道检查、下载、一键安装）
+- ✅ 自检系统（7 项核心检测）
+- ✅ 正式签名（支持覆盖安装）
+
+**后续规划**：
+
+- 单张卡片分享
+- 提醒机制（补货/借出/到期）
+- 记忆生命周期管理
+- 多物品自动拆卡
+- 本地 embedding 增强召回
+
+## 许可
+
+本项目采用 MIT 许可证。详见 LICENSE 文件。
