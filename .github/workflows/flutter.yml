@@ -317,7 +317,7 @@ jobs:
             echo
             echo "---"
             echo
-            echo "findR 的开发版 APK（包名 com.findr.app.dev）。"
+            echo "findR 的安卓安装包（包名 com.findr.app.dev）。"
             echo
             echo "- 用正式证书签名：新版本直接覆盖安装，不用卸载，数据保留。"
             echo "- 装好后第一件事：在自检屏上确认七项全绿。"
@@ -333,7 +333,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.value }}
-          name: Findr 开发版 · Flutter · v${{ steps.ver.outputs.value }}
+          name: Findr · v${{ steps.ver.outputs.value }}
           body_path: build/release-body.md
           files: build/app/outputs/flutter-apk/*.apk
 
@@ -385,7 +385,7 @@ jobs:
             curl -sS --fail-with-body -X POST "$api/releases" \
               --data-urlencode "access_token=$GITEE_TOKEN" \
               --data-urlencode "tag_name=$tag" \
-              --data-urlencode "name=Findr 开发版 · Flutter · $tag" \
+              --data-urlencode "name=Findr · $tag" \
               --data-urlencode "body@build/release-body.md" \
               --data-urlencode "prerelease=false" \
               "$@" \
