@@ -560,7 +560,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 FindrDivider(),
                 ListRow(
                   title: 'GitHub 下载加速',
-                  subtitle: '更新包经加速镜像下载，失败自动回原站',
                   right: Switch(
                     value: accelEnabled,
                     onChanged: (v) {
@@ -582,7 +581,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       label: '加速地址',
                       controller: _accelCtrl,
                       placeholder: 'https://gh-proxy.com/',
-                      note: '填你自己搭建的加速服务；留空则直接走 GitHub 原站。',
                       onChanged: (v) {
                         writeUpdateAccel(rt.driver, enabled: true, prefix: v);
                         ref.invalidate(updateAccelPrefixProvider);
