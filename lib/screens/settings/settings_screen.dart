@@ -18,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../platform/runtime.dart';
 import '../../platform/update.dart';
 import '../../selfcheck/self_check_screen.dart';
+import '../../state/update_check.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
 import 'backup_screen.dart';
@@ -257,9 +258,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (!mounted) return;
     switch (res) {
       case UpdateAvailable(:final info):
+        // 手动查到的结果同样记下来：首页红点跟着它走，不会说反话
+        recordUpdateCheck(ref.read(dbProvider), latestTag: info.tag);
+        ref.invalidate(updateHintProvider);
         // 怎么更新（选源 → 应用内下载 → 安装）整个交给 update_flow，这里只管「查」
         unawaited(showUpdateFlow(context, ref, info: info, currentLabel: _versionLabel(rt)));
       case UpToDate():
+        recordUpdateCheck(ref.read(dbProvider), latestTag: null);
+        ref.invalidate(updateHintProvider);
         _dialog('检查更新', '已是最新版本 ${_versionLabel(rt)}。');
       case UpdateCheckFailed():
         _showUpdateFailedDialog();

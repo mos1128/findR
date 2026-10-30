@@ -15,6 +15,7 @@ import 'package:findr_app/platform/db.dart';
 import 'package:findr_app/platform/secure.dart';
 import 'package:findr_app/platform/runtime.dart';
 import 'package:findr_app/screens/memory_stream_screen.dart';
+import 'package:findr_app/state/update_check.dart';
 import 'package:findr_app/theme/tokens.dart';
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +42,8 @@ Future<void> pumpApp(WidgetTester tester) async {
       overrides: [
         // 真机上 Key 走 Keystore；测试里换成内存实现，免得碰平台通道
         apiKeyStoreProvider.overrideWithValue(MemoryApiKeyStore()),
+        // 自动检查更新会出网；widget 测试不测网络，恒为「没有新版本」
+        updateHintProvider.overrideWith((ref) async => null),
       ],
       child: MaterialApp(
         theme: buildFindrTheme(Brightness.light),
@@ -91,6 +94,25 @@ void main() {
     } catch (_) {
       // 临时目录删不掉不影响结论（Windows 上偶尔要等文件句柄释放）
     }
+  });
+
+  testWidgets('启动时发现新版本 → 设置入口带红点', (tester) async {
+    addTearDown(() => disposeApp(tester));
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          apiKeyStoreProvider.overrideWithValue(MemoryApiKeyStore()),
+          // 模拟「启动时静默检查发现有新版本」
+          updateHintProvider.overrideWith((ref) async => 'v99.0.0'),
+        ],
+        child: MaterialApp(
+          theme: buildFindrTheme(Brightness.light),
+          home: const MemoryStreamScreen(),
+        ),
+      ),
+    );
+    await settle(tester);
+    expect(tester.widget<Badge>(find.byType(Badge)).isLabelVisible, isTrue);
   });
 
   testWidgets('空库时是「还没有记忆」空态，并且两条链路都在', (tester) async {

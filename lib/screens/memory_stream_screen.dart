@@ -24,6 +24,7 @@ import '../capture/submit.dart';
 import '../platform/network.dart';
 import '../platform/runtime.dart';
 import '../state/memory_stream.dart';
+import '../state/update_check.dart';
 import '../theme/tokens.dart';
 import '../ui/card_row.dart';
 import '../ui/kit.dart';
@@ -180,6 +181,8 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     final rt = rtAsync.value;
     final llmReady = llmConfigured(rt?.llm);
     final state = stream.value;
+    // 启动时静默检查过更新：有新版本就在设置入口打红点
+    final hasUpdate = ref.watch(updateHintProvider).value != null;
 
     return Scaffold(
       backgroundColor: c.background,
@@ -201,6 +204,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
                 MaterialPageRoute<void>(builder: (_) => const CategoriesScreen()),
               ),
               llmReady: llmReady,
+              hasUpdate: hasUpdate,
             ),
             Expanded(child: _buildFlow(context, stream, rtAsync)),
             Composer(
@@ -427,6 +431,7 @@ class _SearchBar extends StatefulWidget {
     required this.onCategory,
     required this.onNewCategory,
     required this.llmReady,
+    required this.hasUpdate,
   });
 
   final TextEditingController controller;
@@ -438,6 +443,9 @@ class _SearchBar extends StatefulWidget {
   final ValueChanged<String?> onCategory;
   final VoidCallback onNewCategory;
   final bool llmReady;
+
+  /// 启动时静默检查发现的新版本 —— 设置入口打红点。
+  final bool hasUpdate;
 
   @override
   State<_SearchBar> createState() => _SearchBarState();
@@ -507,13 +515,17 @@ class _SearchBarState extends State<_SearchBar> {
                         color: c.surfaceSunken,
                         borderRadius: BorderRadius.circular(Radii.pill),
                       ),
-                      child: IconButton(
-                        onPressed: widget.onSettings,
-                        icon: const Icon(Icons.settings_outlined, size: 20),
-                        color: c.textSecondary,
-                        tooltip: '设置',
-                        padding: const EdgeInsets.all(Spacing.two),
-                        constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                      child: Badge(
+                        isLabelVisible: widget.hasUpdate,
+                        backgroundColor: c.record,
+                        child: IconButton(
+                          onPressed: widget.onSettings,
+                          icon: const Icon(Icons.settings_outlined, size: 20),
+                          color: c.textSecondary,
+                          tooltip: '设置',
+                          padding: const EdgeInsets.all(Spacing.two),
+                          constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                        ),
                       ),
                     ),
                   ],
