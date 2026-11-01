@@ -570,11 +570,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 ),
                 if (accelEnabled)
+                  // 左右用 Spacing.two：ListRow 的横向内边距就是 8，
+                  // 合起来才和上面的「GitHub 下载加速」「开源仓库」左右对齐（真机反馈）。
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
-                      Spacing.four,
                       Spacing.two,
-                      Spacing.four,
+                      Spacing.two,
+                      Spacing.two,
                       Spacing.three,
                     ),
                     child: FindrField(

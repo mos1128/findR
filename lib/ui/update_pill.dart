@@ -8,8 +8,6 @@
 /// 它只做一件事：把 `state/update_download.dart` 的状态画出来，并把按钮点进控制器。
 library;
 
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -91,6 +89,7 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
       ),
       UpdateDownloadFailed() => (Icon(Icons.error_outline_rounded, size: 18, color: c.danger), '下载失败'),
     };
+    final labelStyle = TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.text);
     // ⚠️ 一块「浮在页面上」的东西必须看得出来是浮着的：比卡片面（surface）**再亮一档**、
     //    描一圈边、投影加重。用 surface 时它和设置页的卡片几乎同色，用户会以为那行字是
     //    页面的一部分（真机反馈："和背景有点不好区分"）。
@@ -113,9 +112,11 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
             children: <Widget>[
               leading,
               const SizedBox(width: Spacing.two),
-              Text(
-                label,
-                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.text),
+              // ⚠️ 下载中的标签宽度钉在「下载中 100%」上：百分比从 9% 走到 10% 时位数一变，
+              //    浮窗就跟着左右蹭一下（AnimatedSize 还会把每次蹭都动画一遍，真机反馈）。
+              SizedBox(
+                width: state is UpdateDownloading ? _widthOf(context, '下载中 100%', labelStyle) : null,
+                child: Text(label, style: labelStyle),
               ),
             ],
           ),
@@ -203,23 +204,25 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
             _ghost(c, '浏览器下载', () => _openBrowser(state)),
           ]),
         ];
-      case UpdateReady(:final needsPermission, :final lastInstall, :final file):
+      case UpdateReady(:final needsPermission, :final lastInstall):
+        // 只有「真的拉不起系统安装」才需要走浏览器兜底 —— 正常待安装时那是一次多余的出口。
+        final browserFallback = lastInstall == InstallOutcome.unavailable || lastInstall == InstallOutcome.failed;
+        final hint = needsPermission
+            ? '系统还没允许安装应用。点「去设置」打开开关，返回后自动继续。'
+            : browserFallback
+                ? '拉不起系统安装界面，改用浏览器下载后手动安装。'
+                : null; // 标题已经说了「更新已下载」，正文不再复述
         return <Widget>[
-          Text(
-            needsPermission
-                ? '系统还没允许安装应用。点「去设置」打开开关，返回后自动继续。'
-                : lastInstall == InstallOutcome.unavailable || lastInstall == InstallOutcome.failed
-                    ? '拉不起系统安装界面，改用浏览器下载后手动安装。'
-                    : '安装包已就绪（${_fileSize(file)}）。直接覆盖安装，别卸载，数据不会丢。',
-            style: TextStyle(fontSize: 12, height: 1.45, color: c.textSecondary),
-          ),
-          const SizedBox(height: Spacing.three),
+          if (hint != null) ...<Widget>[
+            Text(hint, style: TextStyle(fontSize: 12, height: 1.45, color: c.textSecondary)),
+            const SizedBox(height: Spacing.three),
+          ],
           _buttons(<Widget>[
             if (needsPermission)
               _action(c, '去设置', () => ref.read(updateDownloadProvider.notifier).openInstallSettings())
             else
               _action(c, '立即安装', () => ref.read(updateDownloadProvider.notifier).install()),
-            _ghost(c, '浏览器下载', () => _openBrowser(state)),
+            if (browserFallback) _ghost(c, '浏览器下载', () => _openBrowser(state)),
             _ghost(c, '暂不安装', () => ref.read(updateDownloadProvider.notifier).dismiss()),
           ]),
         ];
@@ -288,12 +291,14 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
     }
   }
 
-  String _fileSize(File file) {
-    try {
-      return _fmtBytes(file.lengthSync());
-    } catch (_) {
-      return '已下载';
-    }
+  /// 按渲染时同样的字体与系统缩放量出宽度 —— 不写死像素，换字号/缩放也不会截断。
+  double _widthOf(BuildContext context, String text, TextStyle style) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    return painter.width.ceilToDouble();
   }
 
   String _fmtBytes(int n) {

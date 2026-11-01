@@ -151,8 +151,10 @@ void main() {
     await tester.pump();
     expect(find.text('更新已下载'), findsOneWidget);
     expect(find.text('立即安装'), findsOneWidget);
-    expect(find.text('浏览器下载'), findsOneWidget);
     expect(find.text('暂不安装'), findsOneWidget);
+    // 正常待安装：正文不复述、浏览器兜底不出现（只在真拉不起系统安装时才有）
+    expect(find.textContaining('安装包已就绪'), findsNothing);
+    expect(find.text('浏览器下载'), findsNothing);
   });
 
   testWidgets('系统没允许安装：胶囊提示要授权，卡片给「去设置」', (tester) async {
