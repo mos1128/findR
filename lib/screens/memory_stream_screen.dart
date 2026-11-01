@@ -517,7 +517,9 @@ class _SearchBarState extends State<_SearchBar> {
                       ),
                       child: Badge(
                         isLabelVisible: widget.hasUpdate,
-                        backgroundColor: c.record,
+                        // 红点：和「检查更新」行上的那个点是同一个信号（见 settings_screen）。
+                        // 用过品牌蓝（c.record），混在蓝色齿轮里看不出是「有更新」。
+                        backgroundColor: c.danger,
                         child: IconButton(
                           onPressed: widget.onSettings,
                           icon: const Icon(Icons.settings_outlined, size: 20),

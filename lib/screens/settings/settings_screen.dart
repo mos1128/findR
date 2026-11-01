@@ -391,6 +391,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final llmName = rt.llm == null ? '未配置' : '${rt.llm!.model}（${rt.llm!.providerType.wire}）';
     final asrName = rt.asr?.model ?? '未配置';
 
+    // 首页齿轮上那个点的含义靠这一行补上：进了设置页，「检查更新」上也有同一个点。
+    // 只用 `value`：静默检查还没回来时不打点，别让用户白跑一趟。
+    final updateTag = ref.watch(updateHintProvider).value;
+    final hasUpdate = updateTag != null;
+
     // 加速设置是本机偏好，直接读写 settings 表（不经过运行时快照，改完立即可用）
     final accelEnabled = readUpdateAccelEnabled(rt.driver);
     if (!_accelInited) {
@@ -547,7 +552,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 FindrDivider(),
                 ListRow(
                   title: '检查更新',
-                  subtitle: _busy ? '正在检查…' : '看看有没有新版本',
+                  // 已经知道有新版本时，就别再让用户「看看有没有」了 —— 直接把版本报出来
+                  // （红点只有配上这句话才不靠猜）。
+                  subtitle: _busy
+                      ? '正在检查…'
+                      : hasUpdate
+                          ? '发现新版本 $updateTag'
+                          : '检查是否有新版本',
                   onTap: _busy ? null : () => _checkUpdate(rt),
                   right: _busy
                       ? SizedBox(
@@ -555,7 +566,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2, color: c.record),
                         )
-                      : Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            if (hasUpdate) ...<Widget>[
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(color: c.danger, shape: BoxShape.circle),
+                              ),
+                              const SizedBox(width: Spacing.two),
+                            ],
+                            Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
+                          ],
+                        ),
                 ),
                 FindrDivider(),
                 ListRow(
