@@ -9,7 +9,7 @@
 // ⚠️ 内容的**大小**另由 kContentScale 控制：安全区只有中心直径 66dp 的圆，
 // 不缩会在圆形遮罩下被切掉最外环（详见该常量处的说明）。
 //
-// 图形：**三道缺口环 + 中心点**，暖纸底 + 墨色环。缺口都在右下方，
+// 图形：**一道缺口环 + 偏心点**，暖纸底 + 墨色图形。缺口落在右下方，
 // 读作「一次扫到一半的检索」——环向外扩散、被截断在同一个方向。
 //
 // 产物（全部被 .gitignore 之外的真实文件，直接进版本库）：
@@ -39,12 +39,11 @@ const double kCorner = 34;
 
 /// 内容相对设计稿的整体缩放。
 ///
-/// 最外环的中轴半径 46.4、环粗 10.4 ⇒ 最远像素在 51.6 单位。乘 0.893 后落到 46.1 单位
-/// （31.1dp），安全区半径是 33dp —— 合规，但已经贴得比较近：**再放大就会越界**，
-/// 结尾的自检会打 ❌。想改形状先跑一次脚本看那行实际半径。
-///
-/// 缩放以画布中心为原点，图形本身关于中心对称，所以不需要额外的居中补偿。
-const double kContentScale = 0.893;
+/// 图形只有一道环 + 一个点，最远像素在 40.4 单位（27.3dp），安全区半径 33dp ——
+/// 留了将近 6dp 的余量。**这是刻意的**：之前那版把三道环铺满到 31.1dp，
+/// 一屏图标里显得又挤又晕，加这一道留白是主要修正。
+/// 想放大可以往上调，跑到 48.9 单位（33dp）就是极限，结尾的自检会打 ❌。
+const double kContentScale = 1.0;
 
 // 配色：暖纸底 + 墨色图形。启动屏（colors.xml 的 brand_paper）取纸色起点值。
 const int kPaper0 = 0xF7F3EA; // 纸色渐变起点（左上）
@@ -52,21 +51,22 @@ const int kPaper1 = 0xE6DDCB; // 纸色渐变终点（右下）
 const int kInk0 = 0x242019;   // 墨色渐变起点（左上）
 const int kInk1 = 0x3D362B;   // 墨色渐变终点（右下）
 
-/// 三道缺口环的中轴半径，从内到外。
+/// 唯一那道缺口环的中轴半径。
 ///
-/// 内环内沿 12.4、中心点半径 8 ⇒ 中间留 4.4 单位空隙，缩到 24px 时约 1.4px，
-/// 是「点」和「环」还能分开的底线。
-const List<double> kRingR = [17.6, 33.6, 46.4];
+/// 只用一道环是这一版的关键：三道同心环会让视线不断向内追，看着「晕」。
+const double kRingR = 35.2;
 
 /// 环的粗细。缩到 24px 时约 1.6px —— 再细就会在低密度屏上发虚。
 const double kRingW = 10.4;
 
-/// 缺口的角度区间（度，屏幕坐标：0° 朝右、正角朝下）。三道环共用同一个缺口，
-/// 断口叠在右下方形成一道贯穿的斜切口，这是这个图形唯一的识别特征。
-const double kGapFrom = 15, kGapTo = 75;
+/// 缺口的角度区间（度，屏幕坐标：0° 朝右、正角朝下）——断口落在右下方。
+const double kGapFrom = 15, kGapTo = 70;
 
-/// 中心点半径
-const double kDotR = 8;
+/// 中心点：半径，以及相对圆心的偏移。
+///
+/// 点**故意偏离圆心**（往左上），正好落在缺口的对面。同心结构一旦被打破，
+/// 眼睛就不会顺着环一圈圈打转 —— 这是「晕」的第二个修正点。
+const double kDotR = 14.4, kDotX = -6.4, kDotY = -8.0;
 
 // ---------------------------------------------------------------- 几何判定
 
@@ -117,17 +117,15 @@ bool _inRing(double x, double y, double r, double w) {
   return false;
 }
 
-/// 中心点
-bool _inDot(double x, double y) => x * x + y * y <= kDotR * kDotR;
-
-/// 整个图形：中心点 + 三道缺口环。
-bool _inMark(double x, double y) {
-  if (_inDot(x, y)) return true;
-  for (final r in kRingR) {
-    if (_inRing(x, y, r, kRingW)) return true;
-  }
-  return false;
+/// 偏心点
+bool _inDot(double x, double y) {
+  final dx = x - kDotX, dy = y - kDotY;
+  return dx * dx + dy * dy <= kDotR * kDotR;
 }
+
+/// 整个图形：一道缺口环 + 一个偏心的点。
+bool _inMark(double x, double y) =>
+    _inDot(x, y) || _inRing(x, y, kRingR, kRingW);
 
 // ---------------------------------------------------------------- 渐变
 
@@ -188,7 +186,7 @@ int _shade(double x, double y, {required bool background, required bool monochro
 /// 单色层（Android 13+ 主题图标）逐像素求值。
 ///
 /// 系统会忽略这一层的颜色、只取**形状**再统一染色。这里直接把整个图形涂成同一个黑，
-/// 形状本身（三道断口对齐的环 + 中心点）就足以立住。
+/// 形状本身（一道断口环 + 一个偏心的点）就足以立住。
 int _shadeMono(double x, double y) {
   final (ax, ay) = _art(x, y);
   return _inMark(ax, ay) ? 0xFF000000 : 0;

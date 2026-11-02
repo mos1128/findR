@@ -9,7 +9,7 @@
     <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
     <!-- 单色层供 Android 13+ 的「主题图标」使用：系统会忽略其中颜色、只取形状并统一染色，
-         背景也由系统自备。所以这一层直接取整个图形（三道缺口环 + 中心点）的实心轮廓，
+         背景也由系统自备。所以这一层直接取整个图形（一道缺口环 + 偏心点）的实心轮廓，
          颜色统一交给系统；具体参数见 tool/gen_icons.dart 的 kRingR / kRingW / kGapFrom。 -->
     <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>
