@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 自适应图标（Android 8.0+）的背景层：135° 对角渐变，与 tool/gen_icons.dart 里的
+     kPaper0 / kPaper1 一一对应。改色必须同时改那边，否则传统方形图标与自适应图标会不同底。
+
+     这里用 drawable 而不是 @color，是因为背景不再是纯色。
+     启动屏（launch_background.xml）仍用纯色 brand_paper —— 那一屏只闪一瞬，
+     渐变看不出意义，还要多背一层被裁切的风险。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#F7F3EA"
+        android:endColor="#E6DDCB"
+        android:type="linear" />
+</shape>

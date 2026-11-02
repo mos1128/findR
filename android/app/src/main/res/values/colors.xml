@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 品牌色。图标的位图由 tool/gen_icons.dart 生成，但**背景层是纯色不占位图**
-     （自适应图标的背景本来就该是满铺的纯色，位图反而会多占几百 KB 且被裁切时露边）。
-     改颜色要同时改 tool/gen_icons.dart 顶部的 kBlue，否则图标底色与启动屏会对不上。 -->
+<!-- 品牌色。图标的位图由 tool/gen_icons.dart 生成。
+     图标背景层是**渐变**，不在这里定义 —— 见 drawable/ic_launcher_background.xml。
+     这里的 brand_paper 是渐变的起点色，同时用作启动屏底色（启动屏只闪一瞬，不宜用渐变）。
+     改颜色要同时改 tool/gen_icons.dart 顶部的 kPaper0 / kPaper1，否则图标与启动屏会对不上。 -->
 <resources>
-    <color name="brand_blue">#208AEF</color>
-
-    <!-- 自适应图标背景层（res/mipmap-anydpi-v26/ic_launcher.xml 引用） -->
-    <color name="ic_launcher_background">@color/brand_blue</color>
+    <color name="brand_paper">#F7F3EA</color>
 
     <!-- 启动窗口底色（res/drawable/launch_background.xml 引用） -->
-    <color name="launch_background">@color/brand_blue</color>
+    <color name="launch_background">@color/brand_paper</color>
 </resources>

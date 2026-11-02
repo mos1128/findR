@@ -4,13 +4,12 @@
      tool/gen_icons.dart 里 160 逻辑单位的设计稿天然满足（图形占约 60%，安全区是 61%）。
 
      位图由 tool/gen_icons.dart 生成，都放在 drawable-<密度>/ 下；
-     背景层用纯色（见 values/colors.xml），不占位图。 -->
+     背景层是渐变，见 drawable/ic_launcher_background.xml。 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
+    <background android:drawable="@drawable/ic_launcher_background" />
     <foreground android:drawable="@drawable/ic_launcher_foreground" />
     <!-- 单色层供 Android 13+ 的「主题图标」使用：系统会忽略其中颜色、只取形状并统一染色，
-         背景也由系统自备。因此这一层的结构只能靠留白表达 —— 卡片是描边（内部透明）、
-         定位针实心、两者之间留一圈空隙；若照彩色稿画成实心，整张图会糊成一块色块。
-         具体参数见 tool/gen_icons.dart 的 kMonoStroke / kMonoGap。 -->
+         背景也由系统自备。所以这一层直接取整个图形（三道缺口环 + 中心点）的实心轮廓，
+         颜色统一交给系统；具体参数见 tool/gen_icons.dart 的 kRingR / kRingW / kGapFrom。 -->
     <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

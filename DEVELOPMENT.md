@@ -75,9 +75,9 @@ magic "FINDR" (5 字节) + 版本 u16 (=1) + 标准 ZIP
 
 ### 图标与启动图
 - 改图只改 `tool/gen_icons.dart` 顶部常量，然后 `dart run tool/gen_icons.dart` 一次重出全部尺寸，别手改位图
-- **品牌蓝两处同步**：脚本 `kBlue` 与 `values/colors.xml` 的 `brand_blue`（图标背景层与启动屏都引用它）
+- **品牌色三处同步**：脚本 `kPaper0` / `kPaper1`、`drawable/ic_launcher_background.xml` 的渐变两端、`values/colors.xml` 的 `brand_paper`（启动屏用它，取渐变起点色）
 - **内容必须落在直径 66dp 安全区内**（半径 33dp），脚本结尾会打一行自检，显示 ❌ 就是 `kContentScale` 调大了
-- **单色层（主题图标）只有形状有意义**：卡片画描边、定位针实心并留 `kMonoGap` 空隙；照彩色稿画实心会糊成一块色块
+- **单色层（主题图标）只有形状有意义**：直接取整个图形的实心轮廓（三道缺口环 + 中心点），颜色交给系统
 - 换图标覆盖安装即可，**不用卸载**（只有换签名才要）
 
 ## 发布流程
