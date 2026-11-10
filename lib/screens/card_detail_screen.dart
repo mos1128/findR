@@ -1028,6 +1028,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   for (int i = 0; i < steps.length; i++)
                     _StepRow(
                       step: steps[i],
+                      onEdit: () => unawaited(_editStep(index: i)),
                       onToggle: () => _patch(
                         CardPatch(
                           steps: <StepItem>[
@@ -1052,14 +1053,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                       variant: FindrButtonVariant.ghost,
                       compact: true,
                       expand: false,
-                      onPressed: () => _patch(
-                        CardPatch(
-                          steps: <StepItem>[
-                            ...steps,
-                            StepItem(text: '第 ${steps.length + 1} 步', done: false),
-                          ],
-                        ),
-                      ),
+                      onPressed: () => unawaited(_editStep()),
                     ),
                   ),
                 ],
@@ -1116,6 +1110,66 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     _patch(CardPatch(steps: next));
   }
 
+  /// 添加/编辑步骤文字。空输入、越界都直接不写库（见 [stepsWithEditedText]）。
+  Future<void> _editStep({int? index}) async {
+    final rt = ref.read(runtimeProvider).value;
+    if (rt == null) return;
+    final steps = getCard(rt.driver, widget.cardId)?.steps ?? const <StepItem>[];
+    final initial = index != null && index >= 0 && index < steps.length
+        ? steps[index].text
+        : '';
+    final c = FindrColors.of(context);
+    var draft = initial;
+    final raw = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text(
+          index == null ? '添加步骤' : '编辑步骤',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text),
+        ),
+        content: TextFormField(
+          initialValue: initial,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 4,
+          textInputAction: TextInputAction.done,
+          onChanged: (value) => draft = value,
+          onFieldSubmitted: (value) => Navigator.of(ctx).pop(value),
+          style: TextStyle(fontSize: 14.5, color: c.text),
+          decoration: InputDecoration(
+            hintText: '例如：把护照放进随身包',
+            hintStyle: TextStyle(fontSize: 13, color: c.textMuted),
+            filled: true,
+            fillColor: c.surfaceAlt,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(Radii.md),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text('取消', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(draft),
+            child: Text(
+              '保存',
+              style: TextStyle(color: c.record, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || raw == null) return;
+    final latest = getCard(rt.driver, widget.cardId)?.steps ?? const <StepItem>[];
+    final next = stepsWithEditedText(latest, index, raw);
+    if (next == null) return;
+    _patch(CardPatch(steps: next));
+  }
+
   Future<void> _confirmReanalyze(MemoryCard card) async {
     final c = FindrColors.of(context);
     final yes = await showDialog<bool>(
@@ -1144,10 +1198,28 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
   }
 }
 
+/// 用户输入 → 新的步骤列表。空输入或越界返回 null，调用方据此不写库。
+List<StepItem>? stepsWithEditedText(
+  List<StepItem> steps,
+  int? index,
+  String raw,
+) {
+  final text = raw.trim();
+  if (text.isEmpty) return null;
+  if (index == null) {
+    return <StepItem>[...steps, StepItem(text: text, done: false)];
+  }
+  if (index < 0 || index >= steps.length) return null;
+  final next = <StepItem>[...steps];
+  next[index] = StepItem(text: text, done: next[index].done);
+  return next;
+}
+
 class _StepRow extends StatelessWidget {
   const _StepRow({
     required this.step,
     required this.onToggle,
+    required this.onEdit,
     required this.onDelete,
     this.onUp,
     this.onDown,
@@ -1155,6 +1227,7 @@ class _StepRow extends StatelessWidget {
 
   final StepItem step;
   final VoidCallback onToggle;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback? onUp;
   final VoidCallback? onDown;
@@ -1185,14 +1258,21 @@ class _StepRow extends StatelessWidget {
           ),
           const SizedBox(width: Spacing.two),
           Expanded(
-            child: Text(
-              step.text,
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.4,
-                color: step.done ? c.textMuted : c.text,
-                decoration: step.done ? TextDecoration.lineThrough : null,
-                decorationColor: c.textMuted,
+            child: InkWell(
+              onTap: onEdit,
+              borderRadius: BorderRadius.circular(Radii.sm),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: Spacing.one),
+                child: Text(
+                  step.text,
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    color: step.done ? c.textMuted : c.text,
+                    decoration: step.done ? TextDecoration.lineThrough : null,
+                    decorationColor: c.textMuted,
+                  ),
+                ),
               ),
             ),
           ),

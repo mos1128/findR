@@ -11,6 +11,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'platform/app_paths.dart';
@@ -34,6 +35,11 @@ class FindrApp extends StatelessWidget {
     return MaterialApp(
       title: 'findR',
       debugShowCheckedModeBanner: false,
+      // 界面只有中文。不配这一段时，长按输入框的「剪切 / 复制 / 粘贴」
+      // 和系统组件的语义文案会回落到英文（DefaultMaterialLocalizations）。
+      locale: const Locale('zh'),
+      supportedLocales: const <Locale>[Locale('zh')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: buildFindrTheme(Brightness.light),
       darkTheme: buildFindrTheme(Brightness.dark),
       // 跟系统走。暗色下那套令牌是配好对儿的，不存在「深底深字」。

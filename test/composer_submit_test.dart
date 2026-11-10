@@ -5,6 +5,7 @@
 /// 现在 `onSubmit` 用 `bool` 表达成功/失败，这个文件把它钉住。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:findr_app/capture/composer.dart';
@@ -15,7 +16,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 late Directory _root;
 
-Future<void> _pump(WidgetTester tester, Future<bool> Function(ComposerPayload) onSubmit) async {
+Future<void> _pump(
+  WidgetTester tester,
+  Future<bool> Function(ComposerPayload) onSubmit,
+) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: buildFindrTheme(Brightness.light),
@@ -59,5 +63,39 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('护照在主卧抽屉'), findsNothing, reason: '成功后应当清空');
+  });
+
+  testWidgets('键盘发送：提交期间焦点不丢，键盘不会先关再开', (tester) async {
+    final done = Completer<bool>();
+    var submitted = 0;
+    await _pump(tester, (_) {
+      submitted++;
+      return done.future;
+    });
+
+    await tester.enterText(find.byType(TextField), '护照在主卧抽屉');
+    await tester.pump();
+    final editable = tester.widget<EditableText>(find.byType(EditableText));
+    expect(editable.focusNode.hasFocus, isTrue);
+
+    await tester.testTextInput.receiveAction(TextInputAction.send);
+    await tester.pump();
+
+    expect(submitted, 1);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).readOnly,
+      isTrue,
+      reason: '提交期间应该只读，而不是 disabled',
+    );
+    expect(
+      editable.focusNode.hasFocus,
+      isTrue,
+      reason: '回车提交后不能 unfocus，否则键盘会先关、保存完再开，闪一下',
+    );
+
+    done.complete(true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('护照在主卧抽屉'), findsNothing);
   });
 }

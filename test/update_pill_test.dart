@@ -27,9 +27,9 @@ const _tag = 'v0.2.0+3';
 
 List<int> _fakeApk(int size) => <int>[..._magic, ...List<int>.filled(size - _magic.length, 0x2A)];
 
-UpdateInfo _info() {
-  final parsed = parseVersionTag(_tag)!;
-  return UpdateInfo(tag: _tag, version: parsed.$1, build: parsed.$2, notes: null, assets: const <UpdateAsset>[]);
+UpdateInfo _info([String tag = _tag]) {
+  final parsed = parseVersionTag(tag)!;
+  return UpdateInfo(tag: tag, version: parsed.$1, build: parsed.$2, notes: null, assets: const <UpdateAsset>[]);
 }
 
 const _gitee = UpdateChannel(name: 'Gitee', url: 'https://gitee.example/findr.apk');
@@ -101,7 +101,7 @@ void main() {
     expect(find.textContaining('安装'), findsNothing);
   });
 
-  testWidgets('下载中：胶囊报百分比，点开是进度卡片', (tester) async {
+  testWidgets('下载中：新任务默认展开，手动缩小成胶囊', (tester) async {
     final gate = StreamController<List<int>>();
     final container = _container(
       MockClient.streaming((_, _) async => http.StreamedResponse(gate.stream, 200, contentLength: 100)),
@@ -119,18 +119,22 @@ void main() {
 
     await tester.pumpWidget(_app(container));
     await tester.pump();
-    expect(find.text('下载中 50%'), findsOneWidget);
-
-    await tester.tap(find.text('下载中 50%'));
-    await tester.pump();
+    // 新任务默认展开，直接看到进度卡片
     expect(find.text('正在下载更新'), findsOneWidget);
     expect(find.text('取消下载'), findsOneWidget);
     expect(find.text('浏览器下载'), findsOneWidget);
 
-    // 收尾：点到取消，把流与定时器都收干净
-    await tester.tap(find.text('取消下载'));
+    // 手动缩小 → 小胶囊；再点开 → 卡片
+    await tester.tap(find.byIcon(Icons.expand_more_rounded));
     await tester.pump();
+    expect(find.text('下载中 50%'), findsOneWidget);
+    await tester.tap(find.text('下载中 50%'));
+    await tester.pump();
+    expect(find.text('正在下载更新'), findsOneWidget);
+
+    // 收尾：取消，把流与定时器都收干净
     await tester.runAsync(() async {
+      container.read(updateDownloadProvider.notifier).cancel();
       await Future<void>.delayed(const Duration(milliseconds: 30));
       await gate.close();
     });
@@ -138,26 +142,52 @@ void main() {
     expect(find.textContaining('下载中'), findsNothing);
   });
 
-  testWidgets('已下载：胶囊提示待安装，卡片给安装与兜底', (tester) async {
+  testWidgets('已下载：新任务默认展开，卡片给安装与删除重下', (tester) async {
     apkFileFor(_tag).writeAsBytesSync(_fakeApk(64));
     final container = _container(MockClient((_) async => http.Response('', 200)));
     await container.read(updateDownloadProvider.notifier).start(info: _info(), channel: _gitee);
 
     await tester.pumpWidget(_app(container));
     await tester.pump();
-    expect(find.text('待安装'), findsOneWidget);
-
-    await tester.tap(find.text('待安装'));
-    await tester.pump();
+    // 新任务默认展开，不再先显示小胶囊
     expect(find.text('更新已下载'), findsOneWidget);
+    expect(find.text('待安装'), findsNothing);
     expect(find.text('立即安装'), findsOneWidget);
-    expect(find.text('暂不安装'), findsOneWidget);
+    expect(find.text('删除重下'), findsOneWidget);
     // 正常待安装：正文不复述、浏览器兜底不出现（只在真拉不起系统安装时才有）
     expect(find.textContaining('安装包已就绪'), findsNothing);
     expect(find.text('浏览器下载'), findsNothing);
   });
 
-  testWidgets('系统没允许安装：胶囊提示要授权，卡片给「去设置」', (tester) async {
+  testWidgets('同一任务手动收起后保持收起；换新版本再默认展开', (tester) async {
+    apkFileFor(_tag).writeAsBytesSync(_fakeApk(64));
+    final container = _container(MockClient((_) async => http.Response('', 200)));
+    await container.read(updateDownloadProvider.notifier).start(info: _info(), channel: _gitee);
+
+    await tester.pumpWidget(_app(container));
+    await tester.pump();
+    expect(find.text('更新已下载'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.expand_more_rounded));
+    await tester.pump();
+    expect(find.text('待安装'), findsOneWidget);
+
+    // 同一个 tag 的状态变化（比如再次拉起安装）不覆盖用户的手动收起
+    await container.read(updateDownloadProvider.notifier).install();
+    await tester.pump();
+    expect(find.text('待安装'), findsOneWidget);
+
+    // 新版本 tag → 重新默认展开
+    const nextTag = 'v0.3.0+1';
+    apkFileFor(nextTag).writeAsBytesSync(_fakeApk(64));
+    await container.read(updateDownloadProvider.notifier).start(info: _info(nextTag), channel: _gitee);
+    await tester.pump();
+    expect(find.text('更新已下载'), findsOneWidget);
+    expect(find.text('待安装'), findsNothing);
+    expect(find.textContaining('更新 0.3.0'), findsOneWidget);
+  });
+
+  testWidgets('系统没允许安装：卡片提示要授权并给「去设置」', (tester) async {
     apkFileFor(_tag).writeAsBytesSync(_fakeApk(64));
     final platform = _FakePlatform()..next = InstallOutcome.needPermission;
     final container = _container(MockClient((_) async => http.Response('', 200)), platform: platform);
@@ -165,16 +195,13 @@ void main() {
 
     await tester.pumpWidget(_app(container));
     await tester.pump();
-    expect(find.text('需要授权'), findsOneWidget);
-
-    await tester.tap(find.text('需要授权'));
-    await tester.pump();
     expect(find.text('需要允许安装'), findsOneWidget);
     expect(find.text('去设置'), findsOneWidget);
+    expect(find.text('删除重下'), findsOneWidget);
     expect(find.textContaining('返回后自动继续'), findsOneWidget);
   });
 
-  testWidgets('下载失败：胶囊变「下载失败」，卡片能续传 / 换源 / 走浏览器', (tester) async {
+  testWidgets('下载失败：卡片提示失败，能续传 / 换源 / 走浏览器', (tester) async {
     final container = _container(
       MockClient.streaming(
         (_, _) async => http.StreamedResponse(const Stream<List<int>>.empty(), 500),
@@ -183,10 +210,6 @@ void main() {
     await container.read(updateDownloadProvider.notifier).start(info: _info(), channel: _gitee);
 
     await tester.pumpWidget(_app(container));
-    await tester.pump();
-    expect(find.text('下载失败'), findsOneWidget);
-
-    await tester.tap(find.text('下载失败'));
     await tester.pump();
     expect(find.text('更新下载失败'), findsOneWidget);
     expect(find.textContaining('500'), findsOneWidget);

@@ -380,6 +380,25 @@ void main() {
       expect(platform.calls.where((c) => c == 'install').length, 3);
     });
 
+    test('删除重下：删掉已下好的 .apk 后按原渠道重新下载', () async {
+      apkFileFor(_tag).writeAsBytesSync(_fakeApk(64));
+      var requests = 0;
+      final client = MockClient.streaming((_, _) async {
+        requests++;
+        return _response(<List<int>>[_fakeApk(100)]);
+      });
+      final container = _container(client, _FakePlatform());
+
+      await container.read(updateDownloadProvider.notifier).start(info: _info(_tag), channel: _gitee);
+      expect(container.read(updateDownloadProvider), isA<UpdateReady>());
+      expect(requests, 0, reason: '已有完整包时直接待安装，不重下');
+
+      await container.read(updateDownloadProvider.notifier).deleteAndRedownload();
+      expect(requests, 1);
+      expect(apkFileFor(_tag).lengthSync(), 100);
+      expect(container.read(updateDownloadProvider), isA<UpdateReady>());
+    });
+
     test('换源重试：先删掉 .part 再下（不同来源的字节不赌续传）', () async {
       var call = 0;
       bool? partAtSecond;

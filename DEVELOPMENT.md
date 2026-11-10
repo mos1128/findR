@@ -32,7 +32,7 @@ cd packages/findr_core && dart test          # 只测 core（快）
 bash release.sh                              # 发版
 ```
 
-**基线不许破**：core 305 条 + app 134 条，静态分析干净。
+**基线不许破**：core 305 条 + app 139 条，静态分析干净。
 
 ## 关键约束
 

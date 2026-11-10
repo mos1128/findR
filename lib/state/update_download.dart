@@ -250,6 +250,32 @@ final class UpdateDownloadNotifier extends Notifier<UpdateDownloadState> {
     await start(info: s.info, channel: s.channel);
   }
 
+  /// 删除已下好的安装包并重新下载。
+  ///
+  /// 只在用户从「待安装」卡片显式触发：下到的包可能被代理缓存成旧包/坏包，
+  /// 系统安装器拒绝后如果没有这个入口，用户只能清缓存或卸载重装。
+  Future<void> deleteAndRedownload() async {
+    final s = state;
+    if (s is! UpdateReady) return;
+    try {
+      if (s.file.existsSync()) s.file.deleteSync();
+    } catch (_) {
+      state = UpdateDownloadFailed(
+        info: s.info,
+        channel: s.channel,
+        reason: '删不掉旧安装包，请稍后再试',
+      );
+      return;
+    }
+    final part = apkPartFileFor(s.info.tag);
+    try {
+      if (part.existsSync()) part.deleteSync();
+    } catch (_) {
+      // 半成品删不掉就交给下载器覆盖
+    }
+    await start(info: s.info, channel: s.channel);
+  }
+
   /// 失败后换一个源重下。**换源不续传** —— 不同来源的字节不保证片段能对上，
   /// 删掉 `.part` 从头下最稳（宁可多下几十兆，也不赌出一个坏包）。
   Future<void> retryWith(UpdateChannel channel) async {

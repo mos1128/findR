@@ -230,10 +230,11 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
 
   /// 重读。录入后、编辑后、导入备份后、切分类后都走它。
   ///
-  /// 若当前正处在搜索态，**顺手把同一条 query 重搜一遍** ——
-  /// 否则用户刚改完一张卡，退回来看到的还是修改前的结果（而卡片是新的），
-  /// 那种「列表说一套、结果说另一套」的矛盾比多跑一次检索贵得多。
-  Future<void> reload() async {
+  /// [reSearch] 只在「用户真的改了东西，需要刷新当前检索结果」时传 true
+  /// （详情页编辑返回、录入新卡）。回前台、联网恢复、队列推进只重读列表，
+  /// **不重跑检索** —— 否则每次 resume 都会重新发一次 P2（推理题还会带上整库裁决），
+  /// 白花 token，也把当前问题与记忆片段再外发一遍。
+  Future<void> reload({bool reSearch = false}) async {
     final prev = state.value;
     // 不主动切 loading：保存一下设置整页闪成转圈很烦，列表本身是好的
     state = AsyncData(
@@ -243,7 +244,9 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
       ).copyWith(search: prev?.search, answer: prev?.answer),
     );
     final q = prev?.search?.query;
-    if (q != null && q.isNotEmpty) await search(q, clearAnswer: false);
+    if (reSearch && q != null && q.isNotEmpty) {
+      await search(q, clearAnswer: false);
+    }
   }
 
   void setCategory(String? categoryId) {
@@ -377,6 +380,8 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
   }
 
   /// 推进入库队列（回前台 / 录完一条之后）。
+  ///
+  /// 只重读列表，不重跑检索（`reload` 的 `reSearch` 默认 false）—— 见 [reload]。
   Future<QueueRunResult?> drainQueue({bool? vision}) async {
     final rt = _rt;
     final res = await runQueueNow(rt, vision: vision);

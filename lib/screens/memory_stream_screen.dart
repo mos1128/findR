@@ -8,7 +8,8 @@
 ///    卡片一多就只是「被下边缘挡住」而划不动（真机反馈：首页列表划不动）。
 ///    这里用 `CustomScrollView`，且内外边距全在 sliver 的 padding 上 ——
 ///    写在容器 `style` 上会把内容区压掉一圈，滚动时首尾卡片贴边。
-/// 3. **AI 答案追加在列表下方，不置顶**。答案晚一两秒才回来，置顶会把正在读的列表整块推下去。
+/// 3. **AI 答案/建议置顶，紧跟结果头**。答案是这一屏的主结果，放在列表底部会让用户
+///    以为「点了没反应」；代价是答案晚到时列表会整体下移，这是明确取舍。
 /// 4. **「走的是哪条检索路」必须说清**（没配模型 / 模型不可达 / 放宽了条件 / 没听懂），
 ///    否则用户会把「字面没搜到」读成「卡片丢了」。
 library;
@@ -92,6 +93,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
 
   Future<void> _drainQueue() async {
     try {
+      // 只补跑队列，不重搜当前检索 —— 回前台/联网不该再发一次 P2/P4。
       await ref.read(memoryStreamProvider.notifier).drainQueue();
     } catch (_) {
       // 补跑失败不改库里的素材；卡片自己会带「重试中」角标
@@ -116,7 +118,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
         res != null &&
         res.advice == null &&
         (res.cards.isEmpty || autoAnswer)) {
-      // **刻意不 await**：列表已经渲染出来了，答案回来再追加到下方（渐进式）
+      // **刻意不 await**：列表已经渲染出来了，答案回来置顶到结果头下方（渐进式）
       unawaited(notifier.requestAnswer(q, res.cards));
     }
   }
@@ -152,8 +154,9 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
       // 返回 false：Composer 会保留用户输入的全部素材
       return false;
     }
-    // 草稿立刻出现在流里 —— 这是「先落盘、素材永不丢失」给用户看的证据
-    await ref.read(memoryStreamProvider.notifier).reload();
+    // 草稿立刻出现在流里 —— 这是「先落盘、素材永不丢失」给用户看的证据。
+    // 录入后重搜一次：新卡可能命中当前检索，列表与结果才不打架。
+    await ref.read(memoryStreamProvider.notifier).reload(reSearch: true);
     // 队列要跑模型调用，几秒到几十秒；**不能让录入条一直转**，所以放后台。
     // 本次弹窗里选的图片分析开关直接传给这一轮队列，不写回设置。
     unawaited(_advanceAfterSubmit(vision: payload.vision));
@@ -195,7 +198,8 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     final didChange = changed.value;
     changed.dispose();
     if (didChange) {
-      await ref.read(memoryStreamProvider.notifier).reload();
+      // 用户改过卡片：重搜一次，否则列表说一套、结果说另一套。
+      await ref.read(memoryStreamProvider.notifier).reload(reSearch: true);
     }
   }
 
@@ -334,6 +338,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
                     answer == null &&
                     advice == null &&
                     !answering,
+                answering: answering,
                 llmReady: llmConfigured(ref.read(runtimeProvider).value?.llm),
                 usage: search.usage,
                 onAnswer: () => unawaited(
@@ -353,6 +358,66 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
           ],
         ),
       ),
+      // AI 答案/建议置顶：点「AI 总结」后不必滑到列表底部才看到结果。
+      // 没有内容时整块不加入 slivers，避免多出一段空白。
+      if (answer != null ||
+          advice != null ||
+          (answering && answer == null && search != null) ||
+          (s?.answerError != null && !answering))
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+            Spacing.four,
+            0,
+            Spacing.four,
+            Spacing.three,
+          ),
+          sliver: SliverList.list(
+            children: <Widget>[
+              if (answer != null)
+                _AnswerCard(
+                  tag: 'AI 答案',
+                  body: answer.answer,
+                  extra: answer.suggest.isEmpty ? null : answer.suggest,
+                  footer: answer.hitIds.isEmpty
+                      ? null
+                      : '依据 ${answer.hitIds.length} 张卡片 · 下方已高亮',
+                  usage: answer.usage,
+                  searchUsage: search?.usage,
+                ),
+              if (advice != null)
+                _AnswerCard(
+                  tag: 'AI 建议',
+                  body: advice.answer,
+                  extra: advice.missing.isEmpty
+                      ? null
+                      : '库里还没有：${advice.missing.join('、')}',
+                  extraTone: NoticeTone.warn,
+                  footer:
+                      '必需 ${advice.picks.length} 项'
+                      '${advice.maybe.isEmpty ? '' : ' · 看情况 ${advice.maybe.length} 项'}',
+                  usage: advice.usage ?? search?.usage,
+                ),
+              // 渐进式的唯一指示器：放在答案即将出现的位置（结果头下方）
+              if (answering && answer == null && search != null)
+                const Notice(text: '正在组织答案…'),
+              // 答案没生成出来：**不占「AI 答案」的位置**，也不盖掉空态 ——
+              // 列表本身是好的，这只是一次附加调用没跑成
+              if (s?.answerError != null && !answering)
+                Notice(
+                  title: '没能组织答案',
+                  text: s!.answerError!,
+                  tone: NoticeTone.warn,
+                  action: Text(
+                    cards.isNotEmpty ? '卡片列表不受影响，点「AI 总结」可重试。' : '可以换个说法再搜一次。',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      color: FindrColors.of(context).textMuted,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(
           Spacing.four,
@@ -408,49 +473,6 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
         ),
         sliver: SliverList.list(
           children: <Widget>[
-            // AI 答案：**追加在列表下方**，不置顶（需求六已据此改）
-            if (answer != null)
-              _AnswerCard(
-                tag: 'AI 答案',
-                body: answer.answer,
-                extra: answer.suggest.isEmpty ? null : answer.suggest,
-                footer: answer.hitIds.isEmpty
-                    ? null
-                    : '依据 ${answer.hitIds.length} 张卡片 · 上方已高亮',
-                usage: answer.usage,
-                searchUsage: search?.usage,
-              ),
-            if (advice != null)
-              _AnswerCard(
-                tag: 'AI 建议',
-                body: advice.answer,
-                extra: advice.missing.isEmpty
-                    ? null
-                    : '库里还没有：${advice.missing.join('、')}',
-                extraTone: NoticeTone.warn,
-                footer:
-                    '必需 ${advice.picks.length} 项'
-                    '${advice.maybe.isEmpty ? '' : ' · 看情况 ${advice.maybe.length} 项'}',
-                usage: advice.usage ?? search?.usage,
-              ),
-            // 渐进式的唯一指示器：列表已经能用，答案还在路上。刻意放在答案即将出现的位置
-            if (answering && answer == null && search != null)
-              const Notice(text: '正在组织答案…'),
-            // 答案没生成出来：**不占「AI 答案」的位置**，也不盖掉空态 ——
-            // 列表本身是好的，这只是一次附加调用没跑成
-            if (s?.answerError != null && !answering)
-              Notice(
-                title: '没能组织答案',
-                text: s!.answerError!,
-                tone: NoticeTone.warn,
-                action: Text(
-                  cards.isNotEmpty ? '卡片列表不受影响，点「AI 总结」可重试。' : '可以换个说法再搜一次。',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    color: FindrColors.of(context).textMuted,
-                  ),
-                ),
-              ),
             // 空态。正在组织答案时先不喊「没找到」，否则会先闪一句空话再被答案推翻。
             // 建议型结果也一样：卡片可能一条都没挑出来，但那一屏有价值的是「还缺什么」。
             if (showEmpty)
@@ -881,6 +903,7 @@ class _ResultsHeader extends StatelessWidget {
     required this.advice,
     required this.count,
     required this.canAnswer,
+    required this.answering,
     required this.llmReady,
     required this.onAnswer,
     required this.onBack,
@@ -890,6 +913,10 @@ class _ResultsHeader extends StatelessWidget {
   final AdviceResult? advice;
   final int count;
   final bool canAnswer;
+
+  /// 答案正在生成：按钮留在原位显示 loading，不要整颗消失。
+  final bool answering;
+
   final bool llmReady;
   final VoidCallback onAnswer;
   final VoidCallback onBack;
@@ -942,12 +969,14 @@ class _ResultsHeader extends StatelessWidget {
         ),
         // 没有模型时不给「AI 总结」入口 —— 点了必然失败。
         // 建议型结果也不给：那一屏的答案就是裁决本身，再总结一次是重复劳动。
-        if (canAnswer && llmReady)
+        // 正在生成时按钮留在原位显示 loading —— 让它消失会看起来像「点了没反应」。
+        if ((canAnswer || answering) && llmReady)
           FindrButton(
             title: 'AI 总结',
             variant: FindrButtonVariant.ghost,
             compact: true,
             expand: false,
+            loading: answering,
             onPressed: onAnswer,
           ),
         FindrButton(
@@ -962,7 +991,7 @@ class _ResultsHeader extends StatelessWidget {
   }
 }
 
-/// 列表下方的答案 / 建议卡。两者版式相同、内容不同，所以共用一个组件。
+/// 结果头下方的答案 / 建议卡。两者版式相同、内容不同，所以共用一个组件。
 class _AnswerCard extends StatelessWidget {
   const _AnswerCard({
     required this.tag,

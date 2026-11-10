@@ -28,8 +28,45 @@ class UpdateProgressPill extends ConsumerStatefulWidget {
 class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
   bool _expanded = false;
 
+  /// 当前这次更新的 tag。**新任务默认展开，同一个任务里用户手动收起后保持收起**。
+  String? _taskTag;
+  ProviderSubscription<UpdateDownloadState>? _taskSub;
+
   /// 就地提示（比如浏览器拉不起来）。**不弹 toast** —— 这一层没有 ScaffoldMessenger。
   String? _note;
+
+  @override
+  void initState() {
+    super.initState();
+    // 首帧时可能已经有任务在跑（widget 重建/热重载）：直接展开。
+    final initial = ref.read(updateDownloadProvider);
+    if (initial is UpdateTaskState) {
+      _taskTag = initial.info.tag;
+      _expanded = true;
+    }
+    _taskSub = ref.listenManual(updateDownloadProvider, _onTaskChanged);
+  }
+
+  @override
+  void dispose() {
+    _taskSub?.close();
+    super.dispose();
+  }
+
+  /// 只有「换了新版本 tag」才自动展开；下载中→待安装/失败这类同一任务的状态变化
+  /// 不覆盖用户手动收起的决定。下次检查到新版本时 tag 变了，自然又会展开。
+  void _onTaskChanged(UpdateDownloadState? previous, UpdateDownloadState next) {
+    final task = next is UpdateTaskState ? next : null;
+    if (task == null) {
+      _taskTag = null;
+      return;
+    }
+    if (task.info.tag == _taskTag) return;
+    _taskTag = task.info.tag;
+    if (!_expanded && mounted) {
+      setState(() => _expanded = true);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -222,8 +259,8 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
               _action(c, '去设置', () => ref.read(updateDownloadProvider.notifier).openInstallSettings())
             else
               _action(c, '立即安装', () => ref.read(updateDownloadProvider.notifier).install()),
+            _ghost(c, '删除重下', () => ref.read(updateDownloadProvider.notifier).deleteAndRedownload()),
             if (browserFallback) _ghost(c, '浏览器下载', () => _openBrowser(state)),
-            _ghost(c, '暂不安装', () => ref.read(updateDownloadProvider.notifier).dismiss()),
           ]),
         ];
       case UpdateDownloadFailed(:final reason):

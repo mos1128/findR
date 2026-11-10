@@ -23,6 +23,8 @@ dependencies:
   findr_core: ^0.1.0
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   flutter_riverpod: ^3.4.3
   flutter_secure_storage: ^11.2.0
   http: ^1.6.0

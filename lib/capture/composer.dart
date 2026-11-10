@@ -741,11 +741,17 @@ class _ComposerState extends State<Composer> {
                                 child: TextField(
                                   controller: _controller,
                                   focusNode: _focus,
-                                  enabled: widget.enabled && !_locked,
+                                  enabled: widget.enabled,
+                                  // 提交期间只读，不要 disabled：disabled 会丢焦点、
+                                  // 收键盘，保存后再 requestFocus 就会闪一下。
+                                  readOnly: _locked,
                                   minLines: 1,
                                   maxLines: 4,
                                   textAlignVertical: TextAlignVertical.center,
                                   textInputAction: TextInputAction.send,
+                                  // 默认行为会在 send 后 unfocus（收键盘），这里用空回调
+                                  // 覆盖掉；焦点保留，键盘就不会先关再开。
+                                  onEditingComplete: () {},
                                   // 打字回车即存（需求六）
                                   onSubmitted: (_) => unawaited(_submit()),
                                   style: TextStyle(fontSize: 14, color: c.text),
