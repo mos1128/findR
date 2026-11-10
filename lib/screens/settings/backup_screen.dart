@@ -6,7 +6,7 @@
 /// 2. settings 走白名单（core 侧），Key **不走** settings。
 ///
 /// **备份是全量的**：卡片、分类、位置、媒体与 API Key 一起带走，不提供开关；
-/// core 只搬运 Key、不读取，写回时只填空槽位。
+/// core 只搬运 Key、不读取，导入时用备份里的 Key 覆盖本机同名 Key。
 library;
 
 import 'dart:async';
@@ -37,8 +37,8 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   ExportOutcome? _exported;
   ImportResult? _imported;
 
-  /// 上一次导入「恢复了几把 Key / 跳过几把」。null = 还没导入过。
-  ({int restored, int skipped})? _keyRestore;
+  /// 上一次导入恢复了几把 Key。null = 还没导入过。
+  int? _keysRestored;
 
   /// 挑中的备份文件。**留着 `PlatformFile` 而不是只留路径** ——
   /// 从微信/云盘转存过来的文件是 `content://` 虚拟文档，真正可读的是它自己的
@@ -114,7 +114,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     setState(() {
       _note = null;
       _imported = null;
-      _keyRestore = null;
+      _keysRestored = null;
     });
     try {
       final file = await pickBackupFile();
@@ -131,7 +131,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     setState(() {
       _busy = true;
       _note = null;
-      _keyRestore = null;
+      _keysRestored = null;
     });
     try {
       final res = await importFromPlatformFile(_rt.driver, picked);
@@ -140,7 +140,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       setState(() {
         _picked = null;
         _imported = res;
-        _keyRestore = restored;
+        _keysRestored = restored;
       });
       // 导入直接改了 DB 与安全存储，必须让运行时重读一遍，否则界面还是旧的
       await ref.read(runtimeProvider.notifier).refresh();
@@ -168,24 +168,15 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       );
   }
 
-  /// 把包里带回来的 Key 写进本机安全存储。
-  ///
-  /// ⚠️ **本机该槽已经有 Key 时不动它** —— 与「导入不删除本地任何数据」同一条口径：
-  /// 换机场景下新机本来就是空的，一定会写上；而「往已配好的机器上再导一次」不该
-  /// 把正在用的 Key 悄悄换掉。要改 Key 去设置页改，那是显式动作。
-  Future<({int restored, int skipped})> _restoreKeys(Map<String, String> incoming) async {
-    if (incoming.isEmpty) return (restored: 0, skipped: 0);
+  /// 把包里带回来的 Key 写进本机安全存储，**覆盖同名 Key**。
+  Future<int> _restoreKeys(Map<String, String> incoming) async {
+    // “备份里有哪几把就覆盖哪几把”这条规则在 platform/secure.dart 里有单测押着。
+    final plan = keysToRestore(incoming);
     final store = ref.read(apiKeyStoreProvider);
-    final current = <ApiKeySlot, String?>{};
-    for (final slot in ApiKeySlot.values) {
-      current[slot] = await store.read(slot);
-    }
-    // 「只填本机为空的槽位」这条规则在 platform/secure.dart 里有单测押着，别在这里重写。
-    final plan = planKeyRestore(incoming: incoming, current: current);
-    for (final entry in plan.toWrite.entries) {
+    for (final entry in plan.entries) {
       await store.write(entry.key, entry.value);
     }
-    return (restored: plan.toWrite.length, skipped: plan.skipped);
+    return plan.length;
   }
 
   void _dialog(String title, String body) {
@@ -281,7 +272,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
               children: <Widget>[
                 Text(
                   '同一张卡两处都改过时，保留修改时间较新的；分类与位置按名字对齐，'
-                  '未匹配则新建；媒体按路径覆盖。',
+                  '未匹配则新建；媒体按路径覆盖，API Key 覆盖本机同名 Key。',
                   style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
                 ),
                 const SizedBox(height: Spacing.four),
@@ -318,17 +309,12 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                     text: _importSummary(imported),
                   ),
                 ],
-                if (_keyRestore != null &&
-                    (_keyRestore!.restored > 0 || _keyRestore!.skipped > 0)) ...<Widget>[
+                if (_keysRestored != null && _keysRestored! > 0) ...<Widget>[
                   const SizedBox(height: Spacing.two),
                   Notice(
                     title: 'API Key',
                     tone: NoticeTone.info,
-                    text: _keyRestore!.restored > 0
-                        ? '已恢复 ${_keyRestore!.restored} 把 Key，可以直接用。'
-                            '${_keyRestore!.skipped > 0 ? '\n另有 ${_keyRestore!.skipped} 把没动 —— 本机已配过，保留本机那把。' : ''}'
-                        : '备份带了 ${_keyRestore!.skipped} 把 Key，但本机都已配过，'
-                            '一把没改（换 Key 去「设置 → 模型」）。',
+                    text: '已恢复 $_keysRestored 把 Key，本机同名 Key 已被备份覆盖。',
                   ),
                 ],
               ],

@@ -241,7 +241,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
               busy: false,
               // 「记」这一侧只报**非模型类**的降级原因。没配模型已在顶部提示条里说过，
               // 这里再说一遍只会让同一屏出现两段几乎一样的话。
-              notice: _composerNotice(rt),
+              notice: _composerNotice(),
               // 图片分析开关：模型能力 + 设置里的默认值（`effectiveVision` 已把两个因素合起来）
               visionCapable: visionSupported(rt?.llm),
               visionDefault: rt == null ? true : currentVision(rt),
@@ -253,12 +253,10 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     );
   }
 
-  /// 录入坞上方的提示条：目前只报「离线」这一种即时降级。
+  /// 录入坞上方的提示条：只报「离线」这一种即时降级。
   ///
-  /// 没配 ASR 时**不在这里提示** —— 语音会先落盘，设置页的「语音识别」行会显示未配置。
-  /// 如果以后要在坞上提醒这件事，在这里加 `rt?.asr == null` 的分支；
-  /// 注意别把它和检索侧的 `autoAnswer` 混在一起，那是两个互不相关的开关。
-  Widget? _composerNotice(RuntimeState? rt) {
+  /// 没配 ASR 不在这里提示 —— 语音会先落盘，设置页的「语音识别」行会显示未配置。
+  Widget? _composerNotice() {
     final online = ref.watch(onlineProvider).value ?? true;
     if (!online) {
       return const Notice(text: '无网络。先记下来，联网后自动解析。', tone: NoticeTone.warn);
