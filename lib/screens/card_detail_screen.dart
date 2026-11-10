@@ -199,6 +199,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
   }
 
   Future<void> _run(Future<Object?> Function(AdvanceDeps deps) body, String label) async {
+    if (!mounted) return;
     // 先把用户刚改的文本落库：下面的 core 调用读的是库里的那份
     _flushEditors();
     setState(() => _busy = true);
@@ -206,6 +207,8 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
       final rt = ref.read(runtimeProvider).value;
       if (rt == null) return;
       final res = await body(requireDeps(rt));
+      // 模型调用期间用户可能已经按返回；结果已写库，界面不能再碰已销毁的对象。
+      if (!mounted) return;
       _markChanged();
       _reload();
       final outcome = res is AdvanceResult ? res.outcome : null;
@@ -253,6 +256,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
         _toast(msg, isError: false);
       }
     } catch (e) {
+      if (!mounted) return;
       final msg = '$label 失败：${plainError(e)}';
       setState(() => _actionResult = _ActionResult(message: msg, isError: true));
       _toast(msg, isError: true);

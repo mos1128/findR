@@ -58,12 +58,17 @@ class MediaThumb extends StatelessWidget {
 
     if (file == null) return placeholder();
 
+    // 按实际显示尺寸解码，而不是原图分辨率：入库图长边 1600px，
+    // 按原图解码一张约 7MB，列表滚动会反复解码/驱逐。
+    final decodeWidth = (size * MediaQuery.devicePixelRatioOf(context)).round();
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(Radii.md),
       child: Image.file(
         file,
         width: size,
         height: size,
+        cacheWidth: decodeWidth,
         fit: BoxFit.cover,
         // 文件被回收 / 备份里引用了没还原的路径 —— 退回占位块，别让红叉铺满列表
         errorBuilder: (_, _, _) => placeholder(),
