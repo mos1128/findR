@@ -230,6 +230,32 @@ END''',
   r'''INSERT INTO cards_fts(cards_fts) VALUES('rebuild')''',
 ];
 
+/// v3：索引与 FTS 触发器的写放大修正。
+///
+/// 三件事，都不改表结构（SQLite 删列才需要重建）：
+///
+/// 1. `created_at` 是记忆流唯一的列表排序键，之前没有索引 ⇒ 每次列表都是
+///    「全表扫描 + 临时排序」。补一个降序索引，`ORDER BY created_at DESC` 可直接走它。
+/// 2. `idx_cards_updated` 没有任何查询用到（全仓只有 `ORDER BY created_at`），
+///    却在每次 UPDATE 时维护 —— 纯写成本，删掉。
+/// 3. `cards_au` 原来没有列限定，改状态 / 改位置 / 导入 upsert 都会把整行 4 个文本列
+///    重新做 trigram 分词。限定成 `UPDATE OF` 后，只有文本真的变了才重建索引；
+///    这是本版最大的一笔写入开销修正。
+///
+/// 注意：触发器必须先 DROP 再 CREATE，`CREATE TRIGGER IF NOT EXISTS` 不会替换旧定义。
+const List<String> v3Statements = <String>[
+  r'''CREATE INDEX IF NOT EXISTS idx_cards_created ON cards(created_at DESC)''',
+  r'''DROP INDEX IF EXISTS idx_cards_updated''',
+
+  r'''DROP TRIGGER IF EXISTS cards_au''',
+  r'''CREATE TRIGGER cards_au AFTER UPDATE OF transcript, desc_text, entity, tags ON cards BEGIN
+  INSERT INTO cards_fts(cards_fts, rowid, transcript, desc_text, entity, tags)
+  VALUES ('delete', old.rowid, COALESCE(old.transcript,''), COALESCE(old.desc_text,''), COALESCE(old.entity,''), COALESCE(old.tags,''));
+  INSERT INTO cards_fts(rowid, transcript, desc_text, entity, tags)
+  VALUES (new.rowid, COALESCE(new.transcript,''), COALESCE(new.desc_text,''), COALESCE(new.entity,''), COALESCE(new.tags,''));
+END''',
+];
+
 /// 预设分类，只在首次建库时写入，避免删掉的预设分类重启复活。
 ///
 /// 分类不绑定结构类型 —— 三个预设与「东西 / 待办 / 流程」这三类日常记忆对应，

@@ -46,7 +46,12 @@ sealed class CompressResult {
 }
 
 final class CompressOk extends CompressResult {
-  const CompressOk({required this.webp, required this.width, required this.height, required this.longEdge});
+  const CompressOk({
+    required this.webp,
+    required this.width,
+    required this.height,
+    required this.longEdge,
+  });
 
   /// 编好的 WebP 字节，可直接落盘。
   final Uint8List webp;
@@ -111,12 +116,22 @@ CompressResult compressToWebp(Uint8List source) {
   // 那种图就真的需要这一步才转正。对已经转正的图它是空转，不影响。
   final upright = img.bakeOrientation(decoded);
 
-  final longEdge = upright.width >= upright.height ? upright.width : upright.height;
+  final longEdge = upright.width >= upright.height
+      ? upright.width
+      : upright.height;
   final scaled = longEdge > maxLongEdge
       // 只给长边，另一边由它按比例算 —— 避免自己算出个差一像素的比值
       ? (upright.width >= upright.height
-            ? img.copyResize(upright, width: maxLongEdge, interpolation: img.Interpolation.linear)
-            : img.copyResize(upright, height: maxLongEdge, interpolation: img.Interpolation.linear))
+            ? img.copyResize(
+                upright,
+                width: maxLongEdge,
+                interpolation: img.Interpolation.linear,
+              )
+            : img.copyResize(
+                upright,
+                height: maxLongEdge,
+                interpolation: img.Interpolation.linear,
+              ))
       : upright;
 
   final Uint8List webp;
@@ -134,7 +149,12 @@ CompressResult compressToWebp(Uint8List source) {
 
   final outW = scaled.width;
   final outH = scaled.height;
-  return CompressOk(webp: webp, width: outW, height: outH, longEdge: outW >= outH ? outW : outH);
+  return CompressOk(
+    webp: webp,
+    width: outW,
+    height: outH,
+    longEdge: outW >= outH ? outW : outH,
+  );
 }
 
 /// 是不是 HEIC / HEIF。判的是 ISO-BMFF 的 `ftyp` box，不是文件后缀
@@ -142,7 +162,10 @@ CompressResult compressToWebp(Uint8List source) {
 bool isHeic(Uint8List bytes) {
   if (bytes.length < 12) return false;
   // box 类型固定在第 4~8 字节
-  if (bytes[4] != 0x66 || bytes[5] != 0x74 || bytes[6] != 0x79 || bytes[7] != 0x70) {
+  if (bytes[4] != 0x66 ||
+      bytes[5] != 0x74 ||
+      bytes[6] != 0x79 ||
+      bytes[7] != 0x70) {
     return false;
   }
   final brand = String.fromCharCodes(bytes.sublist(8, 12));
@@ -158,6 +181,36 @@ bool isHeic(Uint8List bytes) {
     'mif1',
     'msf1',
   }.contains(brand);
+}
+
+/// 压缩失败时原图的真实后缀。
+///
+/// 判字节而不是信文件名：相册/相机给出的临时文件常常没有后缀。
+/// 落到 `bin` 说明连格式都认不出来 —— 仍然按原图保存，但 MIME 只能是
+/// `application/octet-stream`，视觉模型会拒收，这是明确的降级而不是假装成功。
+String originalImageExt(Uint8List bytes) {
+  if (isHeic(bytes)) return 'heic';
+  if (isWebp(bytes)) return 'webp';
+  if (bytes.length >= 8 &&
+      bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4E &&
+      bytes[3] == 0x47) {
+    return 'png';
+  }
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xFF &&
+      bytes[1] == 0xD8 &&
+      bytes[2] == 0xFF) {
+    return 'jpg';
+  }
+  if (bytes.length >= 4 &&
+      bytes[0] == 0x47 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46) {
+    return 'gif';
+  }
+  return 'bin';
 }
 
 /// 反过来判一下 WebP（测试与自检用）。`RIFF....WEBP`。

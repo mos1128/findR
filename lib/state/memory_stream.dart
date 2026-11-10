@@ -63,6 +63,8 @@ final class MemoryStreamState {
     this.answer,
     this.answerError,
     this.answering = false,
+    this.hasMore = false,
+    this.loadingMore = false,
   });
 
   /// 记忆流（未搜索时显示）。
@@ -90,6 +92,12 @@ final class MemoryStreamState {
 
   final bool answering;
 
+  /// 记忆流还有没有下一页（一页 [memoryStreamLimit] 条）。
+  final bool hasMore;
+
+  /// 正在取下一页。
+  final bool loadingMore;
+
   MemoryStreamState copyWith({
     List<MemoryCard>? cards,
     List<Category>? categories,
@@ -100,13 +108,17 @@ final class MemoryStreamState {
     Object? answer = _unset,
     Object? answerError = _unset,
     bool? answering,
+    bool? hasMore,
+    bool? loadingMore,
   }) => MemoryStreamState(
     cards: cards ?? this.cards,
     categories: categories ?? this.categories,
     categoryFilter: identical(categoryFilter, _unset)
         ? this.categoryFilter
         : categoryFilter as String?,
-    loadError: identical(loadError, _unset) ? this.loadError : loadError as String?,
+    loadError: identical(loadError, _unset)
+        ? this.loadError
+        : loadError as String?,
     searching: searching ?? this.searching,
     search: identical(search, _unset) ? this.search : search as SearchView?,
     answer: identical(answer, _unset) ? this.answer : answer as AnswerResult?,
@@ -114,18 +126,27 @@ final class MemoryStreamState {
         ? this.answerError
         : answerError as String?,
     answering: answering ?? this.answering,
+    hasMore: hasMore ?? this.hasMore,
+    loadingMore: loadingMore ?? this.loadingMore,
   );
 }
 
 const Object _unset = Object();
 
-/// 记忆流列表每次最多读多少张。
+/// 记忆流每页条数。滚动到底部时自动再取一页。
 const int memoryStreamLimit = 100;
 
 final memoryStreamProvider =
-    AsyncNotifierProvider<MemoryStreamNotifier, MemoryStreamState>(MemoryStreamNotifier.new);
+    AsyncNotifierProvider<MemoryStreamNotifier, MemoryStreamState>(
+      MemoryStreamNotifier.new,
+    );
 
 final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
+  /// 检索请求序号：每次发起检索 +1，晚到的旧结果直接丢弃。
+  /// 用户搜 B 时，A 的请求可能还在路上；没有这个序号，A 晚归会把 B 顶掉。
+  int _searchSeq = 0;
+  int _answerSeq = 0;
+
   @override
   Future<MemoryStreamState> build() async {
     // 依赖运行时快照 ⇒ 设置页保存后 `refresh()` 会让这里自动重建、列表跟着重读。
@@ -143,13 +164,20 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
   /// 而不是半屏有数据半屏空白。
   MemoryStreamState _read(RuntimeState rt, {required String? categoryFilter}) {
     try {
-      return MemoryStreamState(
-        cards: listCards(rt.driver, ListCardsOptions(
+      // 多取一条用来判断「还有没有下一页」，避免额外发一次 COUNT。
+      final page = listCards(
+        rt.driver,
+        ListCardsOptions(
           categoryId: categoryFilter,
-          limit: memoryStreamLimit,
-        )),
+          limit: memoryStreamLimit + 1,
+        ),
+      );
+      final hasMore = page.length > memoryStreamLimit;
+      return MemoryStreamState(
+        cards: hasMore ? page.sublist(0, memoryStreamLimit) : page,
         categories: listCategories(rt.driver),
         categoryFilter: categoryFilter,
+        hasMore: hasMore,
       );
     } catch (e) {
       return MemoryStreamState(
@@ -158,6 +186,45 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
         categoryFilter: categoryFilter,
         loadError: '$e',
       );
+    }
+  }
+
+  /// 取下一页（100 条）。滚动到底部时由界面调用。
+  ///
+  /// 只作用于「记忆流」；搜索结果是一次性给全的，不做分页。
+  Future<void> loadMore() async {
+    final prev = state.value;
+    if (prev == null ||
+        prev.loadingMore ||
+        !prev.hasMore ||
+        prev.search != null) {
+      return;
+    }
+    state = AsyncData(prev.copyWith(loadingMore: true));
+    try {
+      final page = listCards(
+        _rt.driver,
+        ListCardsOptions(
+          categoryId: prev.categoryFilter,
+          limit: memoryStreamLimit + 1,
+          offset: prev.cards.length,
+        ),
+      );
+      final hasMore = page.length > memoryStreamLimit;
+      state = AsyncData(
+        prev.copyWith(
+          cards: <MemoryCard>[...prev.cards, ...page.take(memoryStreamLimit)],
+          hasMore: hasMore,
+          loadingMore: false,
+        ),
+      );
+    } catch (_) {
+      // 取下一页失败不该清空已经显示的列表。同时把 `hasMore` 置 false：
+      // 否则列表末尾每次重建都会再触发一次失败的分页请求，形成空转。
+      final current = state.value;
+      if (current != null) {
+        state = AsyncData(current.copyWith(loadingMore: false, hasMore: false));
+      }
     }
   }
 
@@ -170,10 +237,10 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
     final prev = state.value;
     // 不主动切 loading：保存一下设置整页闪成转圈很烦，列表本身是好的
     state = AsyncData(
-      _read(_rt, categoryFilter: prev?.categoryFilter).copyWith(
-        search: prev?.search,
-        answer: prev?.answer,
-      ),
+      _read(
+        _rt,
+        categoryFilter: prev?.categoryFilter,
+      ).copyWith(search: prev?.search, answer: prev?.answer),
     );
     final q = prev?.search?.query;
     if (q != null && q.isNotEmpty) await search(q, clearAnswer: false);
@@ -195,15 +262,27 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
     final prev = state.value;
     if (prev == null) return;
 
-    state = AsyncData(prev.copyWith(
-      searching: true,
-      search: SearchView(query: q, cards: prev.search?.cards ?? const <MemoryCard>[]),
-      answer: clearAnswer ? null : prev.answer,
-      answerError: null,
-    ));
+    // 先占号：这次检索之后发起的任何一次都会让本次结果作废。
+    final seq = ++_searchSeq;
+    // 旧答案属于旧问题，立刻作废
+    _answerSeq++;
+
+    state = AsyncData(
+      prev.copyWith(
+        searching: true,
+        search: SearchView(
+          query: q,
+          cards: prev.search?.cards ?? const <MemoryCard>[],
+        ),
+        answer: clearAnswer ? null : prev.answer,
+        answerError: null,
+      ),
+    );
 
     try {
       final res = await runSearch(_rt, q);
+      // 晚到的旧请求：直接丢弃，别覆盖用户后发的那次结果
+      if (seq != _searchSeq) return;
       final current = state.value;
       if (current == null) return;
 
@@ -215,63 +294,81 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
       } else if (res.relaxed == true) {
         note = '模型给的条件太严（分类 / 时间 / 位置 / 全词命中），已放宽。';
       } else if (res.unclear) {
-        note = res.cards.isEmpty
-            ? '模型没听懂这句话，换个说法试试。'
-            : '模型没听懂，已退回字面检索，结果可能不全。';
+        note = res.cards.isEmpty ? '模型没听懂这句话，换个说法试试。' : '模型没听懂，已退回字面检索，结果可能不全。';
       } else if (res.usedFallback) {
         note = llmConfigured(_rt.llm)
             ? '模型不可达，已退回字面检索（无同义词扩展、无分类/位置约束）。'
             : '还没配模型，按字面检索。多个关键词用空格分开更准。';
       }
 
-      state = AsyncData(current.copyWith(
-        searching: false,
-        search: SearchView(
-          query: q,
-          cards: res.cards,
-          advice: res.advice,
-          note: note,
-          usage: res.usage,
+      state = AsyncData(
+        current.copyWith(
+          searching: false,
+          search: SearchView(
+            query: q,
+            cards: res.cards,
+            advice: res.advice,
+            note: note,
+            usage: res.usage,
+          ),
         ),
-      ));
+      );
     } catch (e) {
+      if (seq != _searchSeq) return;
       final current = state.value;
       if (current == null) return;
-      state = AsyncData(current.copyWith(
-        searching: false,
-        search: SearchView(query: q, cards: const <MemoryCard>[], note: '检索失败：$e'),
-      ));
+      state = AsyncData(
+        current.copyWith(
+          searching: false,
+          search: SearchView(
+            query: q,
+            cards: const <MemoryCard>[],
+            note: '检索失败：$e',
+          ),
+        ),
+      );
     }
   }
 
   void clearSearch() {
+    // 清空搜索 = 作废所有在途检索与答案
+    _searchSeq++;
+    _answerSeq++;
     final prev = state.value;
     if (prev == null) return;
-    state = AsyncData(prev.copyWith(
-      search: null,
-      answer: null,
-      answerError: null,
-      searching: false,
-      answering: false,
-    ));
+    state = AsyncData(
+      prev.copyWith(
+        search: null,
+        answer: null,
+        answerError: null,
+        searching: false,
+        answering: false,
+      ),
+    );
   }
 
   /// 需求 5.3：L2 只在「本地无结果」或「用户手动触发」时跑，**不是每次搜索都跑**。
   Future<void> requestAnswer(String query, List<MemoryCard> cards) async {
     final prev = state.value;
     if (prev == null) return;
+    final seq = ++_answerSeq;
     state = AsyncData(prev.copyWith(answering: true, answerError: null));
     try {
       final res = await runAnswer(_rt, query, cards);
+      // 期间用户换了问题 / 重新检索 ⇒ 这份答案已经不属于当前结果
+      if (seq != _answerSeq) return;
       final current = state.value;
       if (current == null) return;
-      state = AsyncData(current.copyWith(
-        answering: false,
-        // 真的没总结出内容 ≠ 总结失败：报错不占答案位，按钮留着让人重试
-        answer: res.ok ? res : null,
-        answerError: res.ok ? null : (res.error ?? '模型没有返回可用的内容。'),
-      ));
+      state = AsyncData(
+        current.copyWith(
+          answering: false,
+          // 真的没总结出内容 ≠ 总结失败：报错不占答案位，按钮留着让人重试
+          answer: res.ok ? res : null,
+          answerError: res.ok ? null : (res.error ?? '模型没有返回可用的内容。'),
+        ),
+      );
     } catch (e) {
+      if (seq != _answerSeq) return;
       final current = state.value;
       if (current == null) return;
       // 未配模型时 requireDeps 会抛 —— 必须接住，否则是一次未处理的异常

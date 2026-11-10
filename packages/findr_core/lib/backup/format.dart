@@ -4,25 +4,19 @@
 ///
 ///   magic "FINDR"(5B) + format version u16 (=1) + 载荷（标准 ZIP，STORE 不压缩）
 ///
-/// ⚠️ **不做任何加密**：载荷就是原样的 ZIP，
-/// 拿到文件的人用任何解压工具都能直接读到全部记忆。所以导出/导入的界面必须
-/// 把这件事说清楚，别让用户以为它是加密的。
+/// 那为什么还留这 7 字节的头？为了**版本判别**：读取侧据此决定怎么解释载荷，
+/// 格式演进时把 [backupFormatVersion] 提上去即可，**头本身不动**。
 ///
-/// 那为什么还留这 7 字节的头？为了**版本判别**：将来把加密加回来时，
-/// 加密文件的载荷不再是 ZIP，读取侧需要一个可靠的判据来决定走哪条路。
-/// 到时候把 [backupFormatVersion] 提到 2（载荷 = salt ‖ nonce_base ‖ 分块密文）即可，
-/// **头本身不动**。**别在加加密之前动这个头** —— 现在改了，将来就没有判据可用。
-///
-/// 完整性：明文没有 GCM tag 兜底，靠 ZIP 每个成员的 CRC32（见 `zip.dart` 的 `readZip`）。
+/// 完整性：靠 ZIP 每个成员的 CRC32（见 `zip.dart` 的 `readZip`）。
 /// 也就是说「截断 / 写坏 / 传输出错」能被抓到（会明确报「校验和不符」），
-/// 但「有人有意改过内容再改回 CRC」抓不到 —— 这是明文方案的固有代价，不是 bug。
+/// 但「有人有意改过内容再改回 CRC」抓不到 —— 这是这种方案的固有代价，不是 bug。
 library;
 
 import 'dart:typed_data';
 
 const String backupMagic = 'FINDR';
 
-/// 1 = 明文 ZIP 载荷。加密回归时提为 2，载荷格式另定。
+/// 1 = ZIP 载荷。格式有变化时递增。
 const int backupFormatVersion = 1;
 
 /// 容器头长度：5 字节 magic + 2 字节 u16 版本 = 7。
@@ -38,8 +32,10 @@ Uint8List encodeHeader([int formatVersion = backupFormatVersion]) {
   return out;
 }
 
-/// 校验头并取出版本号。头不对 / 版本不认 / 文件被截断都在这里抛。
-void _decodeHeader(Uint8List bytes) {
+/// 校验头。头不对 / 版本不认 / 文件被截断都在这里抛。
+///
+/// 流式导入先读前 7 字节，也要走同一条校验。
+void validateBackupHeader(Uint8List bytes) {
   if (bytes.length < backupHeaderLen) {
     throw const FormatException('备份文件过短，不是有效的 .findrpack');
   }
@@ -70,6 +66,6 @@ Uint8List packContainer(Uint8List payload) {
 ///
 /// 头不对 / 版本不认 / 文件被截断都会在这里抛错。
 Uint8List unpackContainer(Uint8List bytes) {
-  _decodeHeader(bytes);
+  validateBackupHeader(bytes);
   return Uint8List.sublistView(bytes, backupHeaderLen);
 }

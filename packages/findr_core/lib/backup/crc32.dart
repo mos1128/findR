@@ -26,14 +26,27 @@ Uint32List _buildTable() {
   return t;
 }
 
-/// 返回值恒在 [0, 2^32)。
-///
-/// Dart 的 int 是 64 位有符号，`c ^ 0xffffffff` 本身就落在 [0, 2^32) 内，
-/// **不需要也不该**再掩码（掩了反而没变化）。
-int crc32(Uint8List data) {
-  var c = 0xffffffff;
-  for (var i = 0; i < data.length; i++) {
-    c = crc32Table[(c ^ data[i]) & 0xff] ^ (c >> 8);
+/// 增量 CRC32。流式导出时每个媒体文件按块读、按块算，不把整个文件读进内存。
+final class Crc32 {
+  int _c = 0xffffffff;
+
+  void add(Uint8List data) {
+    var c = _c;
+    for (var i = 0; i < data.length; i++) {
+      c = crc32Table[(c ^ data[i]) & 0xff] ^ (c >> 8);
+    }
+    _c = c;
   }
-  return c ^ 0xffffffff;
+
+  /// 返回值恒在 [0, 2^32)。
+  ///
+  /// Dart 的 int 是 64 位有符号，`c ^ 0xffffffff` 本身就落在 [0, 2^32) 内，
+  /// **不需要也不该**再掩码（掩了反而没变化）。
+  int get value => _c ^ 0xffffffff;
+}
+
+/// 一次算完的便捷入口。返回值恒在 [0, 2^32)。
+int crc32(Uint8List data) {
+  final c = Crc32()..add(data);
+  return c.value;
 }

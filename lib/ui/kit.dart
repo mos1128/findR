@@ -205,7 +205,12 @@ class FindrButton extends StatelessWidget {
                 const SizedBox(width: Spacing.two),
               ],
               Flexible(
-                child: Text(title, style: style, maxLines: 1, overflow: TextOverflow.ellipsis),
+                child: Text(
+                  title,
+                  style: style,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           );
@@ -215,7 +220,12 @@ class FindrButton extends StatelessWidget {
       style: TextButton.styleFrom(
         backgroundColor: bg,
         foregroundColor: fg,
-        elevation: variant == FindrButtonVariant.primary && !loading && onPressed != null ? 2 : 0,
+        elevation:
+            variant == FindrButtonVariant.primary &&
+                !loading &&
+                onPressed != null
+            ? 2
+            : 0,
         shadowColor: c.record.withValues(alpha: 0.3),
         disabledBackgroundColor: bg.withValues(alpha: 0.4),
         disabledForegroundColor: fg.withValues(alpha: 0.5),
@@ -261,9 +271,7 @@ class FindrChip extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = active
         ? (isDark ? Colors.white : c.text)
-        : (canvas
-            ? (isDark ? c.surfaceAlt : Colors.white)
-            : c.surfaceAlt);
+        : (canvas ? (isDark ? c.surfaceAlt : Colors.white) : c.surfaceAlt);
     final fg = active
         ? (isDark ? const Color(0xFF121212) : Colors.white)
         : c.textSecondary;
@@ -299,7 +307,11 @@ class FindrChip extends StatelessWidget {
 enum BadgeTone { neutral, confirm, organize, unanalyzed, accent }
 
 class FindrBadge extends StatelessWidget {
-  const FindrBadge({super.key, required this.label, this.tone = BadgeTone.neutral});
+  const FindrBadge({
+    super.key,
+    required this.label,
+    this.tone = BadgeTone.neutral,
+  });
 
   final String label;
   final BadgeTone tone;
@@ -371,10 +383,26 @@ class Notice extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     final (Color fg, Color defaultBg, IconData defaultIcon) = switch (tone) {
-      NoticeTone.info => (c.textSecondary, c.surfaceAlt, Icons.info_outline_rounded),
-      NoticeTone.warn => (c.badgeConfirm, c.badgeConfirmBg.withValues(alpha: 0.5), Icons.lightbulb_outline_rounded),
-      NoticeTone.danger => (c.danger, c.badgeOrganizeBg.withValues(alpha: 0.5), Icons.error_outline_rounded),
-      NoticeTone.success => (c.success, c.surfaceAlt, Icons.check_circle_outline_rounded),
+      NoticeTone.info => (
+        c.textSecondary,
+        c.surfaceAlt,
+        Icons.info_outline_rounded,
+      ),
+      NoticeTone.warn => (
+        c.badgeConfirm,
+        c.badgeConfirmBg.withValues(alpha: 0.5),
+        Icons.lightbulb_outline_rounded,
+      ),
+      NoticeTone.danger => (
+        c.danger,
+        c.badgeOrganizeBg.withValues(alpha: 0.5),
+        Icons.error_outline_rounded,
+      ),
+      NoticeTone.success => (
+        c.success,
+        c.surfaceAlt,
+        Icons.check_circle_outline_rounded,
+      ),
     };
     final bg = surface ? c.surface : defaultBg;
     return Container(
@@ -382,7 +410,10 @@ class Notice extends StatelessWidget {
         color: bg,
         borderRadius: BorderRadius.circular(surface ? Radii.lg : Radii.md),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: Spacing.four, vertical: Spacing.three),
+      padding: const EdgeInsets.symmetric(
+        horizontal: Spacing.four,
+        vertical: Spacing.three,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -398,11 +429,18 @@ class Notice extends StatelessWidget {
                 if (title != null) ...<Widget>[
                   Text(
                     title!,
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: fg),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
                   ),
                   const SizedBox(height: Spacing.one),
                 ],
-                Text(text, style: TextStyle(fontSize: 12.5, height: 1.45, color: fg)),
+                Text(
+                  text,
+                  style: TextStyle(fontSize: 12.5, height: 1.45, color: fg),
+                ),
                 if (action != null) ...<Widget>[
                   const SizedBox(height: Spacing.two),
                   Align(alignment: Alignment.centerLeft, child: action),
@@ -428,7 +466,10 @@ class EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: Spacing.six + 8, horizontal: Spacing.four),
+      padding: const EdgeInsets.symmetric(
+        vertical: Spacing.six + 8,
+        horizontal: Spacing.four,
+      ),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -462,7 +503,11 @@ class EmptyState extends StatelessWidget {
                 child: Text(
                   hint!,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, height: 1.5, color: c.textMuted),
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.5,
+                    color: c.textMuted,
+                  ),
                 ),
               ),
             ],
@@ -523,7 +568,11 @@ class FindrField extends StatelessWidget {
             Expanded(
               child: Text(
                 label,
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: c.textSecondary),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: c.textSecondary,
+                ),
               ),
             ),
             ?trailing,
@@ -535,7 +584,13 @@ class FindrField extends StatelessWidget {
           focusNode: focusNode,
           obscureText: obscure,
           enabled: enabled,
-          keyboardType: multiline ? TextInputType.multiline : keyboardType,
+          // 密钥不该进输入法的联想 / 个性化学习管线：`obscureText` 只遮挡显示，挡不住它们。
+          enableSuggestions: !obscure,
+          autocorrect: !obscure,
+          enableIMEPersonalizedLearning: !obscure,
+          keyboardType: multiline
+              ? TextInputType.multiline
+              : (obscure ? TextInputType.visiblePassword : keyboardType),
           minLines: multiline ? (minLines ?? 3) : null,
           maxLines: multiline ? (maxLines ?? 8) : 1,
           onChanged: onChanged,
@@ -575,7 +630,10 @@ class FindrField extends StatelessWidget {
         ],
         if (note != null) ...<Widget>[
           const SizedBox(height: Spacing.two),
-          Text(note!, style: TextStyle(fontSize: 11.5, height: 1.4, color: c.textMuted)),
+          Text(
+            note!,
+            style: TextStyle(fontSize: 11.5, height: 1.4, color: c.textMuted),
+          ),
         ],
       ],
     );
@@ -609,10 +667,16 @@ class ListRow extends StatelessWidget {
       onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(Radii.md),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: Spacing.three, horizontal: Spacing.two),
+        padding: const EdgeInsets.symmetric(
+          vertical: Spacing.three,
+          horizontal: Spacing.two,
+        ),
         child: Row(
           children: <Widget>[
-            if (leading != null) ...<Widget>[leading!, const SizedBox(width: Spacing.three)],
+            if (leading != null) ...<Widget>[
+              leading!,
+              const SizedBox(width: Spacing.three),
+            ],
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -621,7 +685,11 @@ class ListRow extends StatelessWidget {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: c.text),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: c.text,
+                    ),
                   ),
                   if (subtitle != null && subtitle!.isNotEmpty) ...<Widget>[
                     const SizedBox(height: 2),
@@ -629,13 +697,20 @@ class ListRow extends StatelessWidget {
                       subtitle!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, height: 1.35, color: c.textSecondary),
+                      style: TextStyle(
+                        fontSize: 12,
+                        height: 1.35,
+                        color: c.textSecondary,
+                      ),
                     ),
                   ],
                 ],
               ),
             ),
-            if (right != null) ...<Widget>[const SizedBox(width: Spacing.two), right!],
+            if (right != null) ...<Widget>[
+              const SizedBox(width: Spacing.two),
+              right!,
+            ],
           ],
         ),
       ),
@@ -662,7 +737,12 @@ class FindrDivider extends StatelessWidget {
 /// 用 `PreferredSizeWidget` 而不是 `AppBar`：`AppBar` 的默认主题带一堆我们不要的东西
 /// （大标题滚动折叠、表面着色），要把它扳回我们要的样子反而比自绘更长。
 class FindrTopBar extends StatelessWidget implements PreferredSizeWidget {
-  const FindrTopBar({super.key, required this.title, this.actions, this.onBack});
+  const FindrTopBar({
+    super.key,
+    required this.title,
+    this.actions,
+    this.onBack,
+  });
 
   final String title;
   final List<Widget>? actions;
@@ -694,7 +774,11 @@ class FindrTopBar extends StatelessWidget implements PreferredSizeWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 16.5, fontWeight: FontWeight.w600, color: c.text),
+                  style: TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w600,
+                    color: c.text,
+                  ),
                 ),
               ),
               ...?actions,

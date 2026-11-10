@@ -39,6 +39,9 @@ final class RecorderError implements Exception {
 bool shouldDiscardRecording({required String? path, required int durationMs}) =>
     path == null || path.isEmpty || durationMs < minRecordingMs;
 
+/// 到上限了吗。拆成纯函数是为了让「1 分钟自动结束」这条口径能被测试钉住。
+bool shouldAutoStopRecording(int elapsedMs) => elapsedMs >= maxRecordingMs;
+
 /// 长按录音器。**一个 Composer 持有一个**，`dispose()` 里必须收掉。
 final class LongPressRecorder {
   AudioRecorder? _rec;
@@ -52,7 +55,15 @@ final class LongPressRecorder {
   bool _recording = false;
   bool _busy = false;
 
+  /// 用户在 `start()` 还没返回时已经松手了。
+  ///
+  /// 首次录音会弹系统权限框，它夺走触摸流 ⇒ 松手事件先于 `start()` 返回。
+  /// 没有这个标记时，`stop()` 会因为「还没开始」直接 return，
+  /// 而 `start()` 随后把麦克风打开并且再也没人关 —— 表现为「松手了还在录」。
+  bool _cancelOnStart = false;
+
   bool get recording => _recording;
+  bool get starting => _busy;
 
   /// 已经录了多久（毫秒）。没在录则为 0。
   int get elapsedMs {
@@ -71,6 +82,11 @@ final class LongPressRecorder {
       if (!await rec.hasPermission()) {
         throw const RecorderError('没有麦克风权限。在系统设置里给 Findr 打开麦克风。');
       }
+      // 权限框期间用户已经松手了：什么都不启动。
+      if (_cancelOnStart) {
+        _cancelOnStart = false;
+        return;
+      }
       final path = nextTempRecordingPath();
       await rec.start(
         const RecordConfig(
@@ -84,6 +100,18 @@ final class LongPressRecorder {
       _path = path;
       _startedAt = DateTime.now().millisecondsSinceEpoch;
       _recording = true;
+      // 启动耗时里松手了（权限刚同意、设备慢）：立刻收掉，别让麦克风空转。
+      if (_cancelOnStart) {
+        _cancelOnStart = false;
+        _recording = false;
+        _startedAt = null;
+        try {
+          await rec.cancel();
+        } catch (_) {
+          // 取消失败不阻塞后续
+        }
+        _deleteQuietly(path);
+      }
     } on RecorderError {
       rethrow;
     } catch (e) {
@@ -98,7 +126,11 @@ final class LongPressRecorder {
   /// 返回 `null` 表示**这次是误触**（太短或者没拿到文件），不该生成卡片 ——
   /// 临时文件会被顺手删掉，不留垃圾。
   Future<RecordedAudio?> stop() async {
-    if (!_recording) return null;
+    if (!_recording) {
+      // `start()` 还在等权限/设备：记下来，等它返回时自己收尾
+      if (_busy) _cancelOnStart = true;
+      return null;
+    }
     final started = _startedAt;
     _startedAt = null;
     _recording = false;
@@ -114,7 +146,9 @@ final class LongPressRecorder {
       }
     }
     final path = stopped ?? _path;
-    final durationMs = started == null ? 0 : DateTime.now().millisecondsSinceEpoch - started;
+    final durationMs = started == null
+        ? 0
+        : DateTime.now().millisecondsSinceEpoch - started;
 
     if (shouldDiscardRecording(path: path, durationMs: durationMs)) {
       _deleteQuietly(path);
@@ -125,7 +159,10 @@ final class LongPressRecorder {
 
   /// 主动放弃这次录音（比如用户按了取消）。
   Future<void> cancel() async {
-    if (!_recording) return;
+    if (!_recording) {
+      if (_busy) _cancelOnStart = true;
+      return;
+    }
     _recording = false;
     _startedAt = null;
     final rec = _rec;

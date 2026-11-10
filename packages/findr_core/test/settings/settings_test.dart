@@ -9,9 +9,7 @@ import '../helpers.dart';
 /// 读错一个字段的后果是用户改了设置却不生效。
 ///
 /// ⚠️ 重点盯的是**浅合并的语义**（`{...DEFAULTS, ...stored}`），
-/// 实现上是手写的 `containsKey` 判断。
-/// 最容易写错的一处：**键存在但值是 null 时不能再退回默认值** ——
-/// `visionLast: null` 是有意义的状态（「用户还没手动切过」），不是「缺这个字段」。
+/// 实现上是手写的 `containsKey` 判断：键在就用它的值，键不在才用默认值。
 void main() {
   late SqliteDriver db;
 
@@ -156,7 +154,6 @@ void main() {
     test('没写过时全用默认值', () {
       final read = readCaptureSettings(db);
       expect(read.visionDefault, isTrue);
-      expect(read.visionLast, isNull);
       expect(read.maxAnalyzeImages, 6);
     });
 
@@ -165,19 +162,12 @@ void main() {
       final read = readCaptureSettings(db);
       expect(read.maxAnalyzeImages, 3);
       expect(read.visionDefault, isTrue);
-      expect(read.visionLast, isNull);
     });
 
-    test('显式的 visionLast: null 不会被默认值盖掉', () {
-      setSetting(db, SettingsKeys.capture, {'visionDefault': false, 'visionLast': null});
+    test('老数据里的 visionLast 被忽略，不影响默认值', () {
+      setSetting(db, SettingsKeys.capture, {'visionDefault': false, 'visionLast': true});
       final read = readCaptureSettings(db);
       expect(read.visionDefault, isFalse);
-      expect(read.visionLast, isNull);
-    });
-
-    test('visionLast 有值时读得出来', () {
-      setSetting(db, SettingsKeys.capture, {'visionLast': false});
-      expect(readCaptureSettings(db).visionLast, isFalse);
     });
 
     test('类型不对的字段退回默认值（不崩）', () {
@@ -190,11 +180,10 @@ void main() {
     test('写读往返', () {
       writeCaptureSettings(
         db,
-        const CaptureSettings(visionDefault: false, visionLast: true, maxAnalyzeImages: 2),
+        const CaptureSettings(visionDefault: false, maxAnalyzeImages: 2),
       );
       final read = readCaptureSettings(db);
       expect(read.visionDefault, isFalse);
-      expect(read.visionLast, isTrue);
       expect(read.maxAnalyzeImages, 2);
     });
   });
@@ -217,32 +206,17 @@ void main() {
 
   group('派生值', () {
     test('effectiveVision：模型不支持 ⇒ 恒定关（置灰锁定）', () {
-      const capture = CaptureSettings(visionDefault: true, visionLast: true, maxAnalyzeImages: 6);
+      const capture = CaptureSettings(visionDefault: true, maxAnalyzeImages: 6);
       expect(effectiveVision(capture, false), isFalse);
       expect(effectiveVision(capture, true), isTrue);
     });
 
-    test('effectiveVision：用户手动切过就用上次的，否则用默认', () {
-      const neverTouched = CaptureSettings(
-        visionDefault: true,
-        visionLast: null,
-        maxAnalyzeImages: 6,
-      );
-      expect(effectiveVision(neverTouched, true), isTrue);
+    test('effectiveVision：恒定取设置默认值，不记忆上次选择', () {
+      const on = CaptureSettings(visionDefault: true, maxAnalyzeImages: 6);
+      expect(effectiveVision(on, true), isTrue);
 
-      const turnedOff = CaptureSettings(
-        visionDefault: true,
-        visionLast: false,
-        maxAnalyzeImages: 6,
-      );
-      expect(effectiveVision(turnedOff, true), isFalse);
-
-      const turnedOn = CaptureSettings(
-        visionDefault: false,
-        visionLast: true,
-        maxAnalyzeImages: 6,
-      );
-      expect(effectiveVision(turnedOn, true), isTrue);
+      const off = CaptureSettings(visionDefault: false, maxAnalyzeImages: 6);
+      expect(effectiveVision(off, true), isFalse);
     });
   });
 

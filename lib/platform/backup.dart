@@ -3,13 +3,9 @@
 /// core 只负责「字节进字节出」（`backup/pack.dart`），落在哪个目录、怎么递给用户，
 /// 是平台层的事。全库媒体只在两端各读一遍，中间不复制 —— 导出峰值内存 ≈ 整包 + 单文件。
 ///
-/// ⚠️ **包里没有任何加密**（见 core 的 `backup/format.dart`）：
-/// 它就是一层壳 + 标准 ZIP，拿到文件的人直接就能读到全部记忆。
-/// 所以界面**必须**明说不加密（红条 + 导出前确认框），且只能往用户自己信得过的地方递。
-///
-/// ⚠️ **API Key 可以随包带走**（导出时界面上有开关）。Key 只有平台层够得着
+/// **备份是全量的**：API Key 也一并带走（导出时没有开关）。Key 只有平台层够得着
 /// （在 Keystore 里，见 `secure.dart`），所以「读出来塞进包 / 取回来写回去」都在这里：
-/// 这是**唯一**该碰 Key 的一层，界面只决定带不带，不自己读写安全存储。
+/// 这是**唯一**该碰 Key 的一层，界面只负责触发，不自己读写安全存储。
 library;
 
 import 'dart:io';
@@ -75,10 +71,8 @@ final class ExportOutcome {
   final ExportReport report;
 }
 
-/// 导出只报「打包」和「落盘」两段：core 的 `exportBackup` 是一整块
-/// （读全库 → 逐个读媒体 → ZIP → 套容器头），中间不给回调，**所以不假装能报得更细**。
-/// 现在最慢的是「把全库媒体逐个读进内存并拼进 ZIP」（图片多的库要几秒），
-/// 界面靠秒表交代「还在动」，不靠进度条。
+/// 导出只报「打包」和「落盘」两段。现在 core 是流式写文件，两段其实是交织的，
+/// 这两个值只用于界面文案；进度靠秒表交代「还在动」，不假装有精确百分比。
 enum ExportPhase { packing, writing }
 
 /// 取 App 的版本号与构建号（现在版本号是三段 `X.Y.Z`，构建号恒为 1）。
@@ -130,35 +124,48 @@ Future<ExportOutcome> exportToFile(
   String? version,
   void Function(ExportPhase phase)? onPhase,
 
-  /// 要随包带走的 API Key（键名 = `ApiKeySlot.storageKey`）。**null / 空 = 不带**。
+  /// 随包带走的 API Key（键名 = `ApiKeySlot.storageKey`）。
   ///
-  /// 不带是默认值 —— 「备份含 Key」是件有代价的事，只能由界面显式选择。
+  /// 平台层总是传入本机全部 Key；空 map 表示本机没有配置。
   Map<String, String>? secrets,
 }) async {
   final now = DateTime.now();
 
   onPhase?.call(ExportPhase.packing);
-  final result = await exportBackup(
-    BackupDeps(db: db, media: const DeviceMediaStore(), appVersion: version),
-    now: now,
-    secrets: secrets,
-    extraMediaPaths: listAllAttachments(),
-  );
-
-  onPhase?.call(ExportPhase.writing);
   final dir = backupDir();
   if (!dir.existsSync()) dir.createSync(recursive: true);
   final name = 'findr-${backupStamp(now)}$backupExt';
   final file = File('${dir.path}/$name');
   if (file.existsSync()) file.deleteSync();
-  file.writeAsBytesSync(result.bytes, flush: true);
-  purgeOldBackups();
 
-  return ExportOutcome(
-    path: file.path,
-    fileName: name,
-    report: result.report,
-  );
+  // 流式写盘：每个块 `await writeFrom`，磁盘慢时自然背压，不会把整包堆在内存里。
+  final raf = await file.open(mode: FileMode.write);
+  try {
+    final report = await exportBackupStream(
+      BackupDeps(db: db, media: const DeviceMediaStore(), appVersion: version),
+      now: now,
+      secrets: secrets,
+      extraMediaPaths: listAllAttachments(),
+      write: (bytes) => raf.writeFrom(bytes),
+    );
+    await raf.flush();
+    await raf.close();
+    onPhase?.call(ExportPhase.writing);
+    purgeOldBackups();
+    return ExportOutcome(path: file.path, fileName: name, report: report);
+  } catch (e) {
+    try {
+      await raf.close();
+    } catch (_) {
+      // 关闭失败不掩盖原始错误
+    }
+    try {
+      if (file.existsSync()) file.deleteSync();
+    } catch (_) {
+      // 半截文件删不掉也不能盖住真正的失败原因
+    }
+    rethrow;
+  }
 }
 
 /// 打开系统分享面板。用户在这里可以「发送到微信 / 保存到云盘 / 存到文件」。
@@ -185,35 +192,88 @@ Future<void> shareBackup(String path, String fileName) async {
 Future<PlatformFile?> pickBackupFile() =>
     FilePicker.pickFile(dialogTitle: '选择 .findrpack 备份文件');
 
-/// 从挑到的文件里读整包字节。
-///
-/// 直读失败时先复制到本地再读：从微信/云盘「转存」过来的文件是 `content://` 虚拟文档，
-/// 偶尔拿不到可读流。复制也失败就把**原始错误**抛出去 —— 别把「读不出」与「复制不了」
-/// 混成一句含糊的话，那会让排查从几分钟变成几小时。
-Future<Uint8List> readBackupBytes(PlatformFile file) async {
-  try {
-    return await file.xFile.readAsBytes();
-  } catch (original) {
+/// 备份文件的随机访问实现：只读当前需要的那一段。
+final class FileBackupSource implements BackupByteSource {
+  FileBackupSource._(this._raf, this._length);
+
+  static Future<FileBackupSource> open(File file) async {
+    final raf = await file.open();
     try {
-      final dir = backupDir();
-      if (!dir.existsSync()) dir.createSync(recursive: true);
-      final src = file.path;
-      if (src == null) rethrow;
-      final local = File('${dir.path}/import$backupExt');
-      if (local.existsSync()) local.deleteSync();
-      await File(src).copy(local.path);
-      try {
-        return await local.readAsBytes();
-      } finally {
-        if (local.existsSync()) local.deleteSync();
-      }
+      return FileBackupSource._(raf, await raf.length());
     } catch (_) {
-      throw original is Exception ? original : StateError('$original');
+      await raf.close();
+      rethrow;
+    }
+  }
+
+  final RandomAccessFile _raf;
+  final int _length;
+
+  @override
+  Future<int> length() async => _length;
+
+  @override
+  Future<Uint8List> read(int offset, int count) async {
+    if (offset < 0 || count < 0 || offset + count > _length) {
+      throw RangeError('读取越界：offset=$offset, count=$count, length=$_length');
+    }
+    if (count == 0) return Uint8List(0);
+    await _raf.setPosition(offset);
+    return _raf.read(count);
+  }
+
+  Future<void> close() => _raf.close();
+}
+
+/// 把挑到的文件落到本地临时文件，再用随机访问流式导入。
+///
+/// 大多数情况下 `file.path` 就是一个真实文件，直接复制即可；从微信/云盘转存来的
+/// `content://` 虚拟文档没有可用的文件路径时，交给 `XFile.saveTo` 流式落盘。
+Future<File> materializeBackupFile(PlatformFile file) async {
+  final dir = backupDir();
+  if (!dir.existsSync()) dir.createSync(recursive: true);
+  final local = File('${dir.path}/import$backupExt');
+  if (local.existsSync()) local.deleteSync();
+
+  final src = file.path;
+  if (src != null && src.isNotEmpty && File(src).existsSync()) {
+    await File(src).copy(local.path);
+  } else {
+    await file.xFile.saveTo(local.path);
+  }
+  return local;
+}
+
+/// 从本地文件流式导入。坏包在第一遍校验时就会抛，不会写任何媒体。
+Future<ImportResult> importFromFile(SqliteDriver db, File file) async {
+  final source = await FileBackupSource.open(file);
+  try {
+    return await importBackupStream(
+      BackupDeps(db: db, media: const DeviceMediaStore()),
+      source,
+    );
+  } finally {
+    await source.close();
+  }
+}
+
+/// 设置页入口：平台文件 → 本地临时文件 → 流式导入 → 清理临时文件。
+Future<ImportResult> importFromPlatformFile(
+  SqliteDriver db,
+  PlatformFile file,
+) async {
+  final local = await materializeBackupFile(file);
+  try {
+    return await importFromFile(db, local);
+  } finally {
+    try {
+      if (local.existsSync()) local.deleteSync();
+    } catch (_) {
+      // 临时文件删不掉不影响导入结果
     }
   }
 }
 
-/// 导入。core 侧的顺序是「先写媒体、再合并 DB」，所以这里不需要额外的事务包装 ——
-/// 媒体写失败时 DB 一个字都没动。导入**不会删除本地任何数据**（同 id 按 `updated_at` 新者胜）。
+/// 从内存字节导入（测试与自检用；UI 走 [importFromPlatformFile] 的流式路径）。
 Future<ImportResult> importFromBytes(SqliteDriver db, Uint8List bytes) =>
     importBackup(BackupDeps(db: db, media: const DeviceMediaStore()), bytes);

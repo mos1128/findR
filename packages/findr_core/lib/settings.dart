@@ -175,29 +175,25 @@ final class AsrSettings {
 final class CaptureSettings {
   const CaptureSettings({
     required this.visionDefault,
-    required this.visionLast,
     required this.maxAnalyzeImages,
   });
 
   /// 图片分析开关的默认值（需求 5.1：默认开）。
+  ///
+  /// 每次录入都从这里取值；弹窗里的临时切换只作用于当次，不写回设置。
   final bool visionDefault;
-
-  /// 记忆上次选择；null 表示用户还没手动切过。
-  final bool? visionLast;
 
   /// 单卡送模型分析的图片张数上限。需求把「可配 N 张」列为非 MVP，这里是固定护栏。
   final int maxAnalyzeImages;
 
   Map<String, Object?> toJson() => {
     'visionDefault': visionDefault,
-    'visionLast': visionLast,
     'maxAnalyzeImages': maxAnalyzeImages,
   };
 }
 
 const CaptureSettings defaultCaptureSettings = CaptureSettings(
   visionDefault: true,
-  visionLast: null,
   maxAnalyzeImages: 6,
 );
 
@@ -227,12 +223,6 @@ bool _mergeBool(Map<String, Object?>? stored, String key, bool fallback) {
   if (stored == null || !stored.containsKey(key)) return fallback;
   final value = stored[key];
   return value is bool ? value : fallback;
-}
-
-bool? _mergeBoolOrNull(Map<String, Object?>? stored, String key) {
-  if (stored == null || !stored.containsKey(key)) return null;
-  final value = stored[key];
-  return value is bool ? value : null;
 }
 
 int _mergeInt(Map<String, Object?>? stored, String key, int fallback) {
@@ -270,7 +260,6 @@ CaptureSettings readCaptureSettings(SqliteDriver db) {
   final stored = asMap(db_settings.getSetting<Object?>(db, SettingsKeys.capture));
   return CaptureSettings(
     visionDefault: _mergeBool(stored, 'visionDefault', defaultCaptureSettings.visionDefault),
-    visionLast: _mergeBoolOrNull(stored, 'visionLast'),
     maxAnalyzeImages: _mergeInt(stored, 'maxAnalyzeImages', defaultCaptureSettings.maxAnalyzeImages),
   );
 }
@@ -279,12 +268,10 @@ void writeCaptureSettings(SqliteDriver db, CaptureSettings value) {
   db_settings.setSetting(db, SettingsKeys.capture, value.toJson());
 }
 
-/// 本次录入实际使用的图片分析开关：用户手动切过就用上次的选择，否则用默认值。
+/// 本次录入实际使用的图片分析开关：恒定取设置里的默认值。
 /// 模型不支持图片时恒定关（需求 3.3 置灰锁定）。
-bool effectiveVision(CaptureSettings capture, bool visionSupported) {
-  if (!visionSupported) return false;
-  return capture.visionLast ?? capture.visionDefault;
-}
+bool effectiveVision(CaptureSettings capture, bool visionSupported) =>
+    visionSupported && capture.visionDefault;
 
 /// 探测结果是否已过期（换了模型就要重探）。
 bool capabilitiesStale(LlmSettings llm) {

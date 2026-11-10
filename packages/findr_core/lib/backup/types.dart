@@ -9,10 +9,6 @@
 /// 它**不在** settings 白名单里（白名单那条没动），而是单独一个可选字段，
 /// 由平台层在导出时显式传入 —— 这样「带不带」的开关留在界面上，core 不做默认。
 ///
-/// ⚠️ **不做加密**：备份文件是明文 ZIP，谁拿到谁能读。
-/// 这里已经没有 CryptoPort 了；加密回归时按 `format.dart` 里写的那套（提 [backupFormatVersion]）
-/// 再加端口。**别提前把端口加回来放着** —— 没有调用方的接口只会腐烂。
-///
 /// Dart 侧的两处对应关系：
 /// - 「可能同步、可能异步」的返回用 SDK 自带的 `FutureOr<T>`（`dart:async`）表达；
 /// - 接口不支持可选方法 ⇒ `exists` 用**可空的函数类型 getter** 表达，
@@ -23,6 +19,18 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import '../types.dart';
+
+/// 备份文件的随机访问源。
+///
+/// 流式导入用：只读取需要的那一段（EOCD、中央目录、单个成员），
+/// 不把整个 `.findrpack` 读进内存。平台层用文件实现，测试用内存实现。
+abstract interface class BackupByteSource {
+  /// 文件总字节数。
+  Future<int> length();
+
+  /// 从 [offset] 开始读 [count] 字节。越界实现应抛错；返回可能短于 [count]。
+  Future<Uint8List> read(int offset, int count);
+}
 
 /// 媒体文件读写端口。
 ///
@@ -36,6 +44,16 @@ abstract interface class MediaStorePort {
 
   /// 只判存在。为 null 表示未实现 —— 导入侧退化为 read 一次（结果相同，只是多读一遍文件）。
   FutureOr<bool> Function(String relPath)? get exists;
+}
+
+/// 可选的「按块读」能力。
+///
+/// 实现它 ⇒ 导出走流式（峰值内存与媒体总量无关）；不实现 ⇒ 退化为整文件 `read`。
+/// 独立成接口而不是塞进 [MediaStorePort]，是为了不让所有测试桩/工具被迫实现一个
+/// 它们根本用不到的成员。
+abstract interface class StreamingMediaStore {
+  /// 每次调用都返回一个**新的、可重复打开**的流；文件不存在时抛异常。
+  Stream<List<int>> openRead(String relPath);
 }
 
 /// ZIP 内的媒体成员索引，导入时用来校验完整性。
@@ -216,13 +234,11 @@ final class BackupManifest {
 
   final List<MediaEntryMeta>? media;
 
-  /// 随包带走的 API Key（**明文**，键名与 `ApiKeySlot.storageKey` 对齐）。
+  /// 随包带走的 API Key（键名与 `ApiKeySlot.storageKey` 对齐）。
   ///
-  /// ⚠️ **导出时默认带走 Key**（换机后不用重填）。
-  /// 代价写在界面上（导出确认框 + 备份页红条）：**包是不加密的，带 Key 等于
-  /// 把密钥明文交给任何拿到这个文件的人**。别在别处悄悄默认带上。
+  /// **导出时总是带走 Key**（换机后不用重填）。
   ///
-  /// `null` = 这份包没带 Key（老包 / 用户在导出时关掉了）；空 map = 带了但一把都没有。
+  /// `null` = 这份包没带 Key（老包）；空 map = 本机没有配置 Key。
   /// core **不自己读 Key**（它在 Keystore 里，只有平台层够得着），只负责搬运。
   final Map<String, String>? apiKeys;
 
@@ -245,7 +261,7 @@ final class BackupManifest {
     apiKeys: apiKeys,
   );
 
-  /// 挂上要随包带走的 Key。传 null / 空 map 都表示「这份包不带 Key」。
+  /// 挂上要随包带走的 Key。平台层固定传入本机全部 Key。
   BackupManifest withApiKeys(Map<String, String>? keys) => BackupManifest(
     format: format,
     formatVersion: formatVersion,

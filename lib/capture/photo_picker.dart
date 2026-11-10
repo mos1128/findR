@@ -21,12 +21,20 @@ import 'package:image_picker/image_picker.dart';
 
 /// 一张刚选/拍到的原图（**还没压缩**）。
 final class RawPhoto {
-  const RawPhoto({required this.bytes, required this.name});
+  RawPhoto({required Uint8List bytes, required this.name})
+    // ignore: prefer_initializing_formals
+    : _bytes = bytes;
 
-  final Uint8List bytes;
+  Uint8List? _bytes;
+
+  /// 原图字节。**压缩完立刻 [release]** —— 一次选十几张时，
+  /// 每张 20MB 的原图同时驻留就是低端机 OOM 的直接原因。
+  Uint8List? get bytes => _bytes;
 
   /// 用于报错时点名（系统相机的产物常常没有有意义的名字，那也没关系）。
   final String name;
+
+  void release() => _bytes = null;
 }
 
 /// 读进来之前就挡住的单张上限。比 `image_compress.dart` 的 [maxSourceBytes] 更严一档，

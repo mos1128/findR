@@ -4,10 +4,10 @@
 /// **任何校验失败都必须在写库/写文件之前抛掉**，绝不能出现「导入一半」。
 ///
 /// 两条要点（对应交接 §6.2）：
-/// - 明文方案**没有 GCM tag**，完整性全靠 ZIP 每个成员的 CRC32 ⇒ 那两条「改一位/截断」
+/// - 没有额外完整性标签，完整性全靠 ZIP 每个成员的 CRC32 ⇒ 那两条「改一位/截断」
 ///   的用例就是在钉住这唯一能抓损坏的机制；
 /// - `settings` 导出走**白名单**（`SettingsKeys.all`），不是黑名单过滤 ⇒ 那条 canary
-///   用例比加密时代更重要：文件是明文的，白名单一旦漏了就是直接泄露。
+///   用例尤其重要：文件是原样 ZIP，白名单一旦漏了就是直接泄露。
 library;
 
 import 'dart:convert';
@@ -103,7 +103,26 @@ T? _firstWhereOrNull<T>(Iterable<T> items, bool Function(T) test) {
   return null;
 }
 
-/// 在整包字节里找一段字节序列（用于证明「内容就是明文」）。
+/// 流式导入的测试源：整包已经在内存里，但按随机访问接口读。
+final class _MemoryByteSource implements BackupByteSource {
+  _MemoryByteSource(this.bytes);
+
+  final Uint8List bytes;
+
+  @override
+  Future<int> length() async => bytes.length;
+
+  @override
+  Future<Uint8List> read(int offset, int count) async {
+    if (offset < 0 || count < 0 || offset + count > bytes.length) {
+      throw RangeError('读取越界：offset=$offset, count=$count');
+    }
+    return Uint8List.sublistView(bytes, offset, offset + count);
+  }
+}
+
+
+/// 在整包字节里找一段字节序列（用于证明内容是原样写入的）。
 bool containsBytes(Uint8List haystack, List<int> needle) {
   for (var i = 0; i + needle.length <= haystack.length; i++) {
     var hit = true;
@@ -120,10 +139,10 @@ bool containsBytes(Uint8List haystack, List<int> needle) {
 
 void main() {
   // ─────────────────────────────────────────────────────────────
-  // 备份格式：明文容器
+  // 备份格式：ZIP 容器
   // ─────────────────────────────────────────────────────────────
 
-  group('备份格式：明文容器', () {
+  group('备份格式：ZIP 容器', () {
     test('头部是 magic + 版本，载荷是标准 ZIP', () async {
       final r = await exportFrom(sourceSide());
       final bytes = r.bytes;
@@ -141,7 +160,7 @@ void main() {
       expect(payload.sublist(0, 4), <int>[0x50, 0x4b, 0x03, 0x04]);
     });
 
-    test('载荷是明文：中文原文能直接在整包字节里搜到（当前版本不加密）', () async {
+    test('载荷是标准 ZIP：中文原文能直接在整包字节里搜到', () async {
       final r = await exportFrom(sourceSide());
       expect(containsBytes(r.bytes, utf8Encode('手电筒')), isTrue);
       expect(containsBytes(r.bytes, utf8Encode('备用手电筒放在主卧衣柜顶层')), isTrue);
@@ -208,6 +227,39 @@ void main() {
       expect(dst.media.files[audio], audioBytes);
     });
 
+    test('流式导入：同一份包，结果与内存导入一致', () async {
+      final exported = await exportFrom(sourceSide());
+      final dst = targetSide();
+
+      final imported = await importBackupStream(
+        dst.deps,
+        _MemoryByteSource(exported.bytes),
+      );
+
+      expect(imported.report.cardsInserted, 2);
+      expect(imported.manifestInfo.cards, 2);
+      expect(getCard(dst.deps.db, 'c1')!.entity, '手电筒');
+      expect(dst.media.files[img], imgBytes);
+      expect(dst.media.files[audio], audioBytes);
+    });
+
+    test('流式导入：媒体校验和不符时，第一遍就失败，一个文件都不写', () async {
+      final exported = await exportFrom(sourceSide());
+      final tampered = Uint8List.fromList(exported.bytes);
+      // 精确定位图片成员的数据起点，避免碰巧改到 ZIP 头
+      final imageData = readZip(unpackContainer(exported.bytes))
+          .firstWhere((e) => e.path == img)
+          .data;
+      tampered[imageData.offsetInBytes] ^= 0xff;
+
+      final dst = targetSide();
+      await expectLater(
+        importBackupStream(dst.deps, _MemoryByteSource(tampered)),
+        throwsA(isA<FormatException>()),
+      );
+      expect(dst.media.files, isEmpty, reason: '校验没过就不该动任何媒体');
+    });
+
     test('同一份包导入两次是幂等的，第二次不动任何数据', () async {
       final exported = await exportFrom(sourceSide());
       final dst = targetSide();
@@ -226,7 +278,7 @@ void main() {
   // ─────────────────────────────────────────────────────────────
 
   group('备份：完整性与边界', () {
-    // 明文方案没有 GCM tag 兜底，完整性全靠 ZIP 每个成员的 CRC32。
+    // 没有额外完整性标签兜底，完整性全靠 ZIP 每个成员的 CRC32。
     // 这两条钉住那个兜底真的在工作 —— 它是这个版本唯一能抓损坏的机制。
     test('载荷被改一位：CRC 校验必须拦住，且不落任何数据', () async {
       final exported = await exportFrom(sourceSide());
@@ -270,10 +322,10 @@ void main() {
       final settings = (manifest['settings']! as Map).cast<String, Object?>();
       expect(settings.containsKey('llm'), isTrue);
       expect(settings.containsKey('tracking_id'), isFalse);
-      // 这条断言现在比加密时代更重要：文件是明文的，白名单一旦漏了就是直接泄露
+      // 这条断言尤其重要：文件是原样 ZIP，白名单一旦漏了就是直接泄露
       expect(containsBytes(exported.bytes, utf8Encode('sk-LEAK-CANARY-1234567890')), isFalse);
       // Key 走 `apiKeys` 那条单独通道，**不是** settings。
-      // 「不传就不带」这条必须守住：默认不带，才谈得上界面上的开关有意义。
+      // core 只按调用方给的搬；平台层负责把本机 Key 全量传进来。
       expect(manifest.containsKey('apiKeys'), isFalse);
     });
 
@@ -320,16 +372,14 @@ void main() {
       expect(res.apiKeys, <String, String>{llmKey: 'sk-llm-abc', asrKey: 'sk-asr-xyz'});
     });
 
-    test('带 Key 的包是明文的：Key 原文能在整包字节里搜到（这是必须让用户知道的代价）', () async {
+    test('带 Key 的包：Key 原文能在整包字节里搜到', () async {
       final src = sourceSide();
       final exported = await exportBackup(
         src.deps,
         now: at,
         secrets: <String, String>{llmKey: 'sk-PLAINTEXT-CANARY'},
       );
-      // 这不是在测试「加密有没有生效」—— 这一版**就是没有加密**。
-      // 钉住它，是为了让「备份带 Key 会把密钥明文交给拿到文件的人」这句话有据可查，
-      // 将来加了加密，这条会红 ⇒ 正好提醒加密那条路要跟上。
+      // 钉住「带 Key 时 Key 会原样躺在包里」这条行为，避免将来被静默改掉。
       expect(containsBytes(exported.bytes, utf8Encode('sk-PLAINTEXT-CANARY')), isTrue);
     });
 
@@ -534,6 +584,35 @@ void main() {
   // ─────────────────────────────────────────────────────────────
   // 备份：manifest 校验
   // ─────────────────────────────────────────────────────────────
+
+  group('备份：导入路径白名单', () {
+    test('包内成员只允许 files/ 前缀（挡住覆盖数据库的恶意/损坏包）', () async {
+      final src = sourceSide();
+      final exported = await exportFrom(src);
+      final entries = readZip(unpackContainer(exported.bytes));
+
+      // 正常包 + 一个叫 `findr.sqlite` 的成员：没有白名单时它会覆盖正在使用的库
+      final evil = Uint8List.fromList(<int>[0]);
+      final plans = <ZipEntryPlan>[
+        for (final e in entries)
+          ZipEntryPlan(path: e.path, size: e.data.length, crc32: crc32(e.data)),
+        ZipEntryPlan(path: 'findr.sqlite', size: evil.length, crc32: crc32(evil)),
+      ];
+      final pack = packContainer(
+        await buildZip(plans, (path) async {
+          if (path == 'findr.sqlite') return evil;
+          return entries.firstWhere((e) => e.path == path).data;
+        }, at),
+      );
+
+      final dst = targetSide();
+      await expectLater(
+        importBackup(dst.deps, pack),
+        throwsA(isA<FormatException>()),
+      );
+      expect(listCards(dst.deps.db), isEmpty, reason: '校验失败必须发生在写库之前');
+    });
+  });
 
   group('备份：manifest 校验', () {
     test('包里 schema 版本比本机新时必须拒绝导入', () {

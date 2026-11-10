@@ -207,6 +207,37 @@ void main() {
     expect(columnsOf(db, 'cards'), isNot(contains('structure_type')));
   });
 
+  test('v3：created_at 有索引、updated_at 索引已删、FTS 触发器限定文本列', () {
+    final db = makeDb();
+    addTearDown(db.close);
+
+    expect(objectsOf(db, 'index'), contains('idx_cards_created'));
+    expect(
+      objectsOf(db, 'index'),
+      isNot(contains('idx_cards_updated')),
+      reason: '没有任何查询按 updated_at 排序，留着只是纯写成本',
+    );
+
+    final triggerSql = db
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'cards_au'",
+        )
+        .get()!['sql']!
+        .toString();
+    expect(triggerSql, contains('UPDATE OF transcript, desc_text, entity, tags'));
+
+    // 限定列的效果：改状态 / 改位置这类非文本更新不该重建 FTS 索引。
+    // 查询词必须 ≥3 字 —— trigram 对两字词本来就匹配不到。
+    insertCard(db, makeCard(id: 'c1', transcript: '护照在主卧抽屉'));
+    expect(_ftsIds(db, '主卧抽'), <Object?>['c1']);
+    setCardStatus(db, 'c1', CardStatus.archived, DateTime.now());
+    expect(
+      _ftsIds(db, '主卧抽'),
+      <Object?>['c1'],
+      reason: '改状态不该把 FTS 行删掉（触发器没限定列时会重建，旧实现能过、新实现也能）',
+    );
+  });
+
   test('重复 migrate 是幂等的（每次开库都会跑一遍）', () {
     final db = makeV1Db();
     addTearDown(db.close);

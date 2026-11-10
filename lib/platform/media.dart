@@ -7,6 +7,7 @@
 /// 两个端口分开是有意的：接口形状不同，混成一个会让两边都别扭。
 library;
 
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:findr_core/findr_core.dart';
@@ -29,6 +30,11 @@ String mimeFromRel(String rel) {
     case 'jpg':
     case 'jpeg':
       return 'image/jpeg';
+    case 'heic':
+    case 'heif':
+      return 'image/heic';
+    case 'gif':
+      return 'image/gif';
     case 'm4a':
       return 'audio/m4a';
     case 'wav':
@@ -53,6 +59,29 @@ void writeMediaFile(String rel, List<int> content) {
 
 bool mediaExists(String rel) => AppPaths.file(rel).existsSync();
 
+/// 把一段已经在盘上的文件搬进媒体目录（内核态复制，不经过 Dart 堆）。
+void copyMediaFile(String rel, String sourcePath) {
+  final dir = AppPaths.parentOf(rel);
+  if (dir != null && !dir.existsSync()) dir.createSync(recursive: true);
+  File(sourcePath).copySync(AppPaths.abs(rel));
+}
+
+/// 删掉一张卡片的全部媒体：卡片目录（图片/附件）+ 录音文件。
+///
+/// 图片和附件在 `files/cards/<yyyymm>/<id>` 下，录音却在 `files/audio/<yyyymm>/<id>.m4a`，
+/// 两处都要清掉。删卡时整目录删一次即可，不必再按 images 逐个删。
+void removeCardFiles(MemoryCard card) {
+  final createdAt = DateTime.tryParse(card.createdAt) ?? DateTime.now();
+  final dir = Directory(AppPaths.abs(cardMediaDir(createdAt, card.id)));
+  if (dir.existsSync()) dir.deleteSync(recursive: true);
+
+  final audioPath = card.audioPath;
+  if (audioPath != null) {
+    final audio = AppPaths.file(audioPath);
+    if (audio.existsSync()) audio.deleteSync();
+  }
+}
+
 /// 回放用的绝对 URI（播放器要 `file://`）。
 String mediaUri(String rel) => Uri.file(AppPaths.abs(rel)).toString();
 
@@ -75,7 +104,11 @@ final class DeviceMediaIo implements MediaIo {
   }
 
   @override
-  Future<http.MultipartFile> audioPart(String rel, String mime, String filename) async {
+  Future<http.MultipartFile> audioPart(
+    String rel,
+    String mime,
+    String filename,
+  ) async {
     final file = AppPaths.file(rel);
     if (!file.existsSync()) throw StateError('音频文件不存在：$rel');
     return http.MultipartFile.fromPath(
@@ -106,7 +139,7 @@ final class DeviceMediaIo implements MediaIo {
 ///
 /// **不实现「删」**：备份只读不删，导入也不动本地多余媒体（设计约定「不删除本地任何数据」）。
 /// 这里同样不需要 `removeCardMedia` —— 那是 [DeviceMediaIo] 的事（删草稿时回收）。
-final class DeviceMediaStore implements MediaStorePort {
+final class DeviceMediaStore implements MediaStorePort, StreamingMediaStore {
   const DeviceMediaStore();
 
   @override
@@ -122,4 +155,7 @@ final class DeviceMediaStore implements MediaStorePort {
 
   @override
   bool Function(String relPath)? get exists => mediaExists;
+
+  @override
+  Stream<List<int>> openRead(String relPath) => AppPaths.file(relPath).openRead();
 }

@@ -5,14 +5,8 @@
 /// 1. 导入**不删除本地任何数据**，同 id 按 `updated_at` 新者胜；
 /// 2. settings 走白名单（core 侧），Key **不走** settings。
 ///
-/// ⚠️ **不做加密**：`.findrpack` 就是一个套了 7 字节头的 ZIP，
-/// 谁拿到谁能读到全部内容。界面上必须把这件事说白 —— 页顶红条 + 导出前的二次确认框，
-/// **两处都要**，缺一处就会有人以为它是加密的。
-///
-/// ⚠️ **API Key 可以随包带走**（换机后不用重填 Key）。
-/// 默认带上，但**代价必须在用户按下「导出」前就说清楚**：包是明文，带上 Key 等于
-/// 把密钥明文交给任何拿到这个文件的人 —— 而导出完一步就是分享面板（微信 / 网盘）。
-/// 所以勾选框 + 确认框里都要点名 Key，不能只在红条里笼统说「内容是明文」。
+/// **备份是全量的**：卡片、分类、位置、媒体与 API Key 一起带走，不提供开关；
+/// core 只搬运 Key、不读取，写回时只填空槽位。
 library;
 
 import 'dart:async';
@@ -42,10 +36,6 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   Timer? _ticker;
   ExportOutcome? _exported;
   ImportResult? _imported;
-
-  /// 导出要不要把 API Key 一起带走。**默认带** —— 用户要的就是「换机不用重填」；
-  /// 代价在确认框里点名说清楚，并在下面给一个随时能关掉的开关。
-  bool _includeKeys = true;
 
   /// 上一次导入「恢复了几把 Key / 跳过几把」。null = 还没导入过。
   ({int restored, int skipped})? _keyRestore;
@@ -79,17 +69,15 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     });
   }
 
-  /// 读出要随包带走的 Key。**两把都读不出来（都没配）就当不带** ——
-  /// 那样写进包里一个空对象只会让 manifest 多一个没用的键。
-  Future<Map<String, String>?> _collectSecrets() async {
-    if (!_includeKeys) return null;
+  /// 读出本机的全部 Key，随包带走。本机没配就返回空 map。
+  Future<Map<String, String>> _collectSecrets() async {
     final store = ref.read(apiKeyStoreProvider);
     final out = <String, String>{};
     for (final slot in ApiKeySlot.values) {
       final v = await store.read(slot);
       if (v != null && v.isNotEmpty) out[slot.storageKey] = v;
     }
-    return out.isEmpty ? null : out;
+    return out;
   }
 
   Future<void> _runExport() async {
@@ -122,40 +110,6 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     }
   }
 
-  /// 明文导出等于把整个记忆库摊开给任何拿到文件的人，而分享面板一点就发出去。
-  /// 所以这里挡一道：说清楚它不是加密的，再让用户决定。
-  ///
-  /// ⚠️ 带上 Key 时**必须点名 Key**，不能只说「内容是明文」：多数人听到「内容」想到的是
-  /// 自己的卡片，不会联想到那两把模型密钥也在文件里。
-  Future<void> _confirmThenExport() async {
-    final c = FindrColors.of(context);
-    final withKeys = _includeKeys;
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text('导出安全提示', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
-        content: Text(
-          '这份备份没有加密 —— 谁拿到文件，谁就能看到全部卡片、照片和录音。\n\n'
-          '${withKeys ? '⚠️ 已选择包含 API 密钥：密钥会一起打包，换机后可直接恢复。文件别传到公共渠道。\n\n' : ''}'
-          '建议只存在私有云盘或可信的设备上。',
-          style: TextStyle(fontSize: 13, height: 1.6, color: c.textSecondary),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('取消', style: TextStyle(color: c.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('确认导出', style: TextStyle(color: c.record, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-    if (yes == true) await _runExport();
-  }
-
   Future<void> _pick() async {
     setState(() {
       _note = null;
@@ -180,8 +134,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       _keyRestore = null;
     });
     try {
-      final bytes = await readBackupBytes(picked);
-      final res = await importFromBytes(_rt.driver, bytes);
+      final res = await importFromPlatformFile(_rt.driver, picked);
       final restored = await _restoreKeys(res.apiKeys);
       if (!mounted) return;
       setState(() {
@@ -278,35 +231,18 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
             '备份文件用于换机或重装后恢复数据。',
             style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
           ),
-          Notice(
-            title: '数据安全说明',
-            tone: NoticeTone.info,
-            icon: Icons.shield_outlined,
-            surface: true,
-            text:
-                '明文存档，含全部卡片与媒体。请勿上传至公共渠道。',
-          ),
 
           // ── 导出 ─────────────────────────────────────────
           Panel(
             title: '导出',
-            hint: '包含卡片、分类、位置与媒体素材',
+            hint: '包含卡片、分类、位置、媒体素材与模型 API 密钥',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                ListRow(
-                  title: '包含模型 API 密钥',
-                  subtitle: '导入后无需重配，可直接使用。仅在可信设备间传输。',
-                  right: Switch(
-                    value: _includeKeys,
-                    onChanged: (v) => setState(() => _includeKeys = v),
-                  ),
-                ),
-                const SizedBox(height: Spacing.four),
                 FindrButton(
                   title: _busy && _phase != null ? _phaseText(_phase!, _elapsed) : '导出并分享',
                   loading: _busy,
-                  onPressed: _confirmThenExport,
+                  onPressed: _runExport,
                 ),
                 if (exported != null) ...<Widget>[
                   const SizedBox(height: Spacing.three),

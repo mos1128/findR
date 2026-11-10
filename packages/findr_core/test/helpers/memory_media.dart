@@ -9,7 +9,7 @@ import 'dart:typed_data';
 
 import 'package:findr_core/findr_core.dart';
 
-final class MemoryMedia implements MediaStorePort {
+final class MemoryMedia implements MediaStorePort, StreamingMediaStore {
   MemoryMedia([Map<String, Uint8List> initial = const <String, Uint8List>{}]) {
     files.addAll(initial);
   }
@@ -27,4 +27,15 @@ final class MemoryMedia implements MediaStorePort {
 
   @override
   FutureOr<bool> Function(String relPath)? get exists => (relPath) => files.containsKey(relPath);
+
+  @override
+  Stream<List<int>> openRead(String relPath) {
+    final data = files[relPath];
+    if (data == null) throw StateError('内存媒体库里没有 $relPath');
+    // 故意切小块：让导出测试覆盖「跨块算 CRC / 跨块写盘」的路径
+    return Stream<List<int>>.fromIterable(<List<int>>[
+      for (var i = 0; i < data.length; i += 3)
+        data.sublist(i, i + 3 > data.length ? data.length : i + 3),
+    ]);
+  }
 }

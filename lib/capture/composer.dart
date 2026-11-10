@@ -22,7 +22,6 @@
 library;
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -45,7 +44,6 @@ final class ComposerPayload {
     this.attachments = const <PendingFile>[],
     this.fromFile = false,
     this.vision = true,
-    this.visionOverride,
   });
 
   final String text;
@@ -62,11 +60,8 @@ final class ComposerPayload {
   /// 文本来源里有没有「选文件」那一份。只影响提示文案。
   final bool fromFile;
 
-  /// 本次录入的图片分析开关最终取值。
+  /// 本次录入的图片分析开关最终取值。只作用于这一次，不写回设置。
   final bool vision;
-
-  /// 用户在这一次里**手动切过**吗。切过才需要写回设置里的 `visionLast`（需求 5.1）。
-  final bool? visionOverride;
 }
 
 class Composer extends StatefulWidget {
@@ -89,7 +84,9 @@ class Composer extends StatefulWidget {
     this.visionDefault = true,
   });
 
-  final Future<void> Function(ComposerPayload payload) onSubmit;
+  /// 返回 `true` 表示已经落盘成功，此时 Composer 才清空输入。
+  /// 返回 `false`（或抛异常）时**必须保留全部素材** —— 用户不能因为一次写盘失败丢掉刚录的东西。
+  final Future<bool> Function(ComposerPayload payload) onSubmit;
   final bool enabled;
   final bool busy;
   final Widget? notice;
@@ -116,12 +113,18 @@ class _ComposerState extends State<Composer> {
 
   bool _expanded = false;
   bool _recording = false;
+
+  /// 指针是否仍按着。权限弹窗会夺走触摸流并触发 `onPointerCancel`，
+  /// 靠它区分「用户松手了」与「权限弹窗还没回来」。
+  bool _pressing = false;
+
+  /// `_stopRecording` 的重入闸：自动到点与用户松手可能同时触发。
+  bool _stopping = false;
   Timer? _ticker;
 
-  /// `null` = 跟随设置；非 null = 用户这一次手动切过（需求 5.1）。
-  bool? _visionOverride;
-
-  bool get _vision => _visionOverride ?? widget.visionDefault;
+  /// 串行压缩链：一张压完再压下一张（同时开 N 个 isolate 会压垮低端机）。
+  Future<void> _compressChain = Future<void>.value();
+  bool _fallbackToastShown = false;
 
   static bool _cachedVoiceMode = false;
   static bool _modeLoaded = false;
@@ -165,7 +168,12 @@ class _ComposerState extends State<Composer> {
     try {
       if (AppPaths.ready) {
         final file = File('${AppPaths.documents.path}/composer_mode.txt');
-        unawaited(file.writeAsString(next ? 'voice' : 'text'));
+        // 写失败的 Future 必须自己接住 —— 光包 try/catch 挡不住异步异常。
+        unawaited(
+          file
+              .writeAsString(next ? 'voice' : 'text')
+              .catchError((Object _) => file),
+        );
       }
     } catch (_) {}
   }
@@ -179,7 +187,10 @@ class _ComposerState extends State<Composer> {
   }
 
   bool get _hasContent =>
-      _controller.text.trim().isNotEmpty || _photos.isNotEmpty || _files.isNotEmpty || _audio != null;
+      _controller.text.trim().isNotEmpty ||
+      _photos.isNotEmpty ||
+      _files.isNotEmpty ||
+      _audio != null;
 
   @override
   void dispose() {
@@ -211,20 +222,43 @@ class _ComposerState extends State<Composer> {
       );
   }
 
-  Future<void> _alert(String title, String body, {List<Widget> actions = const <Widget>[]}) {
+  Future<void> _alert(
+    String title,
+    String body, {
+    List<Widget> actions = const <Widget>[],
+  }) {
+    if (!mounted) return Future<void>.value();
     final c = FindrColors.of(context);
     return showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.lg)),
-        title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
-        content: Text(body, style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Radii.lg),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: c.text,
+          ),
+        ),
+        content: Text(
+          body,
+          style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
+        ),
         actions: actions.isEmpty
             ? <Widget>[
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(),
-                  child: Text('知道了', style: TextStyle(color: c.record, fontWeight: FontWeight.w600)),
+                  child: Text(
+                    '知道了',
+                    style: TextStyle(
+                      color: c.record,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ]
             : actions,
@@ -236,8 +270,9 @@ class _ComposerState extends State<Composer> {
 
   /// 把用户刚拿到的一批原图逐张压成 WebP。
   ///
-  /// **一张一张来**：解码 + 缩放是 CPU 密集的，一次丢 8 张进 isolate 池
-  /// 会让低端机同时开 8 个 isolate；而顺序处理还能给一个明确的「2/5」。
+  /// **真的一张一张来**：解码 + 缩放是 CPU 密集的，一张 20MP 的图解码后
+  /// 光 RGBA 就约 80MB；同时开 8 个 isolate 是低端机必现的 OOM。
+  /// 压缩成功后 [PendingPhoto] 会立刻释放原图字节（见 `submit.dart`）。
   Future<void> _addRawPhotos(List<RawPhoto> raws) async {
     if (raws.isEmpty) return;
     final limitHint = overImageLimitHint(_photos.length + raws.length);
@@ -245,20 +280,14 @@ class _ComposerState extends State<Composer> {
     setState(() {
       _expanded = false;
       for (final raw in raws) {
-        final photo = PendingPhoto(rawBytes: raw.bytes);
+        final bytes = raw.bytes;
+        if (bytes == null) continue;
+        final photo = PendingPhoto(rawBytes: bytes);
         _photos.add(photo);
-        // 后台异步进行极速 WebP 压缩，不阻塞主线程，不让用户等待
-        photo.compressFuture = compute(compressToWebp, raw.bytes).then((result) {
-          if (!mounted) return;
-          if (result is CompressOk) {
-            photo.setCompressed(
-              webp: result.webp,
-              width: result.width,
-              height: result.height,
-            );
-            if (mounted) setState(() {});
-          }
-        });
+        final task = _compressChain.then((_) => _compressOne(photo, raw));
+        // 链不能因为一张图失败而断掉；失败已经在 `_compressOne` 里降级成「原图」。
+        _compressChain = task.catchError((Object _) {});
+        photo.compressFuture = task;
       }
     });
     _refreshCanSubmit();
@@ -267,6 +296,37 @@ class _ComposerState extends State<Composer> {
       // 需求 5.1：超过软阈值只提示，不做硬截断
       await _alert('图片有点多', limitHint);
     }
+  }
+
+  Future<void> _compressOne(PendingPhoto photo, RawPhoto raw) async {
+    final source = raw.bytes;
+    if (source == null) return;
+    CompressResult result;
+    try {
+      result = await compute(compressToWebp, source);
+    } catch (e) {
+      result = CompressFailed('压缩失败：$e');
+    }
+    // 这一张已经压完（或失败退原图），原图字节不再需要让 RawPhoto 继续持有
+    raw.release();
+    if (!mounted) return;
+    switch (result) {
+      case CompressOk():
+        photo.setCompressed(
+          webp: result.webp,
+          width: result.width,
+          height: result.height,
+        );
+      case CompressFailed(:final reason):
+        // 退原图，但用真实后缀落盘。假装成 .webp 会让图片永久打不开、
+        // 还会把错误 MIME 送给视觉模型。
+        photo.setFallback(reason: reason, ext: originalImageExt(source));
+        if (!_fallbackToastShown) {
+          _fallbackToastShown = true;
+          _toast('有图片没能压缩，已按原图保存');
+        }
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _takePhoto() async {
@@ -298,32 +358,23 @@ class _ComposerState extends State<Composer> {
     final picked = await pickPlainTextFile();
     if (picked == null || !mounted) return;
     try {
-      final bytes = await picked.xFile.readAsBytes();
-      if (bytes.isEmpty) {
-        _toast('所选文件为空');
-        return;
+      // 扩展名白名单 / 8000 字上限 / 编码识别都在 `text_file.dart` 里，
+      // 这里必须走同一条判定 —— 自己再写一套的结果是「保存成功但搜不到」。
+      final result = await readPlainTextFile(picked);
+      if (!mounted) return;
+      switch (result) {
+        case TextFileRejected(:final message):
+          await _alert('这个文件不能读', message);
+        case TextFileOk(:final text, :final fileName, :final bytes):
+          setState(
+            () => _files.add(
+              PendingFile(name: fileName, bytes: bytes, text: text),
+            ),
+          );
+          _refreshCanSubmit();
       }
-      String? text;
-      try {
-        final decoded = utf8.decode(bytes);
-        final clean = decoded.startsWith('\uFEFF') ? decoded.substring(1) : decoded;
-        if (!clean.contains('\u0000') && clean.trim().isNotEmpty && clean.length <= 16000) {
-          text = clean.trim();
-        }
-      } catch (_) {
-        text = null;
-      }
-
-      final item = PendingFile(
-        name: picked.name,
-        bytes: bytes,
-        text: text,
-      );
-
-      setState(() => _files.add(item));
-      _refreshCanSubmit();
     } catch (e) {
-      _toast('读取文件失败: $e');
+      if (mounted) _toast('读取文件失败: $e');
     }
   }
 
@@ -331,52 +382,85 @@ class _ComposerState extends State<Composer> {
 
   Future<void> _startRecording() async {
     if (_locked || _recording || !widget.enabled) return;
+    // 在 await 之前就记住「按着」：权限弹窗会触发 onPointerCancel，
+    // 松手事件可能比 start() 先回来。
+    _pressing = true;
     setState(() => _expanded = false);
     try {
       await _recorder.start();
       if (!mounted) return;
+      // 已经松手 / 启动被取消 ⇒ 不要进入「录音中」状态，更不要把麦克风留着
+      if (!_pressing || !_recorder.recording) {
+        await _recorder.cancel();
+        if (mounted) setState(() => _recording = false);
+        return;
+      }
       setState(() => _recording = true);
       // 自己起个节拍器显示秒数。`record` 不直接给时长，用开始时刻算最可靠
       _ticker?.cancel();
       _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
-        if (mounted) setState(() {});
+        if (!mounted) return;
+        if (shouldAutoStopRecording(_recorder.elapsedMs)) {
+          _ticker?.cancel();
+          _ticker = null;
+          _toast('已到 1 分钟上限，录音自动结束');
+          unawaited(_stopRecording());
+          return;
+        }
+        setState(() {});
       });
     } on RecorderError catch (e) {
-      await _alert('录不了音', e.message);
+      _pressing = false;
+      if (mounted) await _alert('录不了音', e.message);
     } catch (e) {
-      await _alert('录不了音', '$e');
+      _pressing = false;
+      if (mounted) await _alert('录不了音', '$e');
     }
   }
 
   Future<void> _stopRecording() async {
-    if (!_recording) return;
-    _ticker?.cancel();
-    _ticker = null;
-    final audio = await _recorder.stop();
-    if (!mounted) return;
-    setState(() {
-      _recording = false;
-      if (audio != null) _audio = audio;
-    });
-    _refreshCanSubmit();
+    if (_stopping) return;
+    _stopping = true;
+    try {
+      _pressing = false;
+      _ticker?.cancel();
+      _ticker = null;
+      // 即使 `_recording` 还是 false 也要调 stop：那说明 start() 仍在等权限，
+      // recorder 会把这次松手记成「启动后立刻取消」。
+      final audio = await _recorder.stop();
+      if (!mounted) return;
+      setState(() {
+        _recording = false;
+        if (audio != null) _audio = audio;
+      });
+      _refreshCanSubmit();
+    } finally {
+      _stopping = false;
+    }
   }
 
   // ── 提交 ────────────────────────────────────────────────
 
-  Future<void> _submit({bool forceWithVisionOff = false}) async {
+  Future<void> _submit() async {
     if (_locked || !_hasContent) return;
 
     final photos = List<PendingPhoto>.of(_photos);
     final audio = _audio;
     final userText = _controller.text.trim();
-    if (photos.isEmpty && audio == null && userText.isEmpty && _files.isEmpty) return;
+    if (photos.isEmpty && audio == null && userText.isEmpty && _files.isEmpty) {
+      return;
+    }
 
     final readableFiles = _files.where((f) => f.isReadable).toList();
     final hasPhotos = photos.isNotEmpty;
     final hasReadableFiles = readableFiles.isNotEmpty;
 
-    // 当包含图片或可提取文本文件时，在点击「存」时唤起选项面板，明确选择是否进行 AI 分析
-    if (!forceWithVisionOff && (hasPhotos || hasReadableFiles)) {
+    // 当包含图片或可提取文本文件时，在点击「存」时唤起选项面板，明确选择是否进行 AI 分析。
+    // 面板的初始值每次都是设置里的默认值（不记忆上次选择）。
+    // **弹板前就置 `_sending`**：否则连点两次能叠出两层弹板。
+    var vision = widget.visionDefault;
+    if (hasPhotos || hasReadableFiles) {
+      setState(() => _sending = true);
       final opts = await showModalBottomSheet<_SaveOptions>(
         context: context,
         backgroundColor: FindrColors.of(context).surface,
@@ -388,16 +472,20 @@ class _ComposerState extends State<Composer> {
           hasPhotos: hasPhotos,
           photoCount: photos.length,
           visionCapable: widget.visionCapable,
-          initialVision: _vision,
+          initialVision: widget.visionDefault,
           hasReadableFiles: hasReadableFiles,
           readableFileCount: readableFiles.length,
           initialExtractFiles: readableFiles.any((f) => f.includeContent),
           hasOtherContent: userText.isNotEmpty || audio != null,
         ),
       );
-      if (opts == null || !mounted) return;
+      if (!mounted) return;
+      if (opts == null) {
+        setState(() => _sending = false);
+        return;
+      }
 
-      _visionOverride = opts.vision;
+      vision = opts.vision;
       for (final f in _files) {
         if (f.isReadable) {
           f.includeContent = opts.extractFiles;
@@ -419,41 +507,38 @@ class _ComposerState extends State<Composer> {
 
     setState(() => _sending = true);
     try {
-      // 确保所有图片的后台异步压缩已完成
+      // 确保所有图片的后台异步压缩已完成（失败的那张已经降级成原图）。
       for (final p in photos) {
-        if (!p.isCompressed) {
-          if (p.compressFuture != null) {
-            await p.compressFuture;
-          } else {
-            final res = await compute(compressToWebp, p.rawBytes);
-            if (res is CompressOk) {
-              p.setCompressed(webp: res.webp, width: res.width, height: res.height);
-            }
-          }
-        }
+        if (!p.isReady) await p.compressFuture;
       }
 
-      await widget.onSubmit(
+      final ok = await widget.onSubmit(
         ComposerPayload(
           text: text,
           photos: photos,
           audio: audio,
           attachments: List<PendingFile>.of(_files),
           fromFile: _files.isNotEmpty,
-          vision: _vision,
-          visionOverride: _visionOverride,
+          vision: vision,
         ),
       );
       if (!mounted) return;
+      if (!ok) {
+        // 落盘失败：**内容一个都不许清**。用户看到提示后可以重试。
+        _toast('没能存下，内容还在，稍后重试');
+        return;
+      }
       setState(() {
         _controller.clear();
         _photos.clear();
         _files.clear();
         _audio = null;
-        _visionOverride = null;
         _expanded = false;
       });
       _refreshCanSubmit();
+    } catch (e) {
+      if (mounted) _toast('没能存下：$e');
+      return;
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -475,7 +560,12 @@ class _ComposerState extends State<Composer> {
       ),
       builder: (sheetContext) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.two, Spacing.four, Spacing.four),
+          padding: const EdgeInsets.fromLTRB(
+            Spacing.four,
+            Spacing.two,
+            Spacing.four,
+            Spacing.four,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -496,7 +586,11 @@ class _ComposerState extends State<Composer> {
                   Expanded(
                     child: Text(
                       '添加素材',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: c.text,
+                      ),
                     ),
                   ),
                   Text(
@@ -554,7 +648,8 @@ class _ComposerState extends State<Composer> {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final hasAttachments = _photos.isNotEmpty || _files.isNotEmpty || _audio != null;
+    final hasAttachments =
+        _photos.isNotEmpty || _files.isNotEmpty || _audio != null;
 
     return Container(
       decoration: BoxDecoration(
@@ -609,7 +704,8 @@ class _ComposerState extends State<Composer> {
                   ],
                   if (_recording) ...<Widget>[
                     _Progress(
-                      text: '● 录音中 ${(_recorder.elapsedMs / 1000).round()}s · 松开结束',
+                      text:
+                          '● 录音中 ${(_recorder.elapsedMs / 1000).round()}s · 松开结束',
                       color: c.danger,
                     ),
                     const SizedBox(height: Spacing.two),
@@ -619,20 +715,28 @@ class _ComposerState extends State<Composer> {
                     children: <Widget>[
                       // 左1：微信式输入模式切换（话筒 / 键盘）
                       _IconBox(
-                        icon: _voiceMode ? Icons.keyboard_alt_outlined : Icons.mic_none_rounded,
+                        icon: _voiceMode
+                            ? Icons.keyboard_alt_outlined
+                            : Icons.mic_none_rounded,
                         active: _voiceMode,
                         tooltip: _voiceMode ? '切换文字输入' : '切换语音输入',
-                        onPressed: widget.enabled && !_locked ? _toggleInputMode : null,
+                        onPressed: widget.enabled && !_locked
+                            ? _toggleInputMode
+                            : null,
                       ),
                       const SizedBox(width: Spacing.two),
                       // 中间：文字输入框（垂直居中）或「按住 说话」药丸条
                       Expanded(
                         child: !_voiceMode
                             ? Container(
-                                constraints: const BoxConstraints(minHeight: 38),
+                                constraints: const BoxConstraints(
+                                  minHeight: 38,
+                                ),
                                 decoration: BoxDecoration(
                                   color: c.surfaceAlt,
-                                  borderRadius: BorderRadius.circular(Radii.pill),
+                                  borderRadius: BorderRadius.circular(
+                                    Radii.pill,
+                                  ),
                                 ),
                                 child: TextField(
                                   controller: _controller,
@@ -648,9 +752,17 @@ class _ComposerState extends State<Composer> {
                                   decoration: InputDecoration(
                                     isDense: true,
                                     border: InputBorder.none,
-                                    hintText: widget.enabled ? '记一笔…（回车即存）' : '数据库还没就绪',
-                                    hintStyle: TextStyle(fontSize: 12.5, color: c.textMuted),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9.5),
+                                    hintText: widget.enabled
+                                        ? '记一笔…（回车即存）'
+                                        : '数据库还没就绪',
+                                    hintStyle: TextStyle(
+                                      fontSize: 12.5,
+                                      color: c.textMuted,
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 9.5,
+                                    ),
                                   ),
                                 ),
                               )
@@ -664,10 +776,14 @@ class _ComposerState extends State<Composer> {
                       const SizedBox(width: Spacing.two),
                       // 右2：＋ 展开素材
                       _IconBox(
-                        icon: _expanded ? Icons.close_rounded : Icons.add_rounded,
+                        icon: _expanded
+                            ? Icons.close_rounded
+                            : Icons.add_rounded,
                         active: _expanded,
                         tooltip: '添加素材',
-                        onPressed: widget.enabled && !_locked ? _openAttachSheet : null,
+                        onPressed: widget.enabled && !_locked
+                            ? _openAttachSheet
+                            : null,
                       ),
                       const SizedBox(width: Spacing.two),
                       // 右1（最右侧）：存按钮（逻辑终点）
@@ -710,7 +826,10 @@ class _AttachCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(Radii.lg),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: Spacing.two, vertical: Spacing.three),
+          padding: const EdgeInsets.symmetric(
+            horizontal: Spacing.two,
+            vertical: Spacing.three,
+          ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(Radii.lg),
           ),
@@ -730,7 +849,11 @@ class _AttachCard extends StatelessWidget {
               Text(
                 title,
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.text),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: c.text,
+                ),
               ),
             ],
           ),
@@ -776,7 +899,7 @@ class _AttachStrip extends StatelessWidget {
               leading: ClipRRect(
                 borderRadius: BorderRadius.circular(Radii.pill),
                 child: Image.memory(
-                  p.rawBytes,
+                  p.thumbBytes,
                   cacheWidth: 64,
                   cacheHeight: 64,
                   width: 24,
@@ -785,7 +908,9 @@ class _AttachStrip extends StatelessWidget {
                   gaplessPlayback: true,
                 ),
               ),
-              label: photos.length > 1 ? '图片 ${i + 1}' : '图片',
+              label: p.isFallback
+                  ? '图片 ${i + 1}（原图）'
+                  : (photos.length > 1 ? '图片 ${i + 1}' : '图片'),
               sizeText: p.approxKb > 0 ? '${p.approxKb}KB' : null,
               onRemove: enabled ? () => onRemovePhoto(i) : null,
             );
@@ -802,7 +927,9 @@ class _AttachStrip extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  f.isReadable ? Icons.description_outlined : Icons.attach_file_rounded,
+                  f.isReadable
+                      ? Icons.description_outlined
+                      : Icons.attach_file_rounded,
                   size: 13,
                   color: c.textSecondary,
                 ),
@@ -859,10 +986,7 @@ class _AttachTile extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          if (leading != null) ...<Widget>[
-            leading!,
-            const SizedBox(width: 6),
-          ],
+          if (leading != null) ...<Widget>[leading!, const SizedBox(width: 6)],
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 110),
             child: Text(
@@ -878,13 +1002,7 @@ class _AttachTile extends StatelessWidget {
           ),
           if (sizeText != null) ...<Widget>[
             const SizedBox(width: 5),
-            Text(
-              sizeText!,
-              style: TextStyle(
-                fontSize: 11,
-                color: c.textMuted,
-              ),
-            ),
+            Text(sizeText!, style: TextStyle(fontSize: 11, color: c.textMuted)),
           ],
           if (onRemove != null) ...<Widget>[
             const SizedBox(width: 6),
@@ -904,10 +1022,7 @@ class _AttachTile extends StatelessWidget {
 }
 
 class _SaveOptions {
-  const _SaveOptions({
-    required this.vision,
-    required this.extractFiles,
-  });
+  const _SaveOptions({required this.vision, required this.extractFiles});
 
   final bool vision;
   final bool extractFiles;
@@ -953,13 +1068,19 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final isPureAttachmentOnly = !widget.hasOtherContent &&
+    final isPureAttachmentOnly =
+        !widget.hasOtherContent &&
         (!widget.hasPhotos || !_vision) &&
         (!widget.hasReadableFiles || !_extractFiles);
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.two, Spacing.four, Spacing.four),
+        padding: const EdgeInsets.fromLTRB(
+          Spacing.four,
+          Spacing.two,
+          Spacing.four,
+          Spacing.four,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -980,7 +1101,11 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                 Expanded(
                   child: Text(
                     '存入选项',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: c.text,
+                    ),
                   ),
                 ),
                 Text(
@@ -992,7 +1117,10 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
             const SizedBox(height: Spacing.three),
             if (widget.hasPhotos) ...<Widget>[
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: Spacing.two),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Spacing.three,
+                  vertical: Spacing.two,
+                ),
                 decoration: BoxDecoration(
                   color: c.surfaceAlt,
                   borderRadius: BorderRadius.circular(Radii.lg),
@@ -1006,7 +1134,11 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                         color: c.record.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(Icons.auto_awesome_rounded, size: 20, color: c.record),
+                      child: Icon(
+                        Icons.auto_awesome_rounded,
+                        size: 20,
+                        color: c.record,
+                      ),
                     ),
                     const SizedBox(width: Spacing.three),
                     Expanded(
@@ -1015,7 +1147,11 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                         children: <Widget>[
                           Text(
                             'AI 识别图片内容 (${widget.photoCount}张)',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: c.text,
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -1024,7 +1160,9 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                                 : (_vision ? '模型分析图中物品并提取记忆' : '仅存为图片，不发给模型'),
                             style: TextStyle(
                               fontSize: 12,
-                              color: !widget.visionCapable ? c.textMuted : c.textSecondary,
+                              color: !widget.visionCapable
+                                  ? c.textMuted
+                                  : c.textSecondary,
                             ),
                           ),
                         ],
@@ -1033,7 +1171,9 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                     const SizedBox(width: Spacing.two),
                     Switch.adaptive(
                       value: widget.visionCapable && _vision,
-                      onChanged: widget.visionCapable ? (val) => setState(() => _vision = val) : null,
+                      onChanged: widget.visionCapable
+                          ? (val) => setState(() => _vision = val)
+                          : null,
                       activeTrackColor: c.record,
                     ),
                   ],
@@ -1043,7 +1183,10 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
             ],
             if (widget.hasReadableFiles) ...<Widget>[
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: Spacing.two),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Spacing.three,
+                  vertical: Spacing.two,
+                ),
                 decoration: BoxDecoration(
                   color: c.surfaceAlt,
                   borderRadius: BorderRadius.circular(Radii.lg),
@@ -1057,7 +1200,11 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                         color: c.record.withValues(alpha: 0.1),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(Icons.description_rounded, size: 20, color: c.record),
+                      child: Icon(
+                        Icons.description_rounded,
+                        size: 20,
+                        color: c.record,
+                      ),
                     ),
                     const SizedBox(width: Spacing.three),
                     Expanded(
@@ -1066,12 +1213,19 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                         children: <Widget>[
                           Text(
                             '提取文本文件内容 (${widget.readableFileCount}个)',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: c.text,
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
                             _extractFiles ? '文字追加到正文，可被搜到' : '只存附件，不解析正文',
-                            style: TextStyle(fontSize: 12, color: c.textSecondary),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: c.textSecondary,
+                            ),
                           ),
                         ],
                       ),
@@ -1092,7 +1246,11 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Text(
                   '没文字又不做分析，只能靠分类和标签找。',
-                  style: TextStyle(fontSize: 11.5, height: 1.4, color: c.danger),
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.4,
+                    color: c.danger,
+                  ),
                 ),
               ),
               const SizedBox(height: Spacing.two),
@@ -1105,10 +1263,15 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                     onPressed: () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: c.border),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.pill)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(Radii.pill),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: Text('取消', style: TextStyle(color: c.textSecondary, fontSize: 14)),
+                    child: Text(
+                      '取消',
+                      style: TextStyle(color: c.textSecondary, fontSize: 14),
+                    ),
                   ),
                 ),
                 const SizedBox(width: Spacing.three),
@@ -1116,21 +1279,28 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                   flex: 2,
                   child: ElevatedButton(
                     onPressed: () {
-                      Navigator.of(context).pop(_SaveOptions(
-                        vision: _vision,
-                        extractFiles: _extractFiles,
-                      ));
+                      Navigator.of(context).pop(
+                        _SaveOptions(
+                          vision: _vision,
+                          extractFiles: _extractFiles,
+                        ),
+                      );
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: c.record,
                       foregroundColor: c.recordText,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.pill)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(Radii.pill),
+                      ),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       elevation: 0,
                     ),
                     child: Text(
                       isPureAttachmentOnly ? '仍作为纯附件存入' : '确认存入',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
@@ -1159,10 +1329,16 @@ class _Progress extends StatelessWidget {
           SizedBox(
             width: 13,
             height: 13,
-            child: CircularProgressIndicator(strokeWidth: 2, color: color ?? c.record),
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: color ?? c.record,
+            ),
           ),
           const SizedBox(width: Spacing.two),
-          Text(text, style: TextStyle(fontSize: 11.5, color: color ?? c.textSecondary)),
+          Text(
+            text,
+            style: TextStyle(fontSize: 11.5, color: color ?? c.textSecondary),
+          ),
         ],
       ),
     );
@@ -1199,7 +1375,11 @@ class _IconBox extends StatelessWidget {
         child: SizedBox(
           width: 38,
           height: 38,
-          child: Icon(icon, size: 20, color: active ? c.record : (on ? c.textSecondary : c.textMuted)),
+          child: Icon(
+            icon,
+            size: 20,
+            color: active ? c.record : (on ? c.textSecondary : c.textMuted),
+          ),
         ),
       ),
     );
@@ -1212,7 +1392,11 @@ class _IconBox extends StatelessWidget {
 
 /// 「存」—— 整屏唯一用「记」的强调色实心块（需求六：与「查」强区分）。
 class _SaveButton extends StatelessWidget {
-  const _SaveButton({required this.enabled, required this.loading, required this.onPressed});
+  const _SaveButton({
+    required this.enabled,
+    required this.loading,
+    required this.onPressed,
+  });
 
   final bool enabled;
   final bool loading;
@@ -1240,7 +1424,10 @@ class _SaveButton extends StatelessWidget {
                   child: SizedBox(
                     width: 14,
                     height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: c.recordText),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: c.recordText,
+                    ),
                   ),
                 )
               : Center(

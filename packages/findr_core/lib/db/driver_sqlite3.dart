@@ -85,6 +85,10 @@ final class Sqlite3Driver implements SqliteDriver {
     }
     exec('PRAGMA journal_mode = WAL');
     exec('PRAGMA foreign_keys = ON');
+    // 页缓存默认只有约 2MB，全表扫描时反复换入换出；给到 16MB 对几千张卡的库有直接收益。
+    exec('PRAGMA cache_size = -16000');
+    // 临时排序（ORDER BY created_at）走内存，避免落临时文件。
+    exec('PRAGMA temp_store = MEMORY');
   }
 
   @override

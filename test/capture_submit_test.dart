@@ -135,6 +135,22 @@ void main() {
       expect(File(temp).existsSync(), isFalse, reason: '临时文件没删掉 ⇒ 每录一次留一份残余');
     });
 
+    test('压缩失败退回原图：用真实后缀落盘，不冒充 .webp', () async {
+      final db = openAndMigrateDb();
+      final raw = Uint8List.fromList(<int>[0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]);
+      final photo = PendingPhoto(rawBytes: raw)
+        ..setFallback(reason: 'HEIC 暂时读不了', ext: 'jpg');
+      final card = await persistCapture(
+        db,
+        CaptureSubmission(photos: <PendingPhoto>[photo]),
+        now: DateTime(2026, 9, 22, 10, 30),
+      );
+      db.close();
+
+      expect(card.images, <String>['files/cards/202609/${card.id}/01.jpg']);
+      expect(AppPaths.file(card.images!.single).readAsBytesSync(), raw);
+    });
+
     test('卡片真的进了库（不只是返回了个对象）', () async {
       final db = openAndMigrateDb();
       final card = await persistCapture(db, const CaptureSubmission(text: '备用钥匙在书柜第三层'));
@@ -185,6 +201,11 @@ void main() {
     test('刚好到下限就留', () {
       expect(shouldDiscardRecording(path: '/tmp/a.m4a', durationMs: minRecordingMs), isFalse);
       expect(shouldDiscardRecording(path: '/tmp/a.m4a', durationMs: 8000), isFalse);
+    });
+
+    test('到 1 分钟自动结束', () {
+      expect(shouldAutoStopRecording(maxRecordingMs - 1), isFalse);
+      expect(shouldAutoStopRecording(maxRecordingMs), isTrue);
     });
 
     test('临时录音路径落在**临时目录**里、且带 .m4a 后缀', () {

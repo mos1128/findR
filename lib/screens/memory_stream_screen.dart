@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../capture/composer.dart';
 import '../capture/submit.dart';
+import '../platform/media_gc.dart';
 import '../platform/network.dart';
 import '../platform/runtime.dart';
 import '../state/memory_stream.dart';
@@ -43,16 +44,39 @@ class MemoryStreamScreen extends ConsumerStatefulWidget {
 class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     with WidgetsBindingObserver {
   final _query = TextEditingController();
+  ProviderSubscription<AsyncValue<bool>>? _onlineSub;
+  ProviderSubscription<AsyncValue<RuntimeState>>? _runtimeGcSub;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _query.addListener(() => setState(() {}));
+    // 网络恢复 ⇒ 立刻补跑待整理队列。
+    // 订阅连接状态本身几乎零成本（插件是事件流）；不订阅的话，用户只能切后台再切回来。
+    _onlineSub = ref.listenManual(onlineProvider, (prev, next) {
+      if (prev?.value == false && next.value == true) {
+        unawaited(_drainQueue());
+      }
+    });
+    // 运行时（库连接）就绪后再扫孤儿媒体；首帧时它往往还在异步打开。
+    // 只跑一次：拿到第一个可用快照就退订。
+    _runtimeGcSub = ref.listenManual(runtimeProvider, (prev, next) {
+      final rt = next.value;
+      if (rt == null) return;
+      _runtimeGcSub?.close();
+      _runtimeGcSub = null;
+      try {
+        collectOrphanMedia(rt.driver);
+      } catch (_) {
+        // 回收失败不影响任何功能
+      }
+    }, fireImmediately: true);
   }
 
   @override
   void dispose() {
+    _runtimeGcSub?.close();
+    _onlineSub?.close();
     WidgetsBinding.instance.removeObserver(this);
     _query.dispose();
     super.dispose();
@@ -88,7 +112,10 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     final llmReady = llmConfigured(rt?.llm);
     final autoAnswer = rt?.search.autoAnswer ?? false;
     final res = s.search;
-    if (llmReady && res != null && res.advice == null && (res.cards.isEmpty || autoAnswer)) {
+    if (llmReady &&
+        res != null &&
+        res.advice == null &&
+        (res.cards.isEmpty || autoAnswer)) {
       // **刻意不 await**：列表已经渲染出来了，答案回来再追加到下方（渐进式）
       unawaited(notifier.requestAnswer(q, res.cards));
     }
@@ -104,23 +131,11 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
   /// 「先落盘」是硬顺序：图片/录音在这里才进媒体目录，卡片行随后插入。
   /// 中间任何一步失败都只会让这次录入白费，**不会**留下一条有记录没素材的卡片
   /// （见 `capture/submit.dart` 的文件头）。
-  Future<void> _submit(ComposerPayload payload) async {
+  Future<bool> _submit(ComposerPayload payload) async {
     final rt = ref.read(runtimeProvider).value;
     if (rt == null) {
       _toast('还没准备好，稍等一下');
-      return;
-    }
-    // 记住这次的图片分析选择，下次默认沿用（需求 5.1）。只有**手动切过**才写。
-    final override = payload.visionOverride;
-    if (override != null && override != rt.capture.visionLast) {
-      writeCaptureSettings(
-        rt.driver,
-        CaptureSettings(
-          visionDefault: rt.capture.visionDefault,
-          visionLast: override,
-          maxAnalyzeImages: rt.capture.maxAnalyzeImages,
-        ),
-      );
+      return false;
     }
     try {
       await persistCapture(
@@ -134,19 +149,22 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
       );
     } catch (e) {
       _toast('没能存下：$e');
-      return;
+      // 返回 false：Composer 会保留用户输入的全部素材
+      return false;
     }
     // 草稿立刻出现在流里 —— 这是「先落盘、素材永不丢失」给用户看的证据
     await ref.read(memoryStreamProvider.notifier).reload();
-    // 队列要跑模型调用，几秒到几十秒；**不能让录入条一直转**，所以放后台
-    unawaited(_advanceAfterSubmit());
+    // 队列要跑模型调用，几秒到几十秒；**不能让录入条一直转**，所以放后台。
+    // 本次弹窗里选的图片分析开关直接传给这一轮队列，不写回设置。
+    unawaited(_advanceAfterSubmit(vision: payload.vision));
+    return true;
   }
 
-  Future<void> _advanceAfterSubmit() async {
+  Future<void> _advanceAfterSubmit({bool? vision}) async {
     try {
-      // 重读运行时：录入条上的开关（如图片分析）刚变过，`rt.capture` 还是旧快照
+      // 重读运行时：设置可能刚变过，`rt.capture` 还是旧快照
       await ref.read(runtimeProvider.notifier).refresh();
-      await ref.read(memoryStreamProvider.notifier).drainQueue();
+      await ref.read(memoryStreamProvider.notifier).drainQueue(vision: vision);
     } catch (_) {
       // 同上：失败只是留在「待解析」，素材没丢
     }
@@ -166,10 +184,19 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
   }
 
   Future<void> _openCard(String id) async {
+    // 只是打开看一眼就返回，不该重跑检索（更不该再发一次模型请求）。
+    // 详情页在用户真的改了东西时才置 true。
+    final changed = ValueNotifier<bool>(false);
     await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => CardDetailScreen(cardId: id)),
+      MaterialPageRoute<void>(
+        builder: (_) => CardDetailScreen(cardId: id, changed: changed),
+      ),
     );
-    await ref.read(memoryStreamProvider.notifier).reload();
+    final didChange = changed.value;
+    changed.dispose();
+    if (didChange) {
+      await ref.read(memoryStreamProvider.notifier).reload();
+    }
   }
 
   @override
@@ -199,9 +226,12 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
               ),
               categories: state?.categories ?? const <Category>[],
               categoryFilter: state?.categoryFilter,
-              onCategory: (id) => ref.read(memoryStreamProvider.notifier).setCategory(id),
+              onCategory: (id) =>
+                  ref.read(memoryStreamProvider.notifier).setCategory(id),
               onNewCategory: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(builder: (_) => const CategoriesScreen()),
+                MaterialPageRoute<void>(
+                  builder: (_) => const CategoriesScreen(),
+                ),
               ),
               llmReady: llmReady,
               hasUpdate: hasUpdate,
@@ -223,21 +253,15 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     );
   }
 
-  /// 录入坞上方的提示条。
+  /// 录入坞上方的提示条：目前只报「离线」这一种即时降级。
   ///
-  /// ⚠️ **这里容易写错一条**：别把提示条件写成「`autoAnswer` 开着就不提示没配 ASR」——
-  /// `autoAnswer` 是**检索**侧的开关，跟 ASR 毫无关系，那样写的结果是
-  /// 「打开了自动总结答案的用户，永远看不到自己其实没配 ASR」。
-  /// 正确的条件只有 `offline || noAsr`，没有 `autoAnswer` 这一项。
-  ///
-  /// 离线排在前：它决定的是**当下能不能用**，比「缺个 ASR」更急。
+  /// 没配 ASR 时**不在这里提示** —— 语音会先落盘，设置页的「语音识别」行会显示未配置。
+  /// 如果以后要在坞上提醒这件事，在这里加 `rt?.asr == null` 的分支；
+  /// 注意别把它和检索侧的 `autoAnswer` 混在一起，那是两个互不相关的开关。
   Widget? _composerNotice(RuntimeState? rt) {
     final online = ref.watch(onlineProvider).value ?? true;
     if (!online) {
-      return const Notice(
-        text: '无网络。先记下来，联网后自动解析。',
-        tone: NoticeTone.warn,
-      );
+      return const Notice(text: '无网络。先记下来，联网后自动解析。', tone: NoticeTone.warn);
     }
     return null;
   }
@@ -268,7 +292,12 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     final advice = search?.advice;
     final answering = s?.answering ?? false;
     final searching = s?.searching ?? false;
-    final showEmpty = !searching && answer == null && advice == null && !answering && cards.isEmpty;
+    final showEmpty =
+        !searching &&
+        answer == null &&
+        advice == null &&
+        !answering &&
+        cards.isEmpty;
 
     final byId = <String, Category>{
       for (final cat in s?.categories ?? const <Category>[]) cat.id: cat,
@@ -276,13 +305,22 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
 
     final slivers = <Widget>[
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.three, Spacing.four, 0),
+        padding: const EdgeInsets.fromLTRB(
+          Spacing.four,
+          Spacing.three,
+          Spacing.four,
+          0,
+        ),
         sliver: SliverList.list(
           children: <Widget>[
             if (s?.loadError != null)
               Padding(
                 padding: const EdgeInsets.only(bottom: Spacing.three),
-                child: Notice(title: '读取卡片失败', text: s!.loadError!, tone: NoticeTone.danger),
+                child: Notice(
+                  title: '读取卡片失败',
+                  text: s!.loadError!,
+                  tone: NoticeTone.danger,
+                ),
               ),
             if (searching)
               const Padding(
@@ -293,11 +331,17 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
               _ResultsHeader(
                 advice: advice,
                 count: cards.length,
-                canAnswer: cards.isNotEmpty && answer == null && advice == null && !answering,
+                canAnswer:
+                    cards.isNotEmpty &&
+                    answer == null &&
+                    advice == null &&
+                    !answering,
                 llmReady: llmConfigured(ref.read(runtimeProvider).value?.llm),
                 usage: search.usage,
                 onAnswer: () => unawaited(
-                  ref.read(memoryStreamProvider.notifier).requestAnswer(search.query, cards),
+                  ref
+                      .read(memoryStreamProvider.notifier)
+                      .requestAnswer(search.query, cards),
                 ),
                 onBack: _clearSearch,
               ),
@@ -312,11 +356,24 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
         ),
       ),
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(Spacing.four, 0, Spacing.four, Spacing.three),
+        padding: const EdgeInsets.fromLTRB(
+          Spacing.four,
+          0,
+          Spacing.four,
+          Spacing.three,
+        ),
         sliver: SliverList.separated(
           itemCount: cards.length,
           separatorBuilder: (_, _) => const SizedBox(height: Spacing.three),
           itemBuilder: (_, i) {
+            // 懒加载：列表末尾那一项被构建时再取下一页（一次 100 条）。
+            if (i == cards.length - 1 &&
+                search == null &&
+                (s?.hasMore ?? false)) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                unawaited(ref.read(memoryStreamProvider.notifier).loadMore());
+              });
+            }
             final card = cards[i];
             final cat = card.categoryId == null ? null : byId[card.categoryId];
             return CardRow(
@@ -331,8 +388,26 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
           },
         ),
       ),
+      if (search == null && (s?.loadingMore ?? false))
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: Spacing.three),
+            child: Center(
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+        ),
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(Spacing.four, 0, Spacing.four, Spacing.five),
+        padding: const EdgeInsets.fromLTRB(
+          Spacing.four,
+          0,
+          Spacing.four,
+          Spacing.five,
+        ),
         sliver: SliverList.list(
           children: <Widget>[
             // AI 答案：**追加在列表下方**，不置顶（需求六已据此改）
@@ -351,9 +426,12 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
               _AnswerCard(
                 tag: 'AI 建议',
                 body: advice.answer,
-                extra: advice.missing.isEmpty ? null : '库里还没有：${advice.missing.join('、')}',
+                extra: advice.missing.isEmpty
+                    ? null
+                    : '库里还没有：${advice.missing.join('、')}',
                 extraTone: NoticeTone.warn,
-                footer: '必需 ${advice.picks.length} 项'
+                footer:
+                    '必需 ${advice.picks.length} 项'
                     '${advice.maybe.isEmpty ? '' : ' · 看情况 ${advice.maybe.length} 项'}',
                 usage: advice.usage ?? search?.usage,
               ),
@@ -369,14 +447,19 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
                 tone: NoticeTone.warn,
                 action: Text(
                   cards.isNotEmpty ? '卡片列表不受影响，点「AI 总结」可重试。' : '可以换个说法再搜一次。',
-                  style: TextStyle(fontSize: 11.5, color: FindrColors.of(context).textMuted),
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: FindrColors.of(context).textMuted,
+                  ),
                 ),
               ),
             // 空态。正在组织答案时先不喊「没找到」，否则会先闪一句空话再被答案推翻。
             // 建议型结果也一样：卡片可能一条都没挑出来，但那一屏有价值的是「还缺什么」。
             if (showEmpty)
               EmptyState(
-                icon: search != null ? Icons.search_off_rounded : Icons.inbox_outlined,
+                icon: search != null
+                    ? Icons.search_off_rounded
+                    : Icons.inbox_outlined,
                 title: search != null ? '没找到相关记忆' : '还没有记忆',
                 hint: search != null
                     ? (llmConfigured(ref.read(runtimeProvider).value?.llm)
@@ -480,10 +563,16 @@ class _SearchBarState extends State<_SearchBar> {
                           color: c.surfaceSunken,
                           borderRadius: BorderRadius.circular(Radii.pill),
                         ),
-                        padding: const EdgeInsets.symmetric(horizontal: Spacing.four),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Spacing.four,
+                        ),
                         child: Row(
                           children: <Widget>[
-                            Icon(Icons.search_rounded, size: 18, color: c.search),
+                            Icon(
+                              Icons.search_rounded,
+                              size: 18,
+                              color: c.search,
+                            ),
                             const SizedBox(width: Spacing.two),
                             Expanded(
                               child: TextField(
@@ -495,16 +584,40 @@ class _SearchBarState extends State<_SearchBar> {
                                   isDense: true,
                                   border: InputBorder.none,
                                   hintText: '问一句，比如「护照放哪了」',
-                                  hintStyle: TextStyle(fontSize: 14, color: c.textMuted),
-                                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                                  hintStyle: TextStyle(
+                                    fontSize: 14,
+                                    color: c.textMuted,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    vertical: 10,
+                                  ),
                                 ),
                               ),
                             ),
-                            if (widget.controller.text.isNotEmpty)
-                              GestureDetector(
-                                onTap: widget.onClear,
-                                child: Icon(Icons.close_rounded, size: 18, color: c.textMuted),
-                              ),
+                            // 只让这一小块跟随输入变化重建，避免每敲一个字重建整页
+                            ValueListenableBuilder<TextEditingValue>(
+                              valueListenable: widget.controller,
+                              builder: (_, value, _) => value.text.isEmpty
+                                  ? const SizedBox.shrink()
+                                  : Semantics(
+                                      button: true,
+                                      label: '清除搜索',
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onTap: widget.onClear,
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(
+                                            Spacing.two,
+                                          ),
+                                          child: Icon(
+                                            Icons.close_rounded,
+                                            size: 18,
+                                            color: c.textMuted,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                            ),
                           ],
                         ),
                       ),
@@ -526,7 +639,10 @@ class _SearchBarState extends State<_SearchBar> {
                           color: c.textSecondary,
                           tooltip: '设置',
                           padding: const EdgeInsets.all(Spacing.two),
-                          constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
+                          constraints: const BoxConstraints(
+                            minWidth: 42,
+                            minHeight: 42,
+                          ),
                         ),
                       ),
                     ),
@@ -559,9 +675,12 @@ class _SearchBarState extends State<_SearchBar> {
                                   blendMode: BlendMode.dstIn,
                                   child: ListView.separated(
                                     scrollDirection: Axis.horizontal,
-                                    padding: const EdgeInsets.only(right: Spacing.two),
+                                    padding: const EdgeInsets.only(
+                                      right: Spacing.two,
+                                    ),
                                     itemCount: widget.categories.length + 2,
-                                    separatorBuilder: (_, _) => const SizedBox(width: Spacing.two),
+                                    separatorBuilder: (_, _) =>
+                                        const SizedBox(width: Spacing.two),
                                     itemBuilder: (_, i) {
                                       if (i == 0) {
                                         return FindrChip(
@@ -569,7 +688,8 @@ class _SearchBarState extends State<_SearchBar> {
                                           dense: true,
                                           canvas: true,
                                           active: widget.categoryFilter == null,
-                                          onPressed: () => widget.onCategory(null),
+                                          onPressed: () =>
+                                              widget.onCategory(null),
                                         );
                                       }
                                       if (i == widget.categories.length + 1) {
@@ -586,7 +706,11 @@ class _SearchBarState extends State<_SearchBar> {
                                         dense: true,
                                         canvas: true,
                                         active: widget.categoryFilter == cat.id,
-                                        onPressed: () => widget.onCategory(widget.categoryFilter == cat.id ? null : cat.id),
+                                        onPressed: () => widget.onCategory(
+                                          widget.categoryFilter == cat.id
+                                              ? null
+                                              : cat.id,
+                                        ),
                                       );
                                     },
                                   ),
@@ -600,12 +724,18 @@ class _SearchBarState extends State<_SearchBar> {
                                 borderRadius: BorderRadius.circular(Radii.pill),
                                 child: InkWell(
                                   onTap: () => setState(() => _expanded = true),
-                                  borderRadius: BorderRadius.circular(Radii.pill),
+                                  borderRadius: BorderRadius.circular(
+                                    Radii.pill,
+                                  ),
                                   child: Container(
                                     width: 32,
                                     height: 32,
                                     alignment: Alignment.center,
-                                    child: Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: c.textSecondary),
+                                    child: Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      size: 20,
+                                      color: c.textSecondary,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -622,20 +752,36 @@ class _SearchBarState extends State<_SearchBar> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: <Widget>[
                               Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
                                 children: <Widget>[
                                   Text(
                                     '全部分类（${widget.categories.length}）',
-                                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: c.textSecondary),
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: c.textSecondary,
+                                    ),
                                   ),
                                   GestureDetector(
-                                    onTap: () => setState(() => _expanded = false),
+                                    onTap: () =>
+                                        setState(() => _expanded = false),
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: <Widget>[
-                                        Text('收起', style: TextStyle(fontSize: 12, color: c.textMuted)),
+                                        Text(
+                                          '收起',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: c.textMuted,
+                                          ),
+                                        ),
                                         const SizedBox(width: 2),
-                                        Icon(Icons.keyboard_arrow_up_rounded, size: 18, color: c.textMuted),
+                                        Icon(
+                                          Icons.keyboard_arrow_up_rounded,
+                                          size: 18,
+                                          color: c.textMuted,
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -659,7 +805,11 @@ class _SearchBarState extends State<_SearchBar> {
                                       dense: true,
                                       canvas: true,
                                       active: widget.categoryFilter == cat.id,
-                                      onPressed: () => widget.onCategory(widget.categoryFilter == cat.id ? null : cat.id),
+                                      onPressed: () => widget.onCategory(
+                                        widget.categoryFilter == cat.id
+                                            ? null
+                                            : cat.id,
+                                      ),
                                     ),
                                   FindrChip(
                                     label: '＋ 新建分类',
@@ -681,22 +831,34 @@ class _SearchBarState extends State<_SearchBar> {
                   const SizedBox(height: Spacing.two),
                   GestureDetector(
                     onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(builder: (_) => const ProviderSettingsScreen()),
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ProviderSettingsScreen(),
+                      ),
                     ),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: Spacing.three, vertical: 7),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: Spacing.three,
+                        vertical: 7,
+                      ),
                       decoration: BoxDecoration(
                         color: c.surfaceAlt.withValues(alpha: 0.6),
                         borderRadius: BorderRadius.circular(Radii.pill),
                       ),
                       child: Row(
                         children: <Widget>[
-                          Icon(Icons.info_outline_rounded, size: 14, color: c.textMuted),
+                          Icon(
+                            Icons.info_outline_rounded,
+                            size: 14,
+                            color: c.textMuted,
+                          ),
                           const SizedBox(width: Spacing.two),
                           Expanded(
                             child: Text(
                               '还没配模型，点这里填写 →',
-                              style: TextStyle(fontSize: 11.5, color: c.textSecondary),
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: c.textSecondary,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -747,12 +909,19 @@ class _ResultsHeader extends StatelessWidget {
             children: [
               Text(
                 countText,
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textSecondary),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: c.textSecondary,
+                ),
               ),
               if (advice == null && usage != null && usage!.total > 0) ...[
                 const SizedBox(width: Spacing.two),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1.5,
+                  ),
                   decoration: BoxDecoration(
                     color: c.surfaceAlt,
                     borderRadius: BorderRadius.circular(Radii.xs),
@@ -818,7 +987,9 @@ class _AnswerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final extraColor = extraTone == NoticeTone.warn ? c.badgeConfirm : c.textSecondary;
+    final extraColor = extraTone == NoticeTone.warn
+        ? c.badgeConfirm
+        : c.textSecondary;
 
     final sTokens = searchUsage?.total ?? 0;
     final aTokens = usage?.total ?? 0;
@@ -842,11 +1013,7 @@ class _AnswerCard extends StatelessWidget {
             blurRadius: 12,
             offset: const Offset(0, 3),
           ),
-          BoxShadow(
-            color: c.shadow,
-            blurRadius: 6,
-            offset: const Offset(0, 1),
-          ),
+          BoxShadow(color: c.shadow, blurRadius: 6, offset: const Offset(0, 1)),
         ],
       ),
       padding: const EdgeInsets.all(Spacing.four),
@@ -854,7 +1021,10 @@ class _AnswerCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: Spacing.two, vertical: 2),
+            padding: const EdgeInsets.symmetric(
+              horizontal: Spacing.two,
+              vertical: 2,
+            ),
             decoration: BoxDecoration(
               color: c.record.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(Radii.xs),
@@ -877,10 +1047,16 @@ class _AnswerCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: Spacing.two),
-          Text(body, style: TextStyle(fontSize: 15, height: 1.55, color: c.text)),
+          Text(
+            body,
+            style: TextStyle(fontSize: 15, height: 1.55, color: c.text),
+          ),
           if (extra != null) ...<Widget>[
             const SizedBox(height: Spacing.two),
-            Text(extra!, style: TextStyle(fontSize: 12.5, height: 1.45, color: extraColor)),
+            Text(
+              extra!,
+              style: TextStyle(fontSize: 12.5, height: 1.45, color: extraColor),
+            ),
           ],
           if (footer != null) ...<Widget>[
             const SizedBox(height: Spacing.two),

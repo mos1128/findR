@@ -23,11 +23,17 @@ String monthDir(DateTime date) {
   return '$y$m';
 }
 
-String cardMediaDir(DateTime date, String cardId) => 'files/cards/${monthDir(date)}/$cardId';
+String cardMediaDir(DateTime date, String cardId) =>
+    'files/cards/${monthDir(date)}/$cardId';
 
 /// `files/cards/<yyyymm>/<cardId>/01.webp` —— index 从 0 起、落到文件名是 01 起
 /// （顺序即拍摄顺序）。
-String imageRelPath(DateTime date, String cardId, int index, [String ext = 'webp']) =>
+String imageRelPath(
+  DateTime date,
+  String cardId,
+  int index, [
+  String ext = 'webp',
+]) =>
     '${cardMediaDir(date, cardId)}/${(index + 1).toString().padLeft(2, '0')}.$ext';
 
 String audioRelPath(DateTime date, String cardId, [String ext = 'm4a']) =>
@@ -44,5 +50,14 @@ List<String> cardMediaPaths(MemoryCard card) {
   return paths;
 }
 
+/// 某张卡片的附件目录。附件不进 DB（详情页按目录扫描展示），
+/// 所以删卡时必须按目录整棵回收，否则文件会跟着下次备份一起被带走。
+String cardAttachmentsDir(DateTime date, String cardId) =>
+    '${cardMediaDir(date, cardId)}/attachments';
+
 /// 录音时长下限：低于这个值基本是误触。
 const int minRecordingMs = 500;
+
+/// 单次录音上限：随手记一分钟足够。再长只会放大上传与转写成本，
+/// 而多数 ASR 端点对文件大小也有硬限制。
+const int maxRecordingMs = 60 * 1000;

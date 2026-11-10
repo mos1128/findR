@@ -40,11 +40,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   /// GitHub 加速地址输入框（初值在第一次拿到运行时快照时填入，见 build）。
   final _accelCtrl = TextEditingController();
   bool _accelInited = false;
+  Timer? _accelSaveTimer;
 
   @override
   void dispose() {
+    _accelSaveTimer?.cancel();
     _accelCtrl.dispose();
     super.dispose();
+  }
+
+  /// 设置写库的统一兜底：失败要让用户知道，而不是静默留在旧值上。
+  void _guarded(void Function() write) {
+    try {
+      write();
+    } catch (e) {
+      if (mounted) _toast('没能保存：${plainError(e)}');
+    }
   }
 
   RuntimeState get _rt {
@@ -75,7 +86,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final c = FindrColors.of(ctx);
     return AlertDialog(
       backgroundColor: c.surface,
-      title: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
+      title: Text(
+        title,
+        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text),
+      ),
       content: content,
       actions: actions,
     );
@@ -94,7 +108,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: Text('确定', style: TextStyle(color: FindrColors.of(ctx).record, fontWeight: FontWeight.w600)),
+            child: Text(
+              '确定',
+              style: TextStyle(color: FindrColors.of(ctx).record, fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),
@@ -146,7 +163,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
       builder: (ctx) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.three, Spacing.four, Spacing.five),
+          padding: const EdgeInsets.fromLTRB(
+            Spacing.four,
+            Spacing.three,
+            Spacing.four,
+            Spacing.five,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -167,10 +189,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text),
               ),
               const SizedBox(height: Spacing.one),
-              Text(
-                '处理排队任务与设备自检',
-                style: TextStyle(fontSize: 12, color: c.textMuted),
-              ),
+              Text('处理排队任务与设备自检', style: TextStyle(fontSize: 12, color: c.textMuted)),
               const SizedBox(height: Spacing.four),
               FindrButton(
                 title: '推进解析队列',
@@ -227,7 +246,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        title: Text('系统信息', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
+        title: Text(
+          '系统信息',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text),
+        ),
         content: SelectableText(
           '数据库文件：\n${rt.dbPath}\n\n'
           '版本号：${_versionLabel(rt)}\n'
@@ -300,7 +322,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 Navigator.of(ctx).pop();
                 _openUrl(releasePageUrl);
               },
-              child: Text('前往下载页', style: TextStyle(color: c.record, fontWeight: FontWeight.w600)),
+              child: Text(
+                '前往下载页',
+                style: TextStyle(color: c.record, fontWeight: FontWeight.w600),
+              ),
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
@@ -362,7 +387,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  Text(name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text)),
+                  Text(
+                    name,
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.text),
+                  ),
                   const SizedBox(height: 2),
                   Text(
                     url.replaceFirst(RegExp(r'^https?://'), ''),
@@ -406,12 +434,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Scaffold(
       appBar: FindrTopBar(title: '设置'),
       body: ScreenBody.column(
-        padding: const EdgeInsets.fromLTRB(
-          Spacing.four,
-          Spacing.four,
-          Spacing.four,
-          Spacing.six,
-        ),
+        padding: const EdgeInsets.fromLTRB(Spacing.four, Spacing.four, Spacing.four, Spacing.six),
         children: <Widget>[
           // ── 模型服务 ──────────────────────────────────
           Panel(
@@ -447,17 +470,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   subtitle: '录入图片时自动解析画面与文字',
                   right: Switch(
                     value: rt.capture.visionDefault,
-                    onChanged: (v) {
+                    onChanged: (v) => _guarded(() {
                       writeCaptureSettings(
                         rt.driver,
                         CaptureSettings(
                           visionDefault: v,
-                          visionLast: rt.capture.visionLast,
                           maxAnalyzeImages: rt.capture.maxAnalyzeImages,
                         ),
                       );
-                      ref.read(runtimeProvider.notifier).refresh();
-                    },
+                      unawaited(ref.read(runtimeProvider.notifier).refresh());
+                    }),
                   ),
                 ),
                 FindrDivider(),
@@ -466,10 +488,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   subtitle: '检索时综合多条记忆，直接给答复',
                   right: Switch(
                     value: rt.search.autoAnswer,
-                    onChanged: (v) {
+                    onChanged: (v) => _guarded(() {
                       writeSearchSettings(rt.driver, SearchSettings(autoAnswer: v));
-                      ref.read(runtimeProvider.notifier).refresh();
-                    },
+                      unawaited(ref.read(runtimeProvider.notifier).refresh());
+                    }),
                   ),
                 ),
               ],
@@ -542,7 +564,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     alignment: Alignment.center,
                     child: Text(
                       'F',
-                      style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: c.recordText),
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: c.recordText,
+                      ),
                     ),
                   ),
                   title: 'Findr',
@@ -557,8 +583,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   subtitle: _busy
                       ? '正在检查…'
                       : hasUpdate
-                          ? '发现新版本 $updateTag'
-                          : '检查是否有新版本',
+                      ? '发现新版本 $updateTag'
+                      : '检查是否有新版本',
                   onTap: _busy ? null : () => _checkUpdate(rt),
                   right: _busy
                       ? SizedBox(
@@ -586,11 +612,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   title: 'GitHub 下载加速',
                   right: Switch(
                     value: accelEnabled,
-                    onChanged: (v) {
+                    onChanged: (v) => _guarded(() {
                       writeUpdateAccel(rt.driver, enabled: v, prefix: _accelCtrl.text);
                       ref.invalidate(updateAccelPrefixProvider);
                       setState(() {});
-                    },
+                    }),
                   ),
                 ),
                 if (accelEnabled)
@@ -608,8 +634,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       controller: _accelCtrl,
                       placeholder: 'https://gh-proxy.com/',
                       onChanged: (v) {
-                        writeUpdateAccel(rt.driver, enabled: true, prefix: v);
-                        ref.invalidate(updateAccelPrefixProvider);
+                        // 逐键写库没有必要：停手 400ms 后再落一次
+                        _accelSaveTimer?.cancel();
+                        _accelSaveTimer = Timer(const Duration(milliseconds: 400), () {
+                          if (!mounted) return;
+                          _guarded(() {
+                            writeUpdateAccel(rt.driver, enabled: true, prefix: v);
+                            ref.invalidate(updateAccelPrefixProvider);
+                          });
+                        });
                       },
                     ),
                   ),

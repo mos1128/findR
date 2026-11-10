@@ -38,12 +38,12 @@ class FindrApp extends StatelessWidget {
       darkTheme: buildFindrTheme(Brightness.dark),
       // 跟系统走。暗色下那套令牌是配好对儿的，不存在「深底深字」。
       themeMode: ThemeMode.system,
-      // 所有路由之上的一层：目前只有「更新下载」小图标（没在下载时它什么都不画）
-      builder: (context, child) => Stack(
-        children: <Widget>[
-          ?child,
-          const UpdateProgressPill(),
-        ],
+      // 所有路由之上的一层：目前只有「更新下载」小图标（没在下载时它什么都不画）。
+      // 同时把系统字号上限钳到 1.3×：录入坞与顶栏有大量固定高度，
+      // 2.0× 时文字会被裁掉（工具型 App 用 1.3× 是明确取舍）。
+      builder: (context, child) => MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: Stack(children: <Widget>[?child, const UpdateProgressPill()]),
       ),
       home: const MemoryStreamScreen(),
     );

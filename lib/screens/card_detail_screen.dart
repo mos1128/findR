@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../platform/app_paths.dart';
+import '../platform/media.dart';
 import '../platform/runtime.dart';
 import '../theme/tokens.dart';
 import '../ui/audio_player.dart';
@@ -25,9 +26,13 @@ import '../ui/media_view.dart';
 import 'settings/categories_screen.dart';
 
 class CardDetailScreen extends ConsumerStatefulWidget {
-  const CardDetailScreen({super.key, required this.cardId});
+  const CardDetailScreen({super.key, required this.cardId, this.changed});
 
   final String cardId;
+
+  /// 用户真的改过东西（文本、分类、位置、步骤、归档、AI 操作、删除）时置 true。
+  /// 调用方据此决定要不要重跑检索；只是打开看一眼不算改。
+  final ValueNotifier<bool>? changed;
 
   @override
   ConsumerState<CardDetailScreen> createState() => _CardDetailScreenState();
@@ -43,7 +48,15 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
 
   bool _busy = false;
   bool _editorsReady = false;
+  bool _dirtyText = false;
+  bool _staleCleanupScheduled = false;
   _ActionResult? _actionResult;
+
+  void _markChanged() => widget.changed?.value = true;
+
+  /// 输入防抖：停止打字 400ms 后落库一次。
+  /// 逐键写库会把「敲 100 个字」变成「100 次 UPDATE + 100 次整屏重建」。
+  Timer? _saveTimer;
 
   final _transcript = TextEditingController();
   final _desc = TextEditingController();
@@ -52,6 +65,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
 
   @override
   void dispose() {
+    _saveTimer?.cancel();
     _transcript.dispose();
     _desc.dispose();
     _entity.dispose();
@@ -69,19 +83,24 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     _entity.text = card.entity ?? '';
     _tags.text = (card.tags ?? const <String>[]).join('、');
 
-    // 清理历史遗留：对已经激活的正常卡片，若还残留旧的 lastError 或 retryCount，落库清除它
+    // 清理历史遗留：对已经激活的正常卡片，若还残留旧的 lastError 或 retryCount，落库清除它。
+    // ⚠️ 不能直接在 build() 里写库；等这一帧画完再写。
     if (card.status == CardStatus.active &&
         !card.needsOrganize &&
-        (card.lastError != null || card.retryCount > 0)) {
-      final rt = ref.read(runtimeProvider).value;
-      if (rt != null) {
+        (card.lastError != null || card.retryCount > 0) &&
+        !_staleCleanupScheduled) {
+      _staleCleanupScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final rt = ref.read(runtimeProvider).value;
+        if (rt == null) return;
         updateCardFields(
           rt.driver,
           widget.cardId,
           const CardPatch(lastError: null),
           DateTime.now(),
         );
-      }
+      });
     }
   }
 
@@ -89,7 +108,48 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     final rt = ref.read(runtimeProvider).value;
     if (rt == null) return;
     updateCardFields(rt.driver, widget.cardId, patch, DateTime.now());
+    _markChanged();
     setState(() => _tick++);
+  }
+
+  /// 打字期间只排一次延迟保存，不逐键写库。
+  void _scheduleSave() {
+    if (!_editorsReady) return;
+    _dirtyText = true;
+    _markChanged();
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 400), _flushEditors);
+  }
+
+  /// 立即把四个文本框写回库。离开页面、跑 AI 动作前都会调它。
+  ///
+  /// **只有真的改过文本才写**：打开卡片看一眼再返回，不应该触发一次 UPDATE。
+  void _flushEditors() {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    if (!_editorsReady || !_dirtyText) return;
+    final rt = ref.read(runtimeProvider).value;
+    if (rt == null) return;
+    try {
+      updateCardFields(
+        rt.driver,
+        widget.cardId,
+        CardPatch(
+          entity: _entity.text,
+          desc: _desc.text,
+          transcript: _transcript.text,
+          tags: _tags.text
+              .split(RegExp(r'[、,，\s]+'))
+              .map((s) => s.trim())
+              .where((s) => s.isNotEmpty)
+              .toList(),
+        ),
+        DateTime.now(),
+      );
+      _dirtyText = false;
+    } catch (_) {
+      // 写失败不打扰用户；下一次编辑或离开时会再写一遍
+    }
   }
 
   void _reload() => setState(() => _tick++);
@@ -139,11 +199,14 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
   }
 
   Future<void> _run(Future<Object?> Function(AdvanceDeps deps) body, String label) async {
+    // 先把用户刚改的文本落库：下面的 core 调用读的是库里的那份
+    _flushEditors();
     setState(() => _busy = true);
     try {
       final rt = ref.read(runtimeProvider).value;
       if (rt == null) return;
       final res = await body(requireDeps(rt));
+      _markChanged();
       _reload();
       final outcome = res is AdvanceResult ? res.outcome : null;
       if (outcome == AdvanceOutcome.retry) {
@@ -224,7 +287,21 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     if (yes != true) return;
     final rt = ref.read(runtimeProvider).value;
     if (rt == null) return;
+    _saveTimer?.cancel();
+    _dirtyText = false;
+    // 先删行，再清卡片目录与录音：附件不进 DB（详情页按目录扫描），所以整目录删一次就够，
+    // 不必再按 images 逐文件删。删失败或进程半路被杀，最多留下孤儿文件，
+    // 下次启动的媒体回收会处理。
+    final card = getCard(rt.driver, widget.cardId);
     deleteCard(rt.driver, widget.cardId);
+    if (card != null) {
+      try {
+        removeCardFiles(card);
+      } catch (_) {
+        // 删不掉就交给孤儿媒体回收
+      }
+    }
+    _markChanged();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -365,7 +442,10 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
       } catch (_) {}
     }
 
-    return Scaffold(
+    // 任何形式的离开（返回键 / 「完成」/ 系统手势）都先把文本框落库。
+    return PopScope(
+      onPopInvokedWithResult: (didPop, _) => _flushEditors(),
+      child: Scaffold(
       appBar: FindrTopBar(
         title: '卡片',
         actions: <Widget>[
@@ -872,7 +952,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   label: '实体名称（核心标识）',
                   controller: _entity,
                   placeholder: '名称，如「备用钥匙」',
-                  onChanged: (v) => _patch(CardPatch(entity: v)),
+                  onChanged: (_) => _scheduleSave(),
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(
@@ -880,22 +960,14 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   controller: _desc,
                   multiline: true,
                   placeholder: '物品的外观特征、存放细节或备忘内容',
-                  onChanged: (v) => _patch(CardPatch(desc: v)),
+                  onChanged: (_) => _scheduleSave(),
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(
                   label: '分类标签',
                   controller: _tags,
                   placeholder: '多个标签用逗号或顿号隔开',
-                  onChanged: (v) => _patch(
-                    CardPatch(
-                      tags: v
-                          .split(RegExp(r'[、,，\s]+'))
-                          .map((s) => s.trim())
-                          .where((s) => s.isNotEmpty)
-                          .toList(),
-                    ),
-                  ),
+                  onChanged: (_) => _scheduleSave(),
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(
@@ -903,7 +975,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                   controller: _transcript,
                   multiline: true,
                   placeholder: '录音识别的原始文本或手录原句',
-                  onChanged: (v) => _patch(CardPatch(transcript: v)),
+                  onChanged: (_) => _scheduleSave(),
                 ),
                 if (!showProcessingPanel &&
                     card.status == CardStatus.active &&
@@ -1011,6 +1083,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                           : CardStatus.archived,
                       DateTime.now(),
                     );
+                    _markChanged();
                     _reload();
                   },
                 ),
@@ -1024,6 +1097,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

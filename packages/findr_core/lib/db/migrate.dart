@@ -7,7 +7,11 @@ import 'schema.dart';
 /// 而该表被别的表外键引用（cards.category_id → categories），开着外键的 DROP 会触发隐式
 /// 删除并被约束拒绝。SQLite 官方的改表流程也要求先关外键、改完再开回来。
 final class _Migration {
-  const _Migration(this.name, this.statements, {this.withoutForeignKeys = false});
+  const _Migration(
+    this.name,
+    this.statements, {
+    this.withoutForeignKeys = false,
+  });
 
   /// 只用于报错定位
   final String name;
@@ -24,6 +28,7 @@ const List<_Migration> _migrations = <_Migration>[
     v2Statements,
     withoutForeignKeys: true,
   ),
+  _Migration('v3-created-index-and-fts-trigger', v3Statements),
 ];
 
 final int schemaVersion = _migrations.length;
@@ -69,9 +74,7 @@ void _runMigration(SqliteDriver db, _Migration migration) {
       // 重建期间外键是关的，这里显式查一遍，别把引用错误拖到运行期才炸
       final bad = db.prepare('PRAGMA foreign_key_check').all();
       if (bad.isNotEmpty) {
-        throw StateError(
-          '迁移后存在外键违规（${migration.name}）：${bad.length} 行',
-        );
+        throw StateError('迁移后存在外键违规（${migration.name}）：${bad.length} 行');
       }
     }
   } finally {

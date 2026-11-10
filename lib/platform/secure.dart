@@ -1,9 +1,8 @@
 /// API Key 的安全存储。
 ///
-/// Key **只进 Android Keystore / iOS Keychain**：DB 的 settings 与导出的备份都不含它
-/// 。这是机密性的第一道屏障；第二道是备份 manifest 的
-/// `settings_public` 白名单（见 core 的 `backup/manifest.dart`）——
-/// **两道都别拆，任何一道单独都不够**。
+/// Key **只进 Android Keystore / iOS Keychain**，不写进 DB 的 settings。
+/// 导出备份时由平台层把本机 Key 全量放进包的 `apiKeys` 字段（见 `backup.dart`），
+/// 导入时再写回安全存储。
 library;
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';

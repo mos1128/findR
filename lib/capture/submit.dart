@@ -25,15 +25,23 @@ final class PendingPhoto {
     this.width = 0,
     this.height = 0,
     this.compressFuture,
-  })  : rawBytes = rawBytes ?? webp ?? Uint8List(0),
-        _webp = webp;
+    this.ext = 'webp',
+  }) : _raw = rawBytes,
+       // ignore: prefer_initializing_formals
+       _webp = webp;
 
-  /// 原始选取的图片字节（用于无需等待的极速缩略图渲染，或作为后备）。
-  final Uint8List rawBytes;
+  /// 原始选取的图片字节。**压缩成功后立刻释放**（置 null）——
+  /// 否则一次选 10 张 20MB 的原图会一直常驻到提交，低端机上就是必现 OOM。
+  Uint8List? _raw;
 
   /// 已压缩编码的 WebP 字节；若后台任务仍在压缩则初始为 null。
   Uint8List? _webp;
-  Uint8List get webp => _webp ?? rawBytes;
+
+  /// 落盘扩展名。压缩成功恒为 `webp`；压缩失败退回原图时是真实格式。
+  String ext;
+
+  /// 压缩失败的原因。非 null 表示这张图**按原图保存**（用户可见的降级）。
+  String? fallbackReason;
 
   /// 后台异步压缩的任务。
   Future<void>? compressFuture;
@@ -42,15 +50,45 @@ final class PendingPhoto {
   int width;
   int height;
 
+  /// 真正要落盘的字节：压缩产物优先，否则原图。
+  Uint8List get bytes => _webp ?? _raw ?? Uint8List(0);
+
+  /// 附件条上的缩略图字节。压缩完成后只有 WebP，原图已经释放。
+  Uint8List get thumbBytes => bytes;
+
   /// 大概多少 KB，界面拿来显示「3 张 · 约 640KB」。
-  int get approxKb => ((_webp?.length ?? rawBytes.length) / 1024).round();
+  int get approxKb => (bytes.length / 1024).round();
 
   bool get isCompressed => _webp != null;
 
-  void setCompressed({required Uint8List webp, required int width, required int height}) {
+  /// 可以提交了吗：压缩成功，或者已经明确降级为原图。
+  bool get isReady => _webp != null || fallbackReason != null;
+
+  bool get isFallback => fallbackReason != null;
+
+  void setCompressed({
+    required Uint8List webp,
+    required int width,
+    required int height,
+  }) {
     _webp = webp;
+    _raw = null;
+    ext = 'webp';
+    fallbackReason = null;
     this.width = width;
     this.height = height;
+  }
+
+  /// 压缩失败 ⇒ 保留原图字节，但用**真实后缀**落盘。
+  ///
+  /// 不要在这里假装成 WebP：内容与后缀不一致会让界面渲染失败，
+  /// 还会把错误 MIME 送给视觉模型（服务端 400，卡片反复重试到永久失败）。
+  void setFallback({required String reason, required String ext}) {
+    fallbackReason = reason;
+    this.ext = ext;
+    _webp = null;
+    width = 0;
+    height = 0;
   }
 }
 
@@ -61,7 +99,8 @@ final class PendingFile {
     required this.bytes,
     this.text,
     bool? includeContent,
-  }) : includeContent = includeContent ?? (text != null && text.trim().isNotEmpty);
+  }) : includeContent =
+           includeContent ?? (text != null && text.trim().isNotEmpty);
 
   final String name;
   final Uint8List bytes;
@@ -111,17 +150,28 @@ Future<MemoryCard> persistCapture(
   // 1) 图片：路径由 core 算（`files/cards/<yyyymm>/<id>/01.webp`），顺序即拍摄顺序
   final imageRels = <String>[];
   for (var i = 0; i < input.photos.length; i++) {
-    final rel = imageRelPath(at, cardId, i);
-    writeMediaFile(rel, input.photos[i].webp);
+    final photo = input.photos[i];
+    // 压缩失败的照片用真实后缀（jpg / png / heic），别把原图冒充成 .webp
+    final rel = imageRelPath(at, cardId, i, photo.ext);
+    writeMediaFile(rel, photo.bytes);
     imageRels.add(rel);
   }
 
   // 2) 录音：从临时目录搬进来
+  //
+  // 用文件复制而不是 `readAsBytes`：30 分钟录音约 28MB，读进 Dart 堆没有任何好处。
+  // 搬运失败（临时文件被系统清掉 / 存储满）只降级为「这次没有语音」，
+  // **不能连累文字与图片一起失败**。
   String? audioRel;
   final audio = input.audio;
   if (audio != null) {
-    audioRel = audioRelPath(at, cardId);
-    writeMediaFile(audioRel, await File(audio.tempPath).readAsBytes());
+    final rel = audioRelPath(at, cardId);
+    try {
+      copyMediaFile(rel, audio.tempPath);
+      audioRel = rel;
+    } catch (_) {
+      audioRel = null;
+    }
     // 搬完就删临时文件；删不掉也无所谓（它在临时目录里，系统会清）
     try {
       final tmp = File(audio.tempPath);
@@ -133,7 +183,8 @@ Future<MemoryCard> persistCapture(
 
   // 3) 附件：存入卡片附件子目录
   for (final att in input.attachments) {
-    final attRel = 'files/cards/${monthDir(at)}/$cardId/attachments/${att.name}';
+    final attRel =
+        'files/cards/${monthDir(at)}/$cardId/attachments/${att.name}';
     writeMediaFile(attRel, att.bytes);
   }
 

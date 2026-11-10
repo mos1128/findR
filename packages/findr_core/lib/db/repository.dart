@@ -55,7 +55,13 @@ const List<String> cardColList = <String>[
 ];
 
 /// 退避序列：1min → 5min → 30min → 2h → 次日；到上限后只留手动重试 / 批量补转写。
-const List<int> retryBackoffMs = <int>[60000, 300000, 1800000, 7200000, 86400000];
+const List<int> retryBackoffMs = <int>[
+  60000,
+  300000,
+  1800000,
+  7200000,
+  86400000,
+];
 
 /// 自动重试次数上限。写成从序列长度派生，避免「加了档位忘记改上限」。
 final int maxAutoRetry = retryBackoffMs.length;
@@ -117,7 +123,9 @@ MemoryCard rowToCard(Map<String, Object?> row) => MemoryCard(
   desc: _strOrNull(row['desc_text']),
   images: parseJsonArray<String>(row['images']),
   audioPath: _strOrNull(row['audio_path']),
-  visionAnalyzed: row['vision_analyzed'] == null ? null : row['vision_analyzed'] == 1,
+  visionAnalyzed: row['vision_analyzed'] == null
+      ? null
+      : row['vision_analyzed'] == 1,
   tags: parseJsonArray<String>(row['tags']),
   confidence: (row['confidence'] as num?)?.toDouble(),
   ask: _strOrNull(row['ask']),
@@ -236,23 +244,21 @@ void applyParseResult(
   String Function() idGen = makeId,
 }) {
   db.transaction(() {
-    db
-        .prepare(_applyParseSql)
-        .run(<Object?>[
-          f.categoryId,
-          f.entity,
-          toJson(f.pathIds),
-          f.pathNames,
-          toJson(_stepsJson(f.steps)),
-          f.desc,
-          toJson(f.tags),
-          f.confidence,
-          f.ask,
-          f.pathSuggestion,
-          f.pathMatched == null ? null : (f.pathMatched! ? 1 : 0),
-          isoUtc(now),
-          id,
-        ]);
+    db.prepare(_applyParseSql).run(<Object?>[
+      f.categoryId,
+      f.entity,
+      toJson(f.pathIds),
+      f.pathNames,
+      toJson(_stepsJson(f.steps)),
+      f.desc,
+      toJson(f.tags),
+      f.confidence,
+      f.ask,
+      f.pathSuggestion,
+      f.pathMatched == null ? null : (f.pathMatched! ? 1 : 0),
+      isoUtc(now),
+      id,
+    ]);
     for (final a in f.aliases) {
       final name = a.trim();
       if (name.isEmpty) continue;
@@ -321,7 +327,9 @@ List<LocationNode> listLocations(SqliteDriver db) => db
 /// 那个按 id 冲突更新，这个靠唯一索引挡重复，是 [ensurePath] 的「有就复用」实现。
 void upsertLocation(SqliteDriver db, LocationNode node) {
   db
-      .prepare('INSERT OR IGNORE INTO locations (id, parent_id, name, sort) VALUES (?, ?, ?, ?)')
+      .prepare(
+        'INSERT OR IGNORE INTO locations (id, parent_id, name, sort) VALUES (?, ?, ?, ?)',
+      )
       .run(<Object?>[node.id, node.parentId, node.name, node.sort]);
 }
 
@@ -339,7 +347,9 @@ bool _isHanCodePoint(int cp) =>
     (cp >= 0x20000 && cp <= 0x2ebef); // 扩展 B~F
 
 bool _isAsciiAlphanumeric(int cp) =>
-    (cp >= 0x30 && cp <= 0x39) || (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a);
+    (cp >= 0x30 && cp <= 0x39) ||
+    (cp >= 0x41 && cp <= 0x5a) ||
+    (cp >= 0x61 && cp <= 0x7a);
 
 /// 只留汉字与 ASCII 字母数字，并转小写。
 ///
@@ -367,7 +377,8 @@ String? resolveCategoryId(SqliteDriver db, String name) {
   if (target.isEmpty) return null;
   for (final c in rows) {
     final n = _normalizeCategoryName(c.name);
-    if (n.isNotEmpty && (n == target || target.contains(n) || n.contains(target))) {
+    if (n.isNotEmpty &&
+        (n == target || target.contains(n) || n.contains(target))) {
       return c.id;
     }
   }
@@ -378,7 +389,10 @@ String? resolveCategoryId(SqliteDriver db, String name) {
 ///
 /// **只读、不建节点** —— 需要「匹配不到就创建」的场景请用 [ensurePath]。
 /// `parent_id IS ?`（不是 `= ?`）是为了让根节点的 null 也能参与比较。
-({List<String> ids, String namesStr})? resolvePath(SqliteDriver db, List<String> names) {
+({List<String> ids, String namesStr})? resolvePath(
+  SqliteDriver db,
+  List<String> names,
+) {
   final ids = <String>[];
   String? parent;
   for (final name in names) {
@@ -433,7 +447,10 @@ int _nextLocationSort(SqliteDriver db, String? parentId) {
   List<String> rawNames, {
   String Function() idGen = makeId,
 }) {
-  final names = rawNames.map((n) => n.trim()).where((n) => n.isNotEmpty).toList();
+  final names = rawNames
+      .map((n) => n.trim())
+      .where((n) => n.isNotEmpty)
+      .toList();
   final ids = <String>[];
   final created = <String>[];
   String? parent;
@@ -448,7 +465,12 @@ int _nextLocationSort(SqliteDriver db, String? parentId) {
     final id = idGen();
     upsertLocation(
       db,
-      LocationNode(id: id, parentId: parent, name: name, sort: _nextLocationSort(db, parent)),
+      LocationNode(
+        id: id,
+        parentId: parent,
+        name: name,
+        sort: _nextLocationSort(db, parent),
+      ),
     );
     ids.add(id);
     created.add(name);
@@ -539,16 +561,38 @@ List<MemoryCard> executeSearch(SqliteDriver db, BuiltSearch s) {
       sql += ' AND ${likeTermConds.join(' AND ')}';
       params.addAll(likeTermParams);
     }
-    addRows(db.prepare(sql).all(params), null);
+    // LIMIT 下推到 SQL：命中几千条时只物化前 N 条，而不是全读进 Dart 再截断。
+    // 排序口径与下面 Dart 侧的合并排序一致（bm25 升序、created_at 降序）。
+    addRows(
+      db.prepare('$sql ORDER BY score ASC, c.created_at DESC LIMIT ?').all(
+        <Object?>[...params, s.limit],
+      ),
+      null,
+    );
     if (s.matchMode == MatchMode.any && likeTermConds.isNotEmpty) {
       final sql2 =
           'SELECT c.* FROM cards c WHERE (${likeTermConds.join(' OR ')})$filterSql';
-      addRows(db.prepare(sql2).all(<Object?>[...likeTermParams, ...filterParams]), _likeFallbackScore);
+      addRows(
+        db.prepare('$sql2 ORDER BY c.created_at DESC LIMIT ?').all(<Object?>[
+          ...likeTermParams,
+          ...filterParams,
+          s.limit,
+        ]),
+        _likeFallbackScore,
+      );
     }
   } else if (likeTermConds.isNotEmpty) {
     final joiner = s.matchMode == MatchMode.all ? ' AND ' : ' OR ';
-    final sql = 'SELECT c.* FROM cards c WHERE (${likeTermConds.join(joiner)})$filterSql';
-    addRows(db.prepare(sql).all(<Object?>[...likeTermParams, ...filterParams]), _likeFallbackScore);
+    final sql =
+        'SELECT c.* FROM cards c WHERE (${likeTermConds.join(joiner)})$filterSql';
+    addRows(
+      db.prepare('$sql ORDER BY c.created_at DESC LIMIT ?').all(<Object?>[
+        ...likeTermParams,
+        ...filterParams,
+        s.limit,
+      ]),
+      _likeFallbackScore,
+    );
   }
 
   final sorted = hits.values.toList()
@@ -589,7 +633,9 @@ final class ListCardsOptions {
 }
 
 /// [listCards] 与 [countCards] 共用的 WHERE 构造（收成一个，不抄两遍）。
-({List<String> where, List<Object?> params}) _statusWhere(ListCardsOptions opts) {
+({List<String> where, List<Object?> params}) _statusWhere(
+  ListCardsOptions opts,
+) {
   final where = <String>[];
   final params = <Object?>[];
   final statuses = opts.statuses;
@@ -621,7 +667,10 @@ List<MemoryCard> listCards(
   return db.prepare(sql).all(params).map(rowToCard).toList();
 }
 
-int countCards(SqliteDriver db, [ListCardsOptions opts = const ListCardsOptions()]) {
+int countCards(
+  SqliteDriver db, [
+  ListCardsOptions opts = const ListCardsOptions(),
+]) {
   final w = _statusWhere(opts);
   final sql =
       'SELECT COUNT(*) AS n FROM cards'
@@ -694,7 +743,12 @@ final class CardPatch {
 }
 
 /// 按白名单更新卡片字段，恒定刷新 `updated_at`。**只写 patch 里出现的键。**
-void updateCardFields(SqliteDriver db, String id, CardPatch patch, DateTime now) {
+void updateCardFields(
+  SqliteDriver db,
+  String id,
+  CardPatch patch,
+  DateTime now,
+) {
   final sets = <String>[];
   final params = <Object?>[];
 
@@ -719,8 +773,12 @@ void updateCardFields(SqliteDriver db, String id, CardPatch patch, DateTime now)
   if (!identical(patch.images, unset)) putJson('images', patch.images);
   if (!identical(patch.tags, unset)) putJson('tags', patch.tags);
   if (!identical(patch.ask, unset)) put('ask', patch.ask);
-  if (!identical(patch.pathSuggestion, unset)) put('path_suggestion', patch.pathSuggestion);
-  if (!identical(patch.pathMatched, unset)) putTriBool('path_matched', patch.pathMatched);
+  if (!identical(patch.pathSuggestion, unset)) {
+    put('path_suggestion', patch.pathSuggestion);
+  }
+  if (!identical(patch.pathMatched, unset)) {
+    putTriBool('path_matched', patch.pathMatched);
+  }
   if (!identical(patch.lastError, unset)) {
     put('last_error', patch.lastError);
     if (patch.lastError == null) {
@@ -743,7 +801,9 @@ void updateCardFields(SqliteDriver db, String id, CardPatch patch, DateTime now)
 /// 「确认信息无误」也不改变任何数据，标记只是凭空多一个角标。分类想改随时能改。
 void markPlainCard(SqliteDriver db, String id, DateTime now) {
   db
-      .prepare("UPDATE cards SET status = 'active', desc_text = NULL, updated_at = ? WHERE id = ?")
+      .prepare(
+        "UPDATE cards SET status = 'active', desc_text = NULL, updated_at = ? WHERE id = ?",
+      )
       .run(<Object?>[isoUtc(now), id]);
 }
 
@@ -757,14 +817,21 @@ void clearNeedsOrganize(SqliteDriver db, String id, DateTime now) {
 
 void setVisionAnalyzed(SqliteDriver db, String id, bool value, DateTime now) {
   db
-      .prepare('UPDATE cards SET vision_analyzed = ?, updated_at = ? WHERE id = ?')
+      .prepare(
+        'UPDATE cards SET vision_analyzed = ?, updated_at = ? WHERE id = ?',
+      )
       .run(<Object?>[value ? 1 : 0, isoUtc(now), id]);
 }
 
-void setCardStatus(SqliteDriver db, String id, CardStatus status, DateTime now) {
-  db
-      .prepare('UPDATE cards SET status = ?, updated_at = ? WHERE id = ?')
-      .run(<Object?>[status.wire, isoUtc(now), id]);
+void setCardStatus(
+  SqliteDriver db,
+  String id,
+  CardStatus status,
+  DateTime now,
+) {
+  db.prepare('UPDATE cards SET status = ?, updated_at = ? WHERE id = ?').run(
+    <Object?>[status.wire, isoUtc(now), id],
+  );
 }
 
 /// 补文字 / 转写回填：写入 transcript 并清掉补问，同时把待转写推进到待解析。
@@ -817,7 +884,12 @@ List<MemoryCard> listQueueCards(
         'ORDER BY created_at ASC '
         'LIMIT ?',
       )
-      .all(<Object?>[...statuses.map((s) => s.wire), maxAutoRetry, isoUtc(now), limit]);
+      .all(<Object?>[
+        ...statuses.map((s) => s.wire),
+        maxAutoRetry,
+        isoUtc(now),
+        limit,
+      ]);
   return rows.map(rowToCard).toList();
 }
 

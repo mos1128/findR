@@ -15,6 +15,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 
@@ -41,10 +42,13 @@ sealed class TextFileResult {
 }
 
 final class TextFileOk extends TextFileResult {
-  const TextFileOk(this.text, this.fileName);
+  const TextFileOk(this.text, this.fileName, this.bytes);
 
   final String text;
   final String fileName;
+
+  /// 原始字节。调用方存附件时直接用它，不用再读一遍文件。
+  final Uint8List bytes;
 }
 
 final class TextFileRejected extends TextFileResult {
@@ -80,9 +84,11 @@ Future<TextFileResult> decodePlainText({
     );
   }
 
+  List<int> raw;
   String text;
   try {
-    text = utf8.decode(await readBytes());
+    raw = await readBytes();
+    text = utf8.decode(raw);
   } catch (e) {
     // 编码不对是常态（Windows 记事本存的 GBK、Excel 导出的 GB18030）
     return const TextFileRejected('不是 UTF-8 文本。另存为 UTF-8 再试。');
@@ -101,7 +107,11 @@ Future<TextFileResult> decodePlainText({
     );
   }
 
-  return TextFileOk(trimmed, name);
+  return TextFileOk(
+    trimmed,
+    name,
+    raw is Uint8List ? raw : Uint8List.fromList(raw),
+  );
 }
 
 /// 打开选择器挑一个文本文件。

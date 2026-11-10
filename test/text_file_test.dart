@@ -24,7 +24,10 @@ void main() {
           readBytes: () => _bytes('放在主卧抽屉'),
         );
         expect(res, isA<TextFileOk>());
-        expect((res as TextFileOk).text, '放在主卧抽屉');
+        final ok = res as TextFileOk;
+        expect(ok.text, '放在主卧抽屉');
+        // 原始字节随结果一起返回，调用方存附件时不用再读一遍文件
+        expect(ok.bytes, utf8.encode('放在主卧抽屉'));
       });
     }
 
