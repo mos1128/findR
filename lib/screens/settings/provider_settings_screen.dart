@@ -6,7 +6,7 @@
 /// 三条口径：
 ///
 /// 1. **Key 只写进系统密钥库**，不入 DB；支持明文/密文切换查看与修改。
-///    （要不要随备份包带走，由备份页的开关决定 —— 这里不管。）
+///    （备份是整表快照，Key 恒随包带走 —— 这里不管。）
 /// 2. **换了模型名，旧的探测结果就不再可信** —— 保存时要把 `capabilities` 丢掉。
 ///    否则界面会拿一个旧模型的结论去锁「图片分析」开关（需求 3.3 的反向误伤）。
 /// 3. **「不支持」与「没测出来」必须分开说**。后者不是否定的证据，
@@ -24,6 +24,42 @@ import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
 
 enum ProviderSlot { llm, asr }
+
+/// 常用服务商预设：只填「协议 + 地址 + 模型名」，Key 与自定义项照旧手填。
+///
+/// 模型名会随各家下线而失效 —— 这里只是省掉查文档，下面三个字段仍然可改。
+/// 智谱没有列进来：它的兼容地址是 `/api/paas/v4`，而 `resolveEndpoint` 只会补 `/v1`。
+class _Preset {
+  const _Preset(this.label, this.type, this.baseUrl, this.model);
+
+  final String label;
+  final ProviderType type;
+  final String baseUrl;
+  final String model;
+}
+
+const List<_Preset> _llmPresets = <_Preset>[
+  _Preset('DeepSeek', ProviderType.openaiCompat, 'https://api.deepseek.com', 'deepseek-flash'),
+  _Preset(
+    '通义千问',
+    ProviderType.openaiCompat,
+    'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    'qwen-plus',
+  ),
+  _Preset('Kimi', ProviderType.openaiCompat, 'https://api.moonshot.cn/v1', 'kimi-k3.1-pro'),
+  _Preset('OpenAI', ProviderType.openaiCompat, 'https://api.openai.com/v1', 'gpt-6.1-sol'),
+  _Preset('Anthropic', ProviderType.anthropic, 'https://api.anthropic.com', 'claude-sonnet-5-5'),
+];
+
+const List<_Preset> _asrPresets = <_Preset>[
+  _Preset('OpenAI', ProviderType.openaiCompat, 'https://api.openai.com/v1', 'gpt-transcribe'),
+  _Preset(
+    '硅基流动',
+    ProviderType.openaiCompat,
+    'https://api.siliconflow.cn/v1',
+    'FunAudioLLM/SenseVoiceSmall',
+  ),
+];
 
 class ProviderSettingsScreen extends ConsumerStatefulWidget {
   const ProviderSettingsScreen({
@@ -112,6 +148,17 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     }
     _probeText = null;
     setState(() {});
+  }
+
+  /// 点预设只改「协议 / 地址 / 模型名」三件事：Key 不动，填好的值也仍可手改。
+  void _applyPreset(_Preset preset) {
+    setState(() {
+      _providerType = preset.type;
+      _baseUrl.text = preset.baseUrl;
+      _model.text = preset.model;
+      _probeText = null;
+    });
+    _toast('已填入 ${preset.label} 的地址与模型名');
   }
 
   LlmSettings _buildLlm(RuntimeState rt, {bool keepCaps = true}) {
@@ -285,6 +332,26 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
+                SectionTitle(isLlm ? '常用服务商' : '常用语音识别服务'),
+                const SizedBox(height: Spacing.two),
+                Wrap(
+                  spacing: Spacing.two,
+                  runSpacing: Spacing.two,
+                  children: <Widget>[
+                    for (final preset in isLlm ? _llmPresets : _asrPresets)
+                      FindrChip(
+                        label: preset.label,
+                        dense: true,
+                        onPressed: () => _applyPreset(preset),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: Spacing.one),
+                Text(
+                  '点一下填入地址与模型名，只需再填 API Key；也可以直接手改下面的字段。',
+                  style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
+                ),
+                const SizedBox(height: Spacing.three),
                 if (isLlm) ...<Widget>[
                   const SectionTitle('协议格式'),
                   const SizedBox(height: Spacing.two),
@@ -333,9 +400,9 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                   controller: _model,
                   placeholder: isLlm
                       ? (_providerType == ProviderType.anthropic
-                          ? 'claude-3-5-sonnet-20241022'
-                          : 'gpt-4o')
-                      : 'whisper-1',
+                          ? 'claude-sonnet-5-5'
+                          : 'gpt-6.1-sol')
+                      : 'gpt-transcribe',
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(
