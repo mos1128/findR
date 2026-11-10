@@ -13,14 +13,7 @@ import 'package:http/http.dart' as http;
 import '../platform/runtime.dart';
 import '../platform/update.dart';
 
-/// 上次检查时间（epoch 毫秒）与当时发现的最新 tag。
-///
-/// **不放进 `SettingsKeys`** —— 这些是更新检查的内部状态，不是用户配置。
-/// 设置表整表进备份，导入后会跟着备份走；下一次检查会重新写入。
-const String kUpdateCheckAtKey = 'update_check_at';
-const String kUpdateLatestTagKey = 'update_latest_tag';
-
-/// GitHub 下载加速：开关与地址前缀（同样是本机偏好，不进备份）。
+/// GitHub 下载加速：开关与地址前缀（用户可见偏好，跟着设置表进备份）。
 ///
 /// 用户自己搭了加速服务的，把地址填进来即可；留空或关掉就走 GitHub 原站。
 const String kUpdateAccelEnabledKey = 'update_accel_enabled';

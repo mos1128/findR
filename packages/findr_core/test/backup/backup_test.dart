@@ -592,6 +592,25 @@ void main() {
       );
     });
 
+    test('设备本地的更新检查状态不进包，导入时保留本机值', () async {
+      final src = sourceSide();
+      setSetting(src.deps.db, kUpdateCheckAtKey, 111);
+      setSetting(src.deps.db, kUpdateLatestTagKey, 'v9.9.9');
+      final exported = await exportFrom(src);
+
+      final settings = (rawManifestOf(exported.bytes)['settings']! as Map).cast<String, Object?>();
+      expect(settings.containsKey(kUpdateCheckAtKey), isFalse);
+      expect(settings.containsKey(kUpdateLatestTagKey), isFalse);
+
+      final dst = targetSide();
+      setSetting(dst.deps.db, kUpdateCheckAtKey, 222);
+      setSetting(dst.deps.db, kUpdateLatestTagKey, 'v8.8.8');
+      await importBackup(dst.deps, exported.bytes);
+
+      expect(getSetting<int>(dst.deps.db, kUpdateCheckAtKey), 222);
+      expect(getSetting<String>(dst.deps.db, kUpdateLatestTagKey), 'v8.8.8');
+    });
+
     test('全量导入：清空本机数据与媒体后完整使用备份', () async {
       final src = sourceSide();
       final exported = await exportFrom(src);
@@ -616,6 +635,7 @@ void main() {
       dst.media.files['files/cards/202601/local-only/01.webp'] = Uint8List.fromList(
         <int>[42],
       );
+      setSetting(dst.deps.db, kUpdateCheckAtKey, 999);
 
       final r = await importBackupStream(
         dst.deps,
@@ -635,6 +655,8 @@ void main() {
         isNull,
       );
       expect(dst.media.files.keys, unorderedEquals(<String>[img, audio]));
+      // 设备本地状态不跟着全量清空
+      expect(getSetting<int>(dst.deps.db, kUpdateCheckAtKey), 999);
     });
   });
 

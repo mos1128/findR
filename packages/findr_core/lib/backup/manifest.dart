@@ -12,6 +12,7 @@ import 'dart:convert' show jsonEncode;
 import '../db/driver.dart';
 import '../db/repository.dart';
 import '../db/settings.dart';
+import '../settings.dart';
 import '../types.dart';
 import '../util/iso.dart';
 import 'format.dart';
@@ -105,7 +106,8 @@ BuiltManifest buildManifest(
       categories: _readCategories(db),
       locations: _readLocations(db),
       aliases: _readAliases(db),
-      settings: listSettings(db),
+      settings: listSettings(db)
+        ..removeWhere((key, _) => deviceLocalSettingKeys.contains(key)),
       media: const <MediaEntryMeta>[],
     ),
     mediaPaths: collectMediaPaths(cards),
@@ -431,9 +433,10 @@ void _mergeAliases(SqliteDriver db, List<BackupAlias> incoming, ReportAcc acc) {
 
 void _mergeSettings(SqliteDriver db, Map<String, Object?> incoming, ReportAcc acc) {
   // 设置项整表覆盖：不设白名单，备份里的 settings 就是本机之后的完整设置。
-  // 备份里没有的键 ⇒ 清掉并回到默认值。
-  db.exec('DELETE FROM settings');
+  // 备份里没有的键 ⇒ 清掉并回到默认值；设备本地状态保留本机值。
+  _deleteUserSettings(db);
   for (final entry in incoming.entries) {
+    if (deviceLocalSettingKeys.contains(entry.key)) continue;
     db
         .prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
         .run(<Object?>[entry.key, jsonEncode(entry.value)]);
@@ -441,7 +444,20 @@ void _mergeSettings(SqliteDriver db, Map<String, Object?> incoming, ReportAcc ac
   }
 }
 
-/// 全量导入前清空本机的用户数据（`schema_meta` 保留；`settings` 也清空，随后由备份整表写回）。
+/// 删除全部用户设置，保留 [deviceLocalSettingKeys]（更新检查时间戳等本机状态）。
+///
+/// 用原始 `SELECT key` 而不是 `listSettings()`：后者会把坏 JSON 行跳过，
+/// 那些行也必须被整表覆盖清掉。
+void _deleteUserSettings(SqliteDriver db) {
+  final rows = db.prepare('SELECT key FROM settings').all();
+  for (final row in rows) {
+    final key = row['key'].toString();
+    if (deviceLocalSettingKeys.contains(key)) continue;
+    db.prepare('DELETE FROM settings WHERE key = ?').run(<Object?>[key]);
+  }
+}
+
+/// 全量导入前清空本机的用户数据（`schema_meta` 与设备本地设置保留）。
 ///
 /// 顺序按外键依赖：别名 → 卡片 → 位置 → 分类；位置的自引用在整表删除时由 SQLite 统一检查。
 void clearAllUserData(SqliteDriver db) {
@@ -450,7 +466,7 @@ void clearAllUserData(SqliteDriver db) {
     db.exec('DELETE FROM cards');
     db.exec('DELETE FROM locations');
     db.exec('DELETE FROM categories');
-    db.exec('DELETE FROM settings');
+    _deleteUserSettings(db);
     // cards 删空后 FTS 索引理论上已被触发器清空；重建一次兜底，避免残留 rowid。
     db.exec("INSERT INTO cards_fts(cards_fts) VALUES('rebuild')");
   });

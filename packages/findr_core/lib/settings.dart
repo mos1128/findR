@@ -28,6 +28,18 @@ abstract final class SettingsKeys {
   static const String search = 'search';
 }
 
+/// 设备本地状态：**不进备份，导入时也不覆盖本机**。
+///
+/// 这两项是自动更新检查的节流时间与上次看到的 tag，用户看不到；
+/// 换机后应由本机重新检查，跟着备份走没有意义。
+const String kUpdateCheckAtKey = 'update_check_at';
+const String kUpdateLatestTagKey = 'update_latest_tag';
+
+const Set<String> deviceLocalSettingKeys = <String>{
+  kUpdateCheckAtKey,
+  kUpdateLatestTagKey,
+};
+
 /// 主模型能力探测的缓存（存在 `llm` 设置里的 `capabilities` 字段）。
 final class CapabilityCache {
   const CapabilityCache({
