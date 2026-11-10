@@ -56,7 +56,7 @@ CI 有断言。`flutter run` 正常不代表 release 包正常。
 ```
 magic "FINDR" (5 字节) + 版本 u16 (=1) + 标准 ZIP
 ```
-- 导出走 `settings_public` 白名单（**不是黑名单**），core 有 canary 断言
+- 设置项是整表快照：导出 `settings` 全部行，导入整表覆盖，不设白名单
 - API Key 全量随包带走（`apiKeys` 字段，平台层显式传入，core 只搬不读）；导入时覆盖本机同名 Key
 - 完整性全靠 ZIP 的 CRC32
 - 导出/导入都走流式：导出按块写盘；导入先校验全部成员 CRC，再逐个写入（峰值内存 = 单个媒体文件）

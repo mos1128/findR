@@ -1,13 +1,11 @@
 /// 备份（`.findrpack`）的容器与端口定义。
 ///
 /// 两条硬约束（改动前先看一遍）：
-///   1. **settings 走白名单** —— 导出侧只放 `settings_public`（见 manifest.dart），
-///      不是「过滤掉看起来像密钥的」，而是「只放白名单里的」，**方向反过来才对**。
+///   1. **settings 是整表快照** —— 导出 `settings` 表全部行，导入整表覆盖，不设白名单。
 ///   2. **core 不直接依赖任何文件实现** —— 由平台侧注入（见 [MediaStorePort]）。
 ///
-/// ⚠️ **API Key 可随包带走**：见 [BackupManifest.apiKeys]。
-/// 它**不在** settings 白名单里（白名单那条没动），而是单独一个可选字段，
-/// 由平台层在导出时显式传入 —— 这样「带不带」的开关留在界面上，core 不做默认。
+/// **API Key 随包带走**：见 [BackupManifest.apiKeys]。
+/// 它走单独字段，由平台层从安全存储读出后显式传入，不混进 `settings`。
 ///
 /// Dart 侧的两处对应关系：
 /// - 「可能同步、可能异步」的返回用 SDK 自带的 `FutureOr<T>`（`dart:async`）表达；

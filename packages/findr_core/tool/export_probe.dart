@@ -89,8 +89,8 @@ Future<void> main(List<String> argv) async {
     'providerType': 'openai-compat',
     'baseUrl': 'http://192.168.1.9:7788',
     'model': 'qwen-vl-max',
-    // ⚠️ 这行是 canary：导出**必须**把它挡在白名单/按键名剥除之外
-    'apiKey': 'sk-LEAK-CANARY-0000',
+    // settings 整表导出，这个字段也会跟着进包；真实 API Key 不走 settings
+    'apiKey': 'sk-PROBE-SETTING-0000',
   });
 
   final result = await exportBackup(BackupDeps(db: db, media: media, appVersion: 'probe'), now: at);

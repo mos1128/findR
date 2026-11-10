@@ -1,13 +1,10 @@
 /// manifest 的生成与合并。
 ///
-/// 导出侧的安全原则：
-/// settings 走**白名单** —— 只有 [SettingsKeys.all] 里列出的键可能进包，再叠一层按键名剥除，
-/// **而不是「过滤掉看起来像密钥的」**。方向反过来，才能在将来有人往 settings 里塞新东西时
-/// 默认是「不导出」而不是「导出」。API Key 本身只在系统安全存储里，压根不在 settings 表里。
+/// **设置项是整表快照**：`settings` 表里有哪几行就带走哪几行，导入时整表替换。
+/// 设置不分增量/全量，只有卡片、分类、位置、别名与媒体这些业务数据才分。
 ///
-/// ⚠️ **「备份不含 Key」这条已放开，但白名单本身没变**：
-/// Key 走 manifest 的 `apiKeys` **单独字段**（见 `types.dart`），由平台层显式传入。
-/// 所以这里**仍然不许**把 Key 混进 settings —— 两个通道分开，才能各管各的开关与风险提示。
+/// API Key 走 manifest 的 `apiKeys` **单独字段**（见 `types.dart`），
+/// 由平台层从安全存储读出后显式传入，不混进 `settings`。
 library;
 
 import 'dart:convert' show jsonEncode;
@@ -15,41 +12,10 @@ import 'dart:convert' show jsonEncode;
 import '../db/driver.dart';
 import '../db/repository.dart';
 import '../db/settings.dart';
-import '../settings.dart';
 import '../types.dart';
 import '../util/iso.dart';
 import 'format.dart';
 import 'types.dart';
-
-/// 按键名判定「看起来是机密」—— 这是白名单之外的**第二层**兜底。
-final RegExp _secretKeyPattern = RegExp(
-  r'(api[_-]?key|secret|token|password|passphrase|credential|biometric|生物锁|指纹|face)',
-  caseSensitive: false,
-);
-
-Object? _stripSecrets(Object? value) {
-  if (value is List) return value.map(_stripSecrets).toList();
-  if (value is Map) {
-    final out = <String, Object?>{};
-    for (final entry in value.entries) {
-      final key = entry.key.toString();
-      if (_secretKeyPattern.hasMatch(key)) continue;
-      out[key] = _stripSecrets(entry.value);
-    }
-    return out;
-  }
-  return value;
-}
-
-/// 供导出使用的非机密设置：**白名单键 + 深度剥除**。
-Map<String, Object?> publicSettings(SqliteDriver db) {
-  final all = listSettings(db);
-  final out = <String, Object?>{};
-  for (final key in SettingsKeys.all) {
-    if (all.containsKey(key)) out[key] = _stripSecrets(all[key]);
-  }
-  return out;
-}
 
 /// 备份范围是「**全部表**」：归档卡也要进包，否则换机后归档过的记忆会凭空消失。
 List<MemoryCard> readAllCards(SqliteDriver db) =>
@@ -139,7 +105,7 @@ BuiltManifest buildManifest(
       categories: _readCategories(db),
       locations: _readLocations(db),
       aliases: _readAliases(db),
-      settings: publicSettings(db),
+      settings: listSettings(db),
       media: const <MediaEntryMeta>[],
     ),
     mediaPaths: collectMediaPaths(cards),
@@ -192,7 +158,7 @@ final class ReportAcc {
 
 /// 合并策略：按 id 幂等 upsert、`updated_at` 新者胜、
 /// **增量导入不删除本地任何数据**、分类/位置同名冲突保留本地并把外来 id 重映射到本地 id。
-/// 设置项是例外：**全量覆盖**（白名单内的键先清后写）。
+/// 设置项是例外：**整表覆盖**（先清空 `settings`，再写备份里的全部行）。
 ///
 /// 只碰 DB；媒体文件由 `pack.dart` 在调用本函数**之前**写入磁盘。
 ImportReport mergeManifest(SqliteDriver db, BackupManifest manifest) {
@@ -464,21 +430,18 @@ void _mergeAliases(SqliteDriver db, List<BackupAlias> incoming, ReportAcc acc) {
 }
 
 void _mergeSettings(SqliteDriver db, Map<String, Object?> incoming, ReportAcc acc) {
-  // 全量覆盖：白名单内的本地设置先全部清掉，再写备份里的值。
-  // 备份里没有的键 ⇒ 回到默认值；白名单外的内部设置（更新节流等）不动。
-  for (final key in SettingsKeys.all) {
-    db.prepare('DELETE FROM settings WHERE key = ?').run(<Object?>[key]);
-  }
-  for (final key in SettingsKeys.all) {
-    if (!incoming.containsKey(key)) continue;
+  // 设置项整表覆盖：不设白名单，备份里的 settings 就是本机之后的完整设置。
+  // 备份里没有的键 ⇒ 清掉并回到默认值。
+  db.exec('DELETE FROM settings');
+  for (final entry in incoming.entries) {
     db
         .prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
-        .run(<Object?>[key, jsonEncode(incoming[key])]);
+        .run(<Object?>[entry.key, jsonEncode(entry.value)]);
     acc.settingsWritten++;
   }
 }
 
-/// 全量导入前清空本机的用户数据（schema_meta 与白名单外的内部设置保留）。
+/// 全量导入前清空本机的用户数据（`schema_meta` 保留；`settings` 也清空，随后由备份整表写回）。
 ///
 /// 顺序按外键依赖：别名 → 卡片 → 位置 → 分类；位置的自引用在整表删除时由 SQLite 统一检查。
 void clearAllUserData(SqliteDriver db) {

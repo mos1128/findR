@@ -15,8 +15,8 @@ import '../platform/update.dart';
 
 /// 上次检查时间（epoch 毫秒）与当时发现的最新 tag。
 ///
-/// **刻意不放进 `SettingsKeys.all`** —— 那是备份导出的白名单，
-/// 这两项是本机缓存，跟着备份换机没有意义。
+/// **不放进 `SettingsKeys`** —— 这些是更新检查的内部状态，不是用户配置。
+/// 设置表整表进备份，导入后会跟着备份走；下一次检查会重新写入。
 const String kUpdateCheckAtKey = 'update_check_at';
 const String kUpdateLatestTagKey = 'update_latest_tag';
 

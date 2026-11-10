@@ -6,8 +6,7 @@
 /// 两条要点（对应交接 §6.2）：
 /// - 没有额外完整性标签，完整性全靠 ZIP 每个成员的 CRC32 ⇒ 那两条「改一位/截断」
 ///   的用例就是在钉住这唯一能抓损坏的机制；
-/// - `settings` 导出走**白名单**（`SettingsKeys.all`），不是黑名单过滤 ⇒ 那条 canary
-///   用例尤其重要：文件是原样 ZIP，白名单一旦漏了就是直接泄露。
+/// - `settings` 是整表快照：所有行都进包，导入整表覆盖，不设白名单。
 library;
 
 import 'dart:convert';
@@ -304,28 +303,22 @@ void main() {
       expect(dst.media.files, isEmpty);
     });
 
-    test('settings 走白名单：白名单外的设置项绝不进包（Key 也不从这条通道漏出去）', () async {
+    test('settings 整表导出：不设白名单，所有行都进包', () async {
       final src = sourceSide();
       setSetting(src.deps.db, 'llm', <String, Object?>{
         'providerType': 'anthropic',
         'model': 'claude-opus-5',
-        'apiKey': 'sk-LEAK-CANARY-1234567890',
       });
       setSetting(src.deps.db, 'tracking_id', <String, Object?>{'installId': 'CANARY-TRACKING'});
 
       final exported = await exportFrom(src);
       final manifest = rawManifestOf(exported.bytes);
-      final dump = jsonEncode(manifest);
-
-      expect(dump.contains('sk-LEAK-CANARY-1234567890'), isFalse);
-      expect(dump.contains('CANARY-TRACKING'), isFalse);
       final settings = (manifest['settings']! as Map).cast<String, Object?>();
+
       expect(settings.containsKey('llm'), isTrue);
-      expect(settings.containsKey('tracking_id'), isFalse);
-      // 这条断言尤其重要：文件是原样 ZIP，白名单一旦漏了就是直接泄露
-      expect(containsBytes(exported.bytes, utf8Encode('sk-LEAK-CANARY-1234567890')), isFalse);
-      // Key 走 `apiKeys` 那条单独通道，**不是** settings。
-      // core 只按调用方给的搬；平台层负责把本机 Key 全量传进来。
+      expect(settings.containsKey('tracking_id'), isTrue);
+      expect(jsonEncode(settings['tracking_id']), contains('CANARY-TRACKING'));
+      // 真正的 API Key 走 `apiKeys` 单独通道，不从 settings 走。
       expect(manifest.containsKey('apiKeys'), isFalse);
     });
 
@@ -537,7 +530,7 @@ void main() {
       expect(child['parent_id'], 'local_wz');
     });
 
-    test('设置项全量覆盖：本机旧值被备份替换，白名单外的内部设置保留', () async {
+    test('设置项整表覆盖：备份里的设置全量替换本机，不设白名单', () async {
       final src = sourceSide();
       setSetting(src.deps.db, 'search', <String, Object?>{'autoAnswer': true});
       setSetting(src.deps.db, 'capture', <String, Object?>{
@@ -545,15 +538,13 @@ void main() {
         'visionLast': false,
         'maxAnalyzeImages': 6,
       });
-      // 老安装的残留：settings 表里可能还留着一行没人读的 pipeline
-      setSetting(src.deps.db, 'pipeline', <String, Object?>{'confirmThreshold': 0.9});
+      setSetting(src.deps.db, 'extra_setting', <String, Object?>{'flag': true});
       final exported = await exportFrom(src);
 
-      // 它已从 SettingsKeys 里删掉 ⇒ 掉出白名单，老残留不会被带到别人的机器上
       final settingsKeys =
           ((rawManifestOf(exported.bytes)['settings']! as Map).keys.map((k) => k.toString()).toList())
             ..sort();
-      expect(settingsKeys, <String>['capture', 'search']);
+      expect(settingsKeys, <String>['capture', 'extra_setting', 'search']);
 
       final dst = targetSide();
       setSetting(dst.deps.db, 'search', <String, Object?>{'autoAnswer': false});
@@ -561,13 +552,13 @@ void main() {
         'visionDefault': true,
         'maxAnalyzeImages': 3,
       });
-      // 白名单外的内部设置：全量覆盖设置项时不该跟着被清掉
+      // 备份里没有的本地设置：整表覆盖后必须消失
       setSetting(dst.deps.db, 'update_accel', <String, Object?>{'enabled': true});
 
       final r = await importBackup(dst.deps, exported.bytes);
 
       expect(r.report.settingsKeptLocal, 0);
-      expect(r.report.settingsWritten, 2);
+      expect(r.report.settingsWritten, 3);
       expect(
         jsonDecode(
           dst.deps.db
@@ -589,11 +580,15 @@ void main() {
       expect(
         jsonDecode(
           dst.deps.db
-                  .prepare("SELECT value FROM settings WHERE key = 'update_accel'")
+                  .prepare("SELECT value FROM settings WHERE key = 'extra_setting'")
                   .get()!['value']
               as String,
         ),
-        <String, Object?>{'enabled': true},
+        <String, Object?>{'flag': true},
+      );
+      expect(
+        dst.deps.db.prepare("SELECT value FROM settings WHERE key = 'update_accel'").get(),
+        isNull,
       );
     });
 

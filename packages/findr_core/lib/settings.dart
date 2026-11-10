@@ -1,12 +1,11 @@
 /// 设置项的**唯一权威定义**。
 ///
-/// DB 的 `settings` 表只存这里列出的非机密项；API Key 只进 SecureStore（键 `llm` / `asr`），
-/// **导出备份永不包含**。
+/// DB 的 `settings` 表存这里定义的用户设置；API Key 只进 SecureStore（键 `llm` / `asr`），
+/// 不写进 settings。备份导出时 settings 是整表快照，API Key 走 `apiKeys` 单独字段。
 ///
 /// 历史上有个 `pipeline` 键（只装「低置信确认阈值」），它连整条「待确认」功能一起删掉了。
 /// 老安装的 settings 表里会残留一行没人读的 `pipeline` JSON
-/// —— **无害，不做迁移**；它也不再进备份包（白名单里没有了），老备份包里带来的那一行
-/// 导入时照旧插进表，同样没人读。
+/// —— **无害，不做迁移**；设置表整表进备份，这行残留也会跟着走，导入时照旧插进表，没人读。
 ///
 /// ⚠️ **本节最重要的一条**：
 /// 不能「结构类型直接当类型用」，
@@ -27,16 +26,6 @@ abstract final class SettingsKeys {
   static const String asr = 'asr';
   static const String capture = 'capture';
   static const String search = 'search';
-
-  /// 全部键名 —— **备份导出的白名单就按它走**（`backup/manifest.dart` 的 `publicSettings`）。
-  ///
-  /// 全部设置键。
-  ///
-  /// ⚠️ **新增设置项时必须加进这里**：导出的方向是「只放白名单里的」，不是
-  /// 「过滤掉看起来像密钥的」—— 所以漏掉一条的后果是**不导出**，而不是泄露。
-  /// 老安装里可能还残留着已从白名单删掉的键（如 `pipeline`），
-  /// 那正是「删掉即不再外带」这条机制在起作用。
-  static const List<String> all = <String>[llm, asr, capture, search];
 }
 
 /// 主模型能力探测的缓存（存在 `llm` 设置里的 `capabilities` 字段）。
