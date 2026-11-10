@@ -9,7 +9,8 @@ import 'dart:typed_data';
 
 import 'package:findr_core/findr_core.dart';
 
-final class MemoryMedia implements MediaStorePort, StreamingMediaStore {
+final class MemoryMedia
+    implements MediaStorePort, StreamingMediaStore, ResettableMediaStore {
   MemoryMedia([Map<String, Uint8List> initial = const <String, Uint8List>{}]) {
     files.addAll(initial);
   }
@@ -38,4 +39,7 @@ final class MemoryMedia implements MediaStorePort, StreamingMediaStore {
         data.sublist(i, i + 3 > data.length ? data.length : i + 3),
     ]);
   }
+
+  @override
+  void reset() => files.clear();
 }

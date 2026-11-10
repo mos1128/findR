@@ -56,6 +56,13 @@ abstract interface class StreamingMediaStore {
   Stream<List<int>> openRead(String relPath);
 }
 
+/// 可选的「清空全部媒体」能力，全量导入用。
+///
+/// 只删媒体目录（`files/cards` / `files/audio`），不碰数据库。
+abstract interface class ResettableMediaStore {
+  FutureOr<void> reset();
+}
+
 /// ZIP 内的媒体成员索引，导入时用来校验完整性。
 final class MediaEntryMeta {
   const MediaEntryMeta({required this.path, required this.size, required this.crc32});

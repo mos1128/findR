@@ -26,7 +26,7 @@ Findr 是一款手机端个人长程记忆与检索应用。解决三类低频�
 - 🔍 **三级智能检索** - 本地字面检索（L1）→ 答案组织（L2）→ 建议裁决（L3），定位题与推理题分开处理
 - 🏷️ **动态分类** - 三个开箱即用的预设分类，可自定义增删改
 - 🌳 **位置树** - 由内容自动长出房间 → 家具 → 容器，也能手动改名、改选
-- 💾 **完整备份** - 一键导出 / 导入（含模型 API 密钥），换机数据全回来；与系统云备份互不冲突
+- 💾 **完整备份** - 一键导出 / 导入（增量合并或全量覆盖，含模型 API 密钥），换机数据全回来；与系统云备份互不冲突
 - 🔐 **模型全自配** - 支持 Anthropic / OpenAI 兼容 / OpenAI Responses（DeepSeek、通义等均可接），Key 存系统密钥库
 - 🖼️ **图片分析开关** - 图片只当附件时关掉，省 token；事后可一键补分析
 - 📱 **应用内更新** - 启动时自动检查（12 小时节流），设置入口红点提醒；Gitee / GitHub 双渠道，GitHub 可走加速（地址可在设置里自定义）、失败自动回原站；应用内下载并拉起安装界面
@@ -99,7 +99,7 @@ flutter build apk --target-platform android-arm64
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 开启 Pull Request
 
-> 代码提交前请确保 `flutter analyze` 与 `flutter test` 均通过（基线：core 303 条 + app 134 条）。
+> 代码提交前请确保 `flutter analyze` 与 `flutter test` 均通过（基线：core 304 条 + app 134 条）。
 
 ---
 

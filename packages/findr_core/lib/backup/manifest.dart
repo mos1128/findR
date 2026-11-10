@@ -191,7 +191,8 @@ final class ReportAcc {
 }
 
 /// 合并策略：按 id 幂等 upsert、`updated_at` 新者胜、
-/// **不删除本地任何数据**、分类/位置同名冲突保留本地并把外来 id 重映射到本地 id。
+/// **增量导入不删除本地任何数据**、分类/位置同名冲突保留本地并把外来 id 重映射到本地 id。
+/// 设置项是例外：**全量覆盖**（白名单内的键先清后写）。
 ///
 /// 只碰 DB；媒体文件由 `pack.dart` 在调用本函数**之前**写入磁盘。
 ImportReport mergeManifest(SqliteDriver db, BackupManifest manifest) {
@@ -446,7 +447,7 @@ void _mergeCards(
       acc.cardsInserted++;
     }
   }
-  // manifest 里没有的卡片保持原样 —— 「不删除本地任何数据」是硬约束，这里刻意什么都不做
+  // manifest 里没有的卡片保持原样 —— 增量导入「不删除本地任何数据」，这里刻意什么都不做
 }
 
 void _mergeAliases(SqliteDriver db, List<BackupAlias> incoming, ReportAcc acc) {
@@ -463,16 +464,31 @@ void _mergeAliases(SqliteDriver db, List<BackupAlias> incoming, ReportAcc acc) {
 }
 
 void _mergeSettings(SqliteDriver db, Map<String, Object?> incoming, ReportAcc acc) {
-  for (final entry in incoming.entries) {
-    // 只补本地没有的键：同一台机器上重复导入不该把用户改过的设置冲掉
-    final exists = db.prepare('SELECT key FROM settings WHERE key = ?').get(<Object?>[entry.key]);
-    if (exists != null) {
-      acc.settingsKeptLocal++;
-      continue;
-    }
+  // 全量覆盖：白名单内的本地设置先全部清掉，再写备份里的值。
+  // 备份里没有的键 ⇒ 回到默认值；白名单外的内部设置（更新节流等）不动。
+  for (final key in SettingsKeys.all) {
+    db.prepare('DELETE FROM settings WHERE key = ?').run(<Object?>[key]);
+  }
+  for (final key in SettingsKeys.all) {
+    if (!incoming.containsKey(key)) continue;
     db
         .prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
-        .run(<Object?>[entry.key, jsonEncode(entry.value)]);
+        .run(<Object?>[key, jsonEncode(incoming[key])]);
     acc.settingsWritten++;
   }
+}
+
+/// 全量导入前清空本机的用户数据（schema_meta 与白名单外的内部设置保留）。
+///
+/// 顺序按外键依赖：别名 → 卡片 → 位置 → 分类；位置的自引用在整表删除时由 SQLite 统一检查。
+void clearAllUserData(SqliteDriver db) {
+  db.transaction(() {
+    db.exec('DELETE FROM aliases');
+    db.exec('DELETE FROM cards');
+    db.exec('DELETE FROM locations');
+    db.exec('DELETE FROM categories');
+    db.exec('DELETE FROM settings');
+    // cards 删空后 FTS 索引理论上已被触发器清空；重建一次兜底，避免残留 rowid。
+    db.exec("INSERT INTO cards_fts(cards_fts) VALUES('rebuild')");
+  });
 }

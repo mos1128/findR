@@ -32,7 +32,7 @@ cd packages/findr_core && dart test          # 只测 core（快）
 bash release.sh                              # 发版
 ```
 
-**基线不许破**：core 303 条 + app 134 条，静态分析干净。
+**基线不许破**：core 304 条 + app 134 条，静态分析干净。
 
 ## 关键约束
 
@@ -60,6 +60,8 @@ magic "FINDR" (5 字节) + 版本 u16 (=1) + 标准 ZIP
 - API Key 全量随包带走（`apiKeys` 字段，平台层显式传入，core 只搬不读）；导入时覆盖本机同名 Key
 - 完整性全靠 ZIP 的 CRC32
 - 导出/导入都走流式：导出按块写盘；导入先校验全部成员 CRC，再逐个写入（峰值内存 = 单个媒体文件）
+- 导入两种模式：增量（同 id 新的胜、分类/位置重名保留本机、本地独有保留）与全量（先清空本机用户数据与媒体，再完整使用备份）
+- 设置项与 API Key 两种模式都全量覆盖：备份里没有的设置键回默认值，备份里没有的 Key 清空本机
 
 ### 数据库
 - 表：`cards` / `locations` / `categories` / `aliases` / `settings` / FTS 影子表

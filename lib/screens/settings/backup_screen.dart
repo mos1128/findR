@@ -2,7 +2,8 @@
 ///
 /// **两条硬约束，改这里之前先看一遍**：
 ///
-/// 1. 导入**不删除本地任何数据**，同 id 按 `updated_at` 新者胜；
+/// 1. **增量导入**不删除本地数据，同 id 按 `updated_at` 新者胜；
+///    **全量导入**会先清空本机全部用户数据与媒体，再完整使用备份；
 /// 2. settings 走白名单（core 侧），Key **不走** settings。
 ///
 /// **备份是全量的**：卡片、分类、位置、媒体与 API Key 一起带走，不提供开关；
@@ -37,8 +38,14 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   ExportOutcome? _exported;
   ImportResult? _imported;
 
-  /// 上一次导入恢复了几把 Key。null = 还没导入过。
-  int? _keysRestored;
+  /// 上一次导入的 Key 同步结果。null = 还没导入过 / 老包没带 Key。
+  ({int restored, int cleared})? _keyRestore;
+
+  /// 导入模式：默认增量；全量会先清空本机。
+  bool _fullImport = false;
+
+  /// 上一次实际执行的模式（用于结果摘要，避免用户事后切模式把标签改掉）。
+  bool _lastFullImport = false;
 
   /// 挑中的备份文件。**留着 `PlatformFile` 而不是只留路径** ——
   /// 从微信/云盘转存过来的文件是 `content://` 虚拟文档，真正可读的是它自己的
@@ -114,7 +121,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     setState(() {
       _note = null;
       _imported = null;
-      _keysRestored = null;
+      _keyRestore = null;
     });
     try {
       final file = await pickBackupFile();
@@ -128,24 +135,30 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   Future<void> _import() async {
     final picked = _picked;
     if (picked == null) return;
+    if (_fullImport && !await _confirmFullImport()) return;
     setState(() {
       _busy = true;
       _note = null;
-      _keysRestored = null;
+      _keyRestore = null;
+      _lastFullImport = _fullImport;
     });
     try {
-      final res = await importFromPlatformFile(_rt.driver, picked);
-      final restored = await _restoreKeys(res.apiKeys);
+      final res = await importFromPlatformFile(
+        _rt.driver,
+        picked,
+        fullReplace: _lastFullImport,
+      );
+      final keys = await _restoreKeys(res.apiKeys, fullReplace: _lastFullImport);
       if (!mounted) return;
       setState(() {
         _picked = null;
         _imported = res;
-        _keysRestored = restored;
+        _keyRestore = keys;
       });
       // 导入直接改了 DB 与安全存储，必须让运行时重读一遍，否则界面还是旧的
       await ref.read(runtimeProvider.notifier).refresh();
       if (!mounted) return;
-      _toast('备份文件已成功导入，本地数据已更新');
+      _toast(_lastFullImport ? '全量导入完成，本机数据已按备份替换' : '增量导入完成，本地数据已更新');
     } catch (e) {
       if (mounted) {
         _dialog('导入失败', '$e\n\n常见原因：不是 Findr 备份，或传输中损坏。');
@@ -153,6 +166,34 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 全量导入是不可撤销的破坏性操作，必须二次确认。
+  Future<bool> _confirmFullImport() async {
+    final c = FindrColors.of(context);
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('全量导入会清空本机数据', style: TextStyle(fontSize: 16, color: c.text)),
+        content: Text(
+          '本机现有的卡片、分类、位置、设置、媒体与 API Key 都会被清空，'
+          '然后完整使用这份备份。此操作不可撤销。',
+          style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('取消', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('清空并导入', style: TextStyle(color: c.danger)),
+          ),
+        ],
+      ),
+    );
+    return yes == true;
   }
 
   void _toast(String message) {
@@ -168,15 +209,33 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       );
   }
 
-  /// 把包里带回来的 Key 写进本机安全存储，**覆盖同名 Key**。
-  Future<int> _restoreKeys(Map<String, String> incoming) async {
-    // “备份里有哪几把就覆盖哪几把”这条规则在 platform/secure.dart 里有单测押着。
-    final plan = keysToRestore(incoming);
+  /// 把本机 Key 同步成备份里的状态：有的覆盖，没有的清空。
+  ///
+  /// [incoming] 为 null 表示老包没有 `apiKeys` 字段：增量导入不动本机 Key；
+  /// 全量导入按“备份没有”处理，清空本机 Key。
+  Future<({int restored, int cleared})?> _restoreKeys(
+    Map<String, String>? incoming, {
+    required bool fullReplace,
+  }) async {
+    final source = incoming ?? (fullReplace ? const <String, String>{} : null);
+    if (source == null) return null;
+
+    // “备份里有哪几把就覆盖哪几把、没有就清空”这条规则在 platform/secure.dart 里有单测押着。
+    final plan = keysToRestore(source);
     final store = ref.read(apiKeyStoreProvider);
+    var restored = 0;
+    var cleared = 0;
     for (final entry in plan.entries) {
-      await store.write(entry.key, entry.value);
+      final before = await store.read(entry.key);
+      if (entry.value == null) {
+        if (before != null && before.isNotEmpty) cleared++;
+        await store.write(entry.key, null);
+      } else {
+        await store.write(entry.key, entry.value);
+        restored++;
+      }
     }
-    return plan.length;
+    return (restored: restored, cleared: cleared);
   }
 
   void _dialog(String title, String body) {
@@ -266,15 +325,41 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
           // ── 导入 ─────────────────────────────────────────
           Panel(
             title: '导入',
-            hint: '不会删除本机任何东西',
+            hint: _fullImport ? '先清空本机，再完整恢复' : '保留本机，只合并备份',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Text(
-                  '同一张卡两处都改过时，保留修改时间较新的；分类与位置按名字对齐，'
-                  '未匹配则新建；媒体按路径覆盖，API Key 覆盖本机同名 Key。',
+                  '增量导入：同 id 卡片按修改时间新者胜；分类/位置重名保留本机、新名字插入；'
+                  '媒体按路径覆盖；设置与 API Key 全量覆盖。\n'
+                  '全量导入：先清空本机全部数据，再完整使用备份。',
                   style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
                 ),
+                const SizedBox(height: Spacing.three),
+                Row(
+                  children: <Widget>[
+                    FindrChip(
+                      label: '增量导入',
+                      dense: true,
+                      active: !_fullImport,
+                      onPressed: () => setState(() => _fullImport = false),
+                    ),
+                    const SizedBox(width: Spacing.two),
+                    FindrChip(
+                      label: '全量导入',
+                      dense: true,
+                      active: _fullImport,
+                      onPressed: () => setState(() => _fullImport = true),
+                    ),
+                  ],
+                ),
+                if (_fullImport) ...<Widget>[
+                  const SizedBox(height: Spacing.two),
+                  Text(
+                    '全量导入会清空本机卡片、分类、位置、设置、媒体与 API Key，再完整恢复备份。',
+                    style: TextStyle(fontSize: 11.5, height: 1.45, color: c.danger),
+                  ),
+                ],
                 const SizedBox(height: Spacing.four),
                 FindrButton(
                   title: '选择备份文件',
@@ -309,12 +394,16 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                     text: _importSummary(imported),
                   ),
                 ],
-                if (_keysRestored != null && _keysRestored! > 0) ...<Widget>[
+                if (_keyRestore != null &&
+                    (_keyRestore!.restored > 0 || _keyRestore!.cleared > 0)) ...<Widget>[
                   const SizedBox(height: Spacing.two),
                   Notice(
                     title: 'API Key',
                     tone: NoticeTone.info,
-                    text: '已恢复 $_keysRestored 把 Key，本机同名 Key 已被备份覆盖。',
+                    text: _keyRestore!.restored > 0
+                        ? '已恢复 ${_keyRestore!.restored} 把 Key'
+                            '${_keyRestore!.cleared > 0 ? '，并清空 ${_keyRestore!.cleared} 把备份里没有的 Key' : ''}。'
+                        : '已清空 ${_keyRestore!.cleared} 把备份里没有的 Key。',
                   ),
                 ],
               ],
@@ -332,11 +421,12 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   String _importSummary(ImportResult r) {
     final rep = r.report;
     final lines = <String>[
+      '模式 ${_lastFullImport ? '全量覆盖' : '增量合并'}',
       '卡片 新增 ${rep.cardsInserted} · 更新 ${rep.cardsUpdated} · 保留 ${rep.cardsKeptLocal}',
       '媒体 写入 ${rep.mediaWritten} · 覆盖 ${rep.mediaOverwritten}',
       '分类 新增 ${rep.categoriesInserted} · 保留 ${rep.categoriesKeptLocal}',
       '位置 新增 ${rep.locationsInserted} · 保留 ${rep.locationsKeptLocal}',
-      '别名 新增 ${rep.aliasesInserted} · 设置 写入 ${rep.settingsWritten} · 保留 ${rep.settingsKeptLocal}',
+      '别名 新增 ${rep.aliasesInserted} · 设置 写入 ${rep.settingsWritten}（全量覆盖）',
     ];
     if (rep.remappedCategoryRefs + rep.remappedLocationRefs > 0) {
       lines.add('按名字重对齐：分类 ${rep.remappedCategoryRefs} · 位置 ${rep.remappedLocationRefs}');

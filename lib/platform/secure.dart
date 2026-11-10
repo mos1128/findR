@@ -80,20 +80,18 @@ final class MemoryApiKeyStore implements ApiKeyStore {
   }
 }
 
-/// 导入时要写进本机的 Key：备份里带回来、且键名认识的全部算数。
+/// 导入后每个 Key 槽位应该变成什么。
 ///
-/// **全量覆盖**：本机已有的同名 Key 会被备份里的值替换。
+/// **全量覆盖**：备份里有的值直接覆盖本机；备份里没有的槽位返回 `null`，表示清空本机。
+/// 调用方对 `null` 执行删除即可。
 ///
 /// 抽成纯函数是为了这条规则能被单测押住：它写在一个 widget 里就没人测得到了。
-Map<ApiKeySlot, String> keysToRestore(Map<String, String> incoming) {
-  final out = <ApiKeySlot, String>{};
-  for (final slot in ApiKeySlot.values) {
-    final value = incoming[slot.storageKey];
-    if (value == null || value.isEmpty) continue;
-    out[slot] = value;
-  }
-  return out;
-}
+Map<ApiKeySlot, String?> keysToRestore(Map<String, String> incoming) => <ApiKeySlot, String?>{
+  for (final slot in ApiKeySlot.values)
+    slot: (incoming[slot.storageKey]?.isNotEmpty ?? false)
+        ? incoming[slot.storageKey]
+        : null,
+};
 
 /// 设置页只显示掩码（需求 3.6）。
 String maskApiKey(String? key) {

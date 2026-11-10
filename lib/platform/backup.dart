@@ -245,12 +245,17 @@ Future<File> materializeBackupFile(PlatformFile file) async {
 }
 
 /// 从本地文件流式导入。坏包在第一遍校验时就会抛，不会写任何媒体。
-Future<ImportResult> importFromFile(SqliteDriver db, File file) async {
+Future<ImportResult> importFromFile(
+  SqliteDriver db,
+  File file, {
+  bool fullReplace = false,
+}) async {
   final source = await FileBackupSource.open(file);
   try {
     return await importBackupStream(
       BackupDeps(db: db, media: const DeviceMediaStore()),
       source,
+      fullReplace: fullReplace,
     );
   } finally {
     await source.close();
@@ -260,11 +265,12 @@ Future<ImportResult> importFromFile(SqliteDriver db, File file) async {
 /// 设置页入口：平台文件 → 本地临时文件 → 流式导入 → 清理临时文件。
 Future<ImportResult> importFromPlatformFile(
   SqliteDriver db,
-  PlatformFile file,
-) async {
+  PlatformFile file, {
+  bool fullReplace = false,
+}) async {
   final local = await materializeBackupFile(file);
   try {
-    return await importFromFile(db, local);
+    return await importFromFile(db, local, fullReplace: fullReplace);
   } finally {
     try {
       if (local.existsSync()) local.deleteSync();
@@ -275,5 +281,12 @@ Future<ImportResult> importFromPlatformFile(
 }
 
 /// 从内存字节导入（测试与自检用；UI 走 [importFromPlatformFile] 的流式路径）。
-Future<ImportResult> importFromBytes(SqliteDriver db, Uint8List bytes) =>
-    importBackup(BackupDeps(db: db, media: const DeviceMediaStore()), bytes);
+Future<ImportResult> importFromBytes(
+  SqliteDriver db,
+  Uint8List bytes, {
+  bool fullReplace = false,
+}) => importBackup(
+  BackupDeps(db: db, media: const DeviceMediaStore()),
+  bytes,
+  fullReplace: fullReplace,
+);

@@ -137,9 +137,10 @@ final class DeviceMediaIo implements MediaIo {
 
 /// core 的 [MediaStorePort] 在设备端的实现（备份用）：相对路径 ↔ 沙盒里的真实文件。
 ///
-/// **不实现「删」**：备份只读不删，导入也不动本地多余媒体（设计约定「不删除本地任何数据」）。
+/// 增量导入不动本地多余媒体；全量导入会先 [reset] 清空 `files/cards` 与 `files/audio`。
 /// 这里同样不需要 `removeCardMedia` —— 那是 [DeviceMediaIo] 的事（删草稿时回收）。
-final class DeviceMediaStore implements MediaStorePort, StreamingMediaStore {
+final class DeviceMediaStore
+    implements MediaStorePort, StreamingMediaStore, ResettableMediaStore {
   const DeviceMediaStore();
 
   @override
@@ -158,4 +159,12 @@ final class DeviceMediaStore implements MediaStorePort, StreamingMediaStore {
 
   @override
   Stream<List<int>> openRead(String relPath) => AppPaths.file(relPath).openRead();
+
+  @override
+  void reset() {
+    for (final rel in <String>['files/cards', 'files/audio']) {
+      final dir = Directory(AppPaths.abs(rel));
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    }
+  }
 }

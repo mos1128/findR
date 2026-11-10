@@ -349,13 +349,13 @@ void main() {
     const llmKey = 'findr.llm.apiKey';
     const asrKey = 'findr.asr.apiKey';
 
-    test('不传 secrets 时，manifest 里压根没有 apiKeys 键；导入返回空', () async {
+    test('不传 secrets 时，manifest 里压根没有 apiKeys 键；导入返回 null', () async {
       final src = sourceSide();
       final exported = await exportBackup(src.deps, now: at);
       expect(rawManifestOf(exported.bytes).containsKey('apiKeys'), isFalse);
 
       final res = await importBackup(targetSide().deps, exported.bytes);
-      expect(res.apiKeys, isEmpty);
+      expect(res.apiKeys, isNull);
     });
 
     test('传了 secrets 才会进包，且导入能原样取回', () async {
@@ -405,11 +405,13 @@ void main() {
       final exported = await exportBackup(
         src.deps,
         now: at,
-        secrets: <String, String>{}, // 显式给空 = 不带（与 null 同义）
+        secrets: <String, String>{}, // 显式给空 = 带了这个字段，但一把都没有
       );
-      // 空 map 也写进 JSON ⇒ 导入侧拿到空 map，语义是「带了但一把都没有」
+      // 空 map 也写进 JSON ⇒ 导入侧拿到空 map（不是 null），语义是「带了但一把都没有」
       expect(rawManifestOf(exported.bytes)['apiKeys'], isEmpty);
-      expect((await importBackup(targetSide().deps, exported.bytes)).apiKeys, isEmpty);
+      final res = await importBackup(targetSide().deps, exported.bytes);
+      expect(res.apiKeys, isNotNull);
+      expect(res.apiKeys, isEmpty);
     });
   });
 
@@ -418,7 +420,7 @@ void main() {
   // ─────────────────────────────────────────────────────────────
 
   group('备份：导入合并策略', () {
-    test('不删除本地独有的数据', () async {
+    test('增量导入不删除本地独有的数据', () async {
       final exported = await exportFrom(sourceSide());
       final dst = targetSide();
       insertCard(
@@ -535,7 +537,7 @@ void main() {
       expect(child['parent_id'], 'local_wz');
     });
 
-    test('本地已有设置不被外来包冲掉，缺失的设置才会补上', () async {
+    test('设置项全量覆盖：本机旧值被备份替换，白名单外的内部设置保留', () async {
       final src = sourceSide();
       setSetting(src.deps.db, 'search', <String, Object?>{'autoAnswer': true});
       setSetting(src.deps.db, 'capture', <String, Object?>{
@@ -555,11 +557,17 @@ void main() {
 
       final dst = targetSide();
       setSetting(dst.deps.db, 'search', <String, Object?>{'autoAnswer': false});
+      setSetting(dst.deps.db, 'capture', <String, Object?>{
+        'visionDefault': true,
+        'maxAnalyzeImages': 3,
+      });
+      // 白名单外的内部设置：全量覆盖设置项时不该跟着被清掉
+      setSetting(dst.deps.db, 'update_accel', <String, Object?>{'enabled': true});
 
       final r = await importBackup(dst.deps, exported.bytes);
 
-      expect(r.report.settingsKeptLocal, 1);
-      expect(r.report.settingsWritten, 1);
+      expect(r.report.settingsKeptLocal, 0);
+      expect(r.report.settingsWritten, 2);
       expect(
         jsonDecode(
           dst.deps.db
@@ -567,7 +575,7 @@ void main() {
                   .get()!['value']
               as String,
         ),
-        <String, Object?>{'autoAnswer': false},
+        <String, Object?>{'autoAnswer': true},
       );
       expect(
         jsonDecode(
@@ -578,6 +586,60 @@ void main() {
         ),
         <String, Object?>{'visionDefault': false, 'visionLast': false, 'maxAnalyzeImages': 6},
       );
+      expect(
+        jsonDecode(
+          dst.deps.db
+                  .prepare("SELECT value FROM settings WHERE key = 'update_accel'")
+                  .get()!['value']
+              as String,
+        ),
+        <String, Object?>{'enabled': true},
+      );
+    });
+
+    test('全量导入：清空本机数据与媒体后完整使用备份', () async {
+      final src = sourceSide();
+      final exported = await exportFrom(src);
+
+      final dst = targetSide();
+      insertCard(dst.deps.db, makeCard(id: 'local-only', entity: '本机独有'));
+      upsertCategory(
+        dst.deps.db,
+        const Category(
+          id: 'local_cat',
+          name: '本机分类',
+          emoji: null,
+          description: null,
+          sort: 99,
+          isPreset: false,
+        ),
+      );
+      upsertLocationNode(
+        dst.deps.db,
+        const LocationNode(id: 'local_loc', parentId: null, name: '本机位置', sort: 99),
+      );
+      dst.media.files['files/cards/202601/local-only/01.webp'] = Uint8List.fromList(
+        <int>[42],
+      );
+
+      final r = await importBackupStream(
+        dst.deps,
+        _MemoryByteSource(exported.bytes),
+        fullReplace: true,
+      );
+
+      expect(r.report.cardsInserted, 2);
+      expect(getCard(dst.deps.db, 'local-only'), isNull);
+      expect(getCard(dst.deps.db, 'c1'), isNotNull);
+      expect(
+        dst.deps.db.prepare("SELECT id FROM categories WHERE id = 'local_cat'").get(),
+        isNull,
+      );
+      expect(
+        dst.deps.db.prepare("SELECT id FROM locations WHERE id = 'local_loc'").get(),
+        isNull,
+      );
+      expect(dst.media.files.keys, unorderedEquals(<String>[img, audio]));
     });
   });
 

@@ -210,8 +210,9 @@ final class ImportResult {
   ///
   /// ⚠️ **core 不会自己去写 Keystore** —— 那是平台层的事（core 不该依赖
   /// `flutter_secure_storage`）。这里只是把值交给调用方，写不写由界面决定。
-  /// 空 map = 这份包没带 Key。
-  final Map<String, String> apiKeys;
+  ///
+  /// `null` = 老包没有 `apiKeys` 字段；空 map = 包带了这个字段但本机一把都没配。
+  final Map<String, String>? apiKeys;
 }
 
 /// 浅层校验 + 转成强类型清单。
@@ -242,7 +243,11 @@ BackupManifest validateManifest(Object? value) {
   return BackupManifest.fromJson(m);
 }
 
-Future<ImportResult> importBackup(BackupDeps deps, Uint8List bytes) async {
+Future<ImportResult> importBackup(
+  BackupDeps deps,
+  Uint8List bytes, {
+  bool fullReplace = false,
+}) async {
   // 标识不符 / 版本不认 / 文件被截断 / 成员 CRC 不符，都会在这里就炸掉，
   // **绝不会走到写库那一步**（先 readZip 全量读出并逐个验 CRC，再动任何数据）
   final zipBytes = unpackContainer(bytes);
@@ -254,8 +259,6 @@ Future<ImportResult> importBackup(BackupDeps deps, Uint8List bytes) async {
   }
   final manifest = validateManifest(jsonDecode(utf8Decode(manifestEntry.data)));
 
-  var mediaWritten = 0;
-  var mediaOverwritten = 0;
   final mediaEntries = entries.where((e) => e.path != manifestName).toList();
   for (final e in mediaEntries) {
     // 白名单：包内成员只能是媒体目录下的相对路径。
@@ -264,6 +267,14 @@ Future<ImportResult> importBackup(BackupDeps deps, Uint8List bytes) async {
     if (!e.path.startsWith('files/')) {
       throw FormatException('备份包里有非法成员路径：${e.path}');
     }
+  }
+
+  // 全量导入：所有成员已校验完，现在才允许清空本机。
+  if (fullReplace) await _resetBeforeFullImport(deps);
+
+  var mediaWritten = 0;
+  var mediaOverwritten = 0;
+  for (final e in mediaEntries) {
     final existsFn = deps.media.exists;
     final existed = existsFn != null
         ? await existsFn(e.path)
@@ -292,8 +303,9 @@ Future<ImportResult> importBackup(BackupDeps deps, Uint8List bytes) async {
 /// 这样坏包不会写一半；峰值内存 = 单个成员（通常是最大的一张图/一段录音）。
 Future<ImportResult> importBackupStream(
   BackupDeps deps,
-  BackupByteSource source,
-) async {
+  BackupByteSource source, {
+  bool fullReplace = false,
+}) async {
   final total = await source.length();
   if (total < backupHeaderLen) {
     throw const FormatException('备份文件过短，不是有效的 .findrpack');
@@ -324,6 +336,9 @@ Future<ImportResult> importBackupStream(
   for (final e in mediaEntries) {
     await verifyZipEntry(source, e, totalLength: total);
   }
+
+  // 全量导入：所有成员已校验完，现在才允许清空本机。
+  if (fullReplace) await _resetBeforeFullImport(deps);
 
   // 第二遍：全部成员都验过了，再落盘。
   var mediaWritten = 0;
@@ -368,8 +383,23 @@ ImportResult _importResult({
     // 这正是 `media` 在 [BackupManifest] 里是 `List?` 而不是 `List` 的原因。
     media: manifest.media?.length ?? mediaEntryCount,
   ),
-  apiKeys: manifest.apiKeys ?? const <String, String>{},
+  apiKeys: manifest.apiKeys,
 );
+
+/// 全量导入：先清 DB，再清媒体。
+///
+/// 顺序是刻意的：DB 先空掉，就不会出现「卡片还在、文件已经删了」的中间态；
+/// 媒体清空失败时留下的也只是孤儿文件，下次启动的回收会处理。
+Future<void> _resetBeforeFullImport(BackupDeps deps) async {
+  final media = deps.media is ResettableMediaStore
+      ? deps.media as ResettableMediaStore
+      : null;
+  if (media == null) {
+    throw StateError('全量导入需要可清空的媒体存储');
+  }
+  clearAllUserData(deps.db);
+  await media.reset();
+}
 
 T? _firstOrNull<T>(Iterable<T> items, bool Function(T) test) {
   for (final item in items) {
