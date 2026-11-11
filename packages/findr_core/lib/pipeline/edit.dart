@@ -72,7 +72,7 @@ Future<AdvanceResult> reorganizeCard(AdvanceDeps deps, String cardId) async {
   final card = getCard(deps.db, cardId);
   if (card == null) throw StateError('卡片不存在: $cardId');
 
-  final result = await runUnderstanding(deps, card, vision: true);
+  final result = await runUnderstanding(deps, card, vision: card.visionRequested ?? true);
   final now = clock();
   final out = _toAdvanceResult(deps, cardId, result, now);
   if (out.outcome == AdvanceOutcome.activated) clearNeedsOrganize(deps.db, cardId, now);

@@ -4,9 +4,7 @@
 /// 反过来的话，中间任何一步失败都会留下一条「有记录、没素材」的卡片 ——
 /// 而这条卡片既搜不到也修不好，正是「素材永不丢失」这条红线要防的东西。
 ///
-/// 图片**在这里只写不压**：压缩在用户选图的那一刻就做完了（见 `image_compress.dart`），
-/// 交给这里的是已经压好的 WebP 字节。这样「落盘」永远是几十毫秒的事，
-/// 而不会让用户按了「存」之后盯着转圈等一组图片编码。
+/// 图片在选图后逐张后台压缩，Composer 会等待处理完成才提交；这里只负责写盘。
 library;
 
 import 'dart:io';
@@ -17,21 +15,19 @@ import 'package:findr_core/findr_core.dart';
 import '../platform/media.dart';
 import 'recorder.dart';
 
-/// 一张选取的图片（支持选图时即刻上屏，压缩完全在后台异步处理）。
+/// 一张选取的图片。处理期间只占位，压缩完成后再显示缩略图。
 final class PendingPhoto {
   PendingPhoto({
-    Uint8List? rawBytes,
     Uint8List? webp,
     this.width = 0,
     this.height = 0,
     this.compressFuture,
     this.ext = 'webp',
-  }) : _raw = rawBytes,
+  }) :
        // ignore: prefer_initializing_formals
        _webp = webp;
 
-  /// 原始选取的图片字节。**压缩成功后立刻释放**（置 null）——
-  /// 否则一次选 10 张 20MB 的原图会一直常驻到提交，低端机上就是必现 OOM。
+  /// 只有压缩失败、按原图保存时才持有原图。
   Uint8List? _raw;
 
   /// 已压缩编码的 WebP 字节；若后台任务仍在压缩则初始为 null。
@@ -83,7 +79,8 @@ final class PendingPhoto {
   ///
   /// 不要在这里假装成 WebP：内容与后缀不一致会让界面渲染失败，
   /// 还会把错误 MIME 送给视觉模型（服务端 400，卡片反复重试到永久失败）。
-  void setFallback({required String reason, required String ext}) {
+  void setFallback({required Uint8List bytes, required String reason, required String ext}) {
+    _raw = bytes;
     fallbackReason = reason;
     this.ext = ext;
     _webp = null;
@@ -123,6 +120,7 @@ final class CaptureSubmission {
     this.photos = const <PendingPhoto>[],
     this.audio,
     this.attachments = const <PendingFile>[],
+    this.vision,
   });
 
   final String? text;
@@ -133,6 +131,7 @@ final class CaptureSubmission {
 
   /// 附件文件列表。
   final List<PendingFile> attachments;
+  final bool? vision;
 }
 
 /// 落盘 + 插行，返回草稿卡。调用方拿到就可以立刻渲染，**不必等模型**。
@@ -207,6 +206,7 @@ Future<MemoryCard> persistCapture(
       text: text.isEmpty ? null : text,
       images: imageRels.isEmpty ? null : imageRels,
       audio: audioRel,
+      vision: input.vision,
     ),
     id: cardId,
     now: at,

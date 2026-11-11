@@ -116,6 +116,7 @@ final class MemoryCard {
     required this.images,
     required this.audioPath,
     required this.visionAnalyzed,
+    this.visionRequested,
     required this.tags,
     required this.confidence,
     required this.ask,
@@ -142,6 +143,9 @@ final class MemoryCard {
   final List<String>? images;
   final String? audioPath;
   final bool? visionAnalyzed;
+
+  /// 本条录入的图片分析选择。旧记录为 null，沿用调用方的默认值。
+  final bool? visionRequested;
   final List<String>? tags;
   final double? confidence;
 
@@ -178,6 +182,7 @@ final class MemoryCard {
     Object? images = unset,
     Object? audioPath = unset,
     Object? visionAnalyzed = unset,
+    Object? visionRequested = unset,
     Object? tags = unset,
     Object? confidence = unset,
     Object? ask = unset,
@@ -205,6 +210,9 @@ final class MemoryCard {
     visionAnalyzed: identical(visionAnalyzed, unset)
         ? this.visionAnalyzed
         : visionAnalyzed as bool?,
+    visionRequested: identical(visionRequested, unset)
+        ? this.visionRequested
+        : visionRequested as bool?,
     tags: identical(tags, unset) ? this.tags : tags as List<String>?,
     confidence: identical(confidence, unset) ? this.confidence : confidence as double?,
     ask: identical(ask, unset) ? this.ask : ask as String?,

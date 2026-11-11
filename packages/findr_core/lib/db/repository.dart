@@ -41,6 +41,7 @@ const List<String> cardColList = <String>[
   'images',
   'audio_path',
   'vision_analyzed',
+  'vision_requested',
   'tags',
   'confidence',
   'ask',
@@ -126,6 +127,7 @@ MemoryCard rowToCard(Map<String, Object?> row) => MemoryCard(
   visionAnalyzed: row['vision_analyzed'] == null
       ? null
       : row['vision_analyzed'] == 1,
+  visionRequested: row['vision_requested'] == null ? null : row['vision_requested'] == 1,
   tags: parseJsonArray<String>(row['tags']),
   confidence: (row['confidence'] as num?)?.toDouble(),
   ask: _strOrNull(row['ask']),
@@ -154,6 +156,7 @@ List<Object?> _cardValues(MemoryCard card) => <Object?>[
   toJson(card.images),
   card.audioPath,
   card.visionAnalyzed == null ? null : (card.visionAnalyzed! ? 1 : 0),
+  card.visionRequested == null ? null : (card.visionRequested! ? 1 : 0),
   toJson(card.tags),
   card.confidence,
   card.ask,

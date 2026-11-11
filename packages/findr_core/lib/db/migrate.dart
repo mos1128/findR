@@ -29,6 +29,7 @@ const List<_Migration> _migrations = <_Migration>[
     withoutForeignKeys: true,
   ),
   _Migration('v3-created-index-and-fts-trigger', v3Statements),
+  _Migration('v4-card-vision-choice', v4Statements),
 ];
 
 final int schemaVersion = _migrations.length;

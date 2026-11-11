@@ -12,9 +12,24 @@ import 'package:findr_app/capture/composer.dart';
 import 'package:findr_app/platform/app_paths.dart';
 import 'package:findr_app/theme/tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 
 late Directory _root;
+const _pickerChannel = MethodChannel('plugins.flutter.io/image_picker');
+
+Future<void> _selectPhotos(WidgetTester tester, List<String> paths) async {
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+    _pickerChannel,
+    (call) async => call.method == 'pickMultiImage' ? paths : null,
+  );
+  await tester.tap(find.byTooltip('添加素材'));
+  await tester.pumpAndSettle();
+  await tester.runAsync(() => tester.tap(find.text('图片')));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+}
 
 Future<void> _pump(
   WidgetTester tester,
@@ -36,6 +51,10 @@ void main() {
   });
 
   tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      _pickerChannel,
+      null,
+    );
     AppPaths.resetForTest();
     try {
       if (_root.existsSync()) _root.deleteSync(recursive: true);
@@ -43,6 +62,54 @@ void main() {
       // Windows 上偶发句柄未释放，不影响结论
     }
   });
+
+  testWidgets('超量提示在读取原图之前出现', (tester) async {
+    await _pump(tester, (_) async => false);
+    // 路径尚不可读：若提前读取，这里会显示读图失败而非张数提示。
+    await _selectPhotos(tester, List.generate(13, (i) => '${_root.path}/unread-$i.jpg'));
+    expect(find.text('图片有点多'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  for (final missing in [false, true]) {
+    testWidgets('逐张处理后提交：${missing ? '排除读取失败的附件' : '压缩失败仍保留原图'}', (tester) async {
+      final first = File('${_root.path}/first.png')
+        ..writeAsBytesSync(img.encodePng(img.Image(width: 8, height: 8)));
+      final second = File('${_root.path}/second.jpg');
+      final raw = <int>[0xff, 0xd8, 0xff, 0xe0, 1, 2, 3];
+      if (!missing) second.writeAsBytesSync(raw);
+      final submitted = Completer<ComposerPayload>();
+      await _pump(tester, (payload) async {
+        submitted.complete(payload);
+        return false;
+      });
+      await _selectPhotos(tester, [first.path, second.path]);
+      await tester.runAsync(() => tester.tap(find.text('存')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('确认存入'));
+      for (var i = 0; i < 500 && !submitted.isCompleted; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump();
+      }
+      expect(submitted.isCompleted, isTrue);
+      final payload = await submitted.future;
+      expect(payload.photos, hasLength(missing ? 1 : 2));
+      expect(payload.photos.first.isCompressed, isTrue);
+      if (!missing) {
+        expect(payload.photos.last.isFallback, isTrue);
+        expect(payload.photos.last.ext, 'jpg');
+        expect(payload.photos.last.bytes, raw);
+      }
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+    });
+  }
 
   testWidgets('落盘失败：内容保留，能直接重试；成功后才清空', (tester) async {
     var ok = false;

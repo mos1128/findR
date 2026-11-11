@@ -53,8 +53,7 @@ void resetQueueLockForTest() => _running = false;
 
 /// 跑一轮队列。
 ///
-/// [vision] 是本次队列统一使用的图片分析开关
-///（录入时的选择会即时传递，恢复运行时用设置里的默认值）。
+/// [vision] 只作为旧记录未保存图片分析选择时的默认值。
 Future<QueueRunResult> runQueue(AdvanceDeps deps, {bool? vision, int? max}) async {
   const empty = QueueRunResult(
     processed: 0,

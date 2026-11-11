@@ -181,6 +181,23 @@ void main() {
   // ─────────────────────────────────────────────────────────────
 
   group('备份：round-trip', () {
+    test('导出导入保留每条记录的图片分析选择，旧备份缺少该字段时留空', () async {
+      for (final vision in [false, true]) {
+        final src = sourceSide();
+        final dst = targetSide();
+        addTearDown(src.deps.db.close);
+        addTearDown(dst.deps.db.close);
+        final card = getCard(src.deps.db, 'c1')!.copyWith(visionRequested: vision);
+        upsertCard(src.deps.db, card);
+        final exported = await exportFrom(src);
+        await importBackup(dst.deps, exported.bytes);
+        expect(getCard(dst.deps.db, 'c1')!.visionRequested, vision);
+
+        final oldJson = cardToJson(card)..remove('visionRequested');
+        expect(cardFromJson(oldJson).visionRequested, isNull);
+      }
+    });
+
     test('导出再导入后，卡片/分类/位置/别名与媒体文件都一致', () async {
       final src = sourceSide();
       final exported = await exportFrom(src);

@@ -95,6 +95,18 @@ void main() {
   });
 
   group('文件真的落到了 core 算出来的相对路径上', () {
+    test('每条录入的图片分析选择随卡片一起落盘', () async {
+      final db = openAndMigrateDb();
+      addTearDown(db.close);
+      for (final vision in [false, true]) {
+        final card = await persistCapture(
+          db,
+          CaptureSubmission(text: '护照', photos: [_photo(8)], vision: vision),
+        );
+        expect(getCard(db, card.id)!.visionRequested, vision);
+      }
+    });
+
     test('图片按顺序落成 01 / 02，卡片里存的是相对路径', () async {
       final db = openAndMigrateDb();
       final now = DateTime(2026, 9, 22, 10, 30);
@@ -138,8 +150,8 @@ void main() {
     test('压缩失败退回原图：用真实后缀落盘，不冒充 .webp', () async {
       final db = openAndMigrateDb();
       final raw = Uint8List.fromList(<int>[0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]);
-      final photo = PendingPhoto(rawBytes: raw)
-        ..setFallback(reason: 'HEIC 暂时读不了', ext: 'jpg');
+      final photo = PendingPhoto()
+        ..setFallback(bytes: raw, reason: 'HEIC 暂时读不了', ext: 'jpg');
       final card = await persistCapture(
         db,
         CaptureSubmission(photos: <PendingPhoto>[photo]),

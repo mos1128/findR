@@ -11,6 +11,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:findr_core/findr_core.dart';
@@ -484,6 +485,71 @@ void main() {
   // 队列
   // ─────────────────────────────────────────────────────────────
 
+  for (final vision in [false, true]) {
+    test('本次图片分析=$vision：调用失败、关闭数据库、重试后仍按该条记录的选择执行', () async {
+      resetQueueLockForTest();
+      final root = Directory.systemTemp.createTempSync('findr_vision_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final path = '${root.path}/memory.sqlite';
+      var db = Sqlite3Driver.open(path);
+      addTearDown(() => db.close());
+      migrate(db);
+      createDraft(
+        db,
+        CaptureInput(
+          source: SourceKind.photo,
+          text: '护照在抽屉里',
+          images: ['passport.webp'],
+          vision: vision,
+        ),
+        id: 'choice',
+        now: clockNow,
+      );
+      final failing = FakeLlmAdapter();
+      await runQueue(
+        deps(db: db, llm: failing),
+        vision: !vision,
+      );
+      expect(failing.requests.single.parts.whereType<ImagePart>().length, vision ? 1 : 0);
+
+      db.close();
+      db = Sqlite3Driver.open(path);
+      migrate(db);
+      final retryAt = DateTime.parse(getCard(db, 'choice')!.nextRetryAt!)
+          .add(const Duration(seconds: 1));
+      final success = FakeLlmAdapter([p1()]);
+      await runQueue(
+        AdvanceDeps(db: db, llm: success, cfg: cfG, media: stubMediaIo, now: () => retryAt),
+        vision: !vision,
+      );
+      expect(success.requests.single.parts.whereType<ImagePart>().length, vision ? 1 : 0);
+      expect(getCard(db, 'choice')!.visionRequested, vision);
+      expect(getCard(db, 'choice')!.visionAnalyzed, vision);
+    });
+  }
+
+  test('同一轮队列按各条记录自己的图片分析选择处理', () async {
+    resetQueueLockForTest();
+    final db = makeDb();
+    addTearDown(db.close);
+    for (final vision in [false, true]) {
+      createDraft(
+        db,
+        CaptureInput(
+          source: SourceKind.photo,
+          text: '护照',
+          images: ['$vision.webp'],
+          vision: vision,
+        ),
+        id: '$vision',
+        now: clockNow.add(Duration(seconds: vision ? 1 : 0)),
+      );
+    }
+    final llm = FakeLlmAdapter([p1(), p1()]);
+    await runQueue(deps(db: db, llm: llm), vision: true);
+    expect(llm.requests.map((r) => r.parts.whereType<ImagePart>().length), [0, 1]);
+  });
+
   test('队列串行推进多张草稿', () async {
     resetQueueLockForTest();
     final db = makeDb();
@@ -614,6 +680,26 @@ void main() {
     expect(r.outcome, AdvanceOutcome.activated);
     expect(getCard(db, 'c1')!.needsOrganize, false);
     expect(getCard(db, 'c1')!.entity, '备用手电筒');
+  });
+
+  test('重新整理保留不分析图片的选择，主动补分析仍可发送图片', () async {
+    final db = makeDb();
+    addTearDown(db.close);
+    createDraft(
+      db,
+      const CaptureInput(
+        source: SourceKind.photo,
+        text: '护照',
+        images: ['passport.webp'],
+        vision: false,
+      ),
+      id: 'choice',
+    );
+    final llm = FakeLlmAdapter([p1(), p1()]);
+    await reorganizeCard(deps(db: db, llm: llm), 'choice');
+    expect(llm.requests[0].parts.whereType<ImagePart>(), isEmpty);
+    await reanalyzeCard(deps(db: db, llm: llm), 'choice');
+    expect(llm.requests[1].parts.whereType<ImagePart>(), hasLength(1));
   });
 
   test('重新整理再次失败时待整理标志保持不动（不能只清标志留下空卡）', () async {

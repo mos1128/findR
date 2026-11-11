@@ -13,9 +13,7 @@
 ///    写成 `if (has != _canSubmit) setState(...)` 会静默失效，因为 `_canSubmit`
 ///    读的就是同一个 controller，新旧值永远相等，`setState` 一次都不触发。
 ///    （这个 bug 被 `test/memory_stream_test.dart` 抓过。）
-/// 2. **图片在「选中的那一刻」就压好**，不是等到按「存」。
-///    压一张 1600px 要几百毫秒，攒到按「存」时再压，用户会盯着一个转圈怀疑是不是卡了。
-///    代价是选图后要等一小会儿 —— 所以那段时间有明确的「正在处理 2/5」。
+/// 2. 图片选中后逐张读取并在后台压缩，处理期间附件条显示占位，避免整批原图常驻内存。
 /// 3. **录音按键用裸指针事件**（`Listener`），不是 `onLongPress`。
 ///    语义等价于「按下即录、松开即结束」：
 ///    太短由 [shouldDiscardRecording] 判为误触丢掉，**不弹窗、不生成空卡**。
@@ -26,6 +24,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../platform/app_paths.dart';
 import '../theme/tokens.dart';
@@ -268,48 +267,49 @@ class _ComposerState extends State<Composer> {
 
   // ── 加素材 ──────────────────────────────────────────────
 
-  /// 把用户刚拿到的一批原图逐张压成 WebP。
-  ///
-  /// **真的一张一张来**：解码 + 缩放是 CPU 密集的，一张 20MP 的图解码后
-  /// 光 RGBA 就约 80MB；同时开 8 个 isolate 是低端机必现的 OOM。
-  /// 压缩成功后 [PendingPhoto] 会立刻释放原图字节（见 `submit.dart`）。
-  Future<void> _addRawPhotos(List<RawPhoto> raws) async {
-    if (raws.isEmpty) return;
-    final limitHint = overImageLimitHint(_photos.length + raws.length);
+  Future<void> _addPhotos(List<XFile> files) async {
+    if (files.isEmpty || !mounted) return;
+    final limitHint = overImageLimitHint(_photos.length + files.length);
+    if (limitHint != null) {
+      await _alert('图片有点多', limitHint);
+      if (!mounted) return;
+    }
 
     setState(() {
       _expanded = false;
-      for (final raw in raws) {
-        final bytes = raw.bytes;
-        if (bytes == null) continue;
-        final photo = PendingPhoto(rawBytes: bytes);
+      for (final file in files) {
+        final photo = PendingPhoto();
         _photos.add(photo);
-        final task = _compressChain.then((_) => _compressOne(photo, raw));
+        final task = _compressChain.then((_) => _compressOne(photo, file));
         // 链不能因为一张图失败而断掉；失败已经在 `_compressOne` 里降级成「原图」。
         _compressChain = task.catchError((Object _) {});
         photo.compressFuture = task;
       }
     });
     _refreshCanSubmit();
-
-    if (limitHint != null && mounted) {
-      // 需求 5.1：超过软阈值只提示，不做硬截断
-      await _alert('图片有点多', limitHint);
-    }
   }
 
-  Future<void> _compressOne(PendingPhoto photo, RawPhoto raw) async {
-    final source = raw.bytes;
-    if (source == null) return;
+  Future<void> _compressOne(PendingPhoto photo, XFile file) async {
+    if (!mounted || !_photos.contains(photo)) return;
+    final Uint8List source;
+    try {
+      source = await readPhoto(file);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _photos.remove(photo));
+        _refreshCanSubmit();
+        _toast('$e');
+      }
+      return;
+    }
+    if (!mounted || !_photos.contains(photo)) return;
     CompressResult result;
     try {
       result = await compute(compressToWebp, source);
     } catch (e) {
       result = CompressFailed('压缩失败：$e');
     }
-    // 这一张已经压完（或失败退原图），原图字节不再需要让 RawPhoto 继续持有
-    raw.release();
-    if (!mounted) return;
+    if (!mounted || !_photos.contains(photo)) return;
     switch (result) {
       case CompressOk():
         photo.setCompressed(
@@ -320,7 +320,7 @@ class _ComposerState extends State<Composer> {
       case CompressFailed(:final reason):
         // 退原图，但用真实后缀落盘。假装成 .webp 会让图片永久打不开、
         // 还会把错误 MIME 送给视觉模型。
-        photo.setFallback(reason: reason, ext: originalImageExt(source));
+        photo.setFallback(bytes: source, reason: reason, ext: originalImageExt(source));
         if (!_fallbackToastShown) {
           _fallbackToastShown = true;
           _toast('有图片没能压缩，已按原图保存');
@@ -333,7 +333,7 @@ class _ComposerState extends State<Composer> {
     setState(() => _expanded = false);
     try {
       final one = await takePhoto();
-      if (one != null) await _addRawPhotos(<RawPhoto>[one]);
+      if (one != null) await _addPhotos(<XFile>[one]);
     } on PickError catch (e) {
       await _alert('没能拍照', e.message);
     } catch (e) {
@@ -344,7 +344,7 @@ class _ComposerState extends State<Composer> {
   Future<void> _openLibrary() async {
     setState(() => _expanded = false);
     try {
-      await _addRawPhotos(await pickPhotos());
+      await _addPhotos(await pickPhotos());
     } on PickError catch (e) {
       await _alert('打不开相册', e.message);
     } catch (e) {
@@ -510,6 +510,10 @@ class _ComposerState extends State<Composer> {
       // 确保所有图片的后台异步压缩已完成（失败的那张已经降级成原图）。
       for (final p in photos) {
         if (!p.isReady) await p.compressFuture;
+      }
+      photos.removeWhere((p) => !p.isReady);
+      if (photos.isEmpty && audio == null && text.isEmpty && _files.isEmpty) {
+        return;
       }
 
       final ok = await widget.onSubmit(
@@ -904,15 +908,26 @@ class _AttachStrip extends StatelessWidget {
             return _AttachTile(
               leading: ClipRRect(
                 borderRadius: BorderRadius.circular(Radii.pill),
-                child: Image.memory(
-                  p.thumbBytes,
-                  cacheWidth: 64,
-                  cacheHeight: 64,
-                  width: 24,
-                  height: 24,
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                ),
+                child: !p.isReady
+                    ? SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: Padding(
+                          padding: const EdgeInsets.all(5),
+                          child: CircularProgressIndicator(strokeWidth: 1.5, color: c.textMuted),
+                        ),
+                      )
+                    : Image.memory(
+                        p.thumbBytes,
+                        cacheWidth: 64,
+                        cacheHeight: 64,
+                        width: 24,
+                        height: 24,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, _, _) =>
+                            Icon(Icons.image_outlined, size: 24, color: c.textMuted),
+                      ),
               ),
               label: p.isFallback
                   ? '图片 ${i + 1}（原图）'

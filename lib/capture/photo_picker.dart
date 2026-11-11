@@ -19,24 +19,6 @@ import 'dart:typed_data';
 
 import 'package:image_picker/image_picker.dart';
 
-/// 一张刚选/拍到的原图（**还没压缩**）。
-final class RawPhoto {
-  RawPhoto({required Uint8List bytes, required this.name})
-    // ignore: prefer_initializing_formals
-    : _bytes = bytes;
-
-  Uint8List? _bytes;
-
-  /// 原图字节。**压缩完立刻 [release]** —— 一次选十几张时，
-  /// 每张 20MB 的原图同时驻留就是低端机 OOM 的直接原因。
-  Uint8List? get bytes => _bytes;
-
-  /// 用于报错时点名（系统相机的产物常常没有有意义的名字，那也没关系）。
-  final String name;
-
-  void release() => _bytes = null;
-}
-
 /// 读进来之前就挡住的单张上限。比 `image_compress.dart` 的 [maxSourceBytes] 更严一档，
 /// 目的是**别把它读进内存之后再拒绝** —— 那一下已经是几十 MB 了。
 const int maxPickBytes = 24 * 1024 * 1024;
@@ -54,25 +36,19 @@ final class PickError implements Exception {
 final ImagePicker _picker = ImagePicker();
 
 /// 用系统相机拍一张。用户取消返回 null。
-Future<RawPhoto?> takePhoto() async {
-  final file = await _picker.pickImage(
+Future<XFile?> takePhoto() => _picker.pickImage(
     source: ImageSource.camera,
     // ⚠️ **不要传 imageQuality**：插件自带的压缩会先把图有损重编一遍，
     // 我们再压一次就是二压，画质白丢。压缩只由我们这一层做（`image_compress.dart`）。
     imageQuality: null,
   );
-  if (file == null) return null;
-  return _readOne(file);
-}
 
 /// 从相册选，**不限张数**（需求 173：流程备忘常要 5~8 张截图）。用户取消返回空表。
-Future<List<RawPhoto>> pickPhotos() async {
-  final files = await _picker.pickMultiImage(imageQuality: null);
-  if (files.isEmpty) return const <RawPhoto>[];
-  return <RawPhoto>[for (final f in files) await _readOne(f)];
-}
+Future<List<XFile>> pickPhotos() => _picker.pickMultiImage(imageQuality: null);
 
-Future<RawPhoto> _readOne(XFile file) async {
+/// 只在这张图轮到压缩时读取，选图阶段仅保留文件引用。
+Future<Uint8List> readPhoto(XFile file) async {
+  try {
   final length = await file.length();
   if (length > maxPickBytes) {
     throw PickError(
@@ -80,8 +56,9 @@ Future<RawPhoto> _readOne(XFile file) async {
       '超过了单张 ${maxPickBytes ~/ (1024 * 1024)}MB 的上限。',
     );
   }
-  try {
-    return RawPhoto(bytes: await file.readAsBytes(), name: _shortName(file.name));
+    return await file.readAsBytes();
+  } on PickError {
+    rethrow;
   } catch (e) {
     // 微信 / 云盘转存来的 `content://` 虚拟文档常常拿不到可读流 —— 这是真实存在的一类，
     // 所以给它一句明确的话，而不是把底层异常原样抛给用户

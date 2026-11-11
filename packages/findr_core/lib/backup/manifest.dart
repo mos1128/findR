@@ -320,6 +320,7 @@ MemoryCard _copyCard(
   images: c.images,
   audioPath: c.audioPath,
   visionAnalyzed: c.visionAnalyzed,
+  visionRequested: c.visionRequested,
   tags: c.tags,
   confidence: c.confidence,
   ask: c.ask,

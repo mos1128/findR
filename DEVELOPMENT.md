@@ -67,6 +67,7 @@ magic "FINDR" (5 字节) + 版本 u16 (=1) + 标准 ZIP
 - 表：`cards` / `locations` / `categories` / `aliases` / `settings` / FTS 影子表
 - DDL 在 `findr_core/lib/db/schema.dart`，逐条 exec
 - **SQLite 删列必须重建整张表** → 退役功能优先保留列、只摘读写
+- `cards.vision_requested` 保存每条录入的图片分析选择，队列与重试优先使用它；旧卡片为 NULL 时才使用设置默认值，主动「补分析图片」仍可带图。
 
 ### 检索三级
 1. **L1 本地**：P2 查询理解 → 本地 FTS5/LIKE，0 结果逐级放宽（去 category → 去 path/time → all 转 any）

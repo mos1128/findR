@@ -256,6 +256,9 @@ const List<String> v3Statements = <String>[
 END''',
 ];
 
+/// v4：保存每条录入的图片分析选择；旧卡片留空，继续使用原有默认值。
+const List<String> v4Statements = <String>['ALTER TABLE cards ADD COLUMN vision_requested INTEGER'];
+
 /// 预设分类，只在首次建库时写入，避免删掉的预设分类重启复活。
 ///
 /// 分类不绑定结构类型 —— 三个预设与「东西 / 待办 / 流程」这三类日常记忆对应，

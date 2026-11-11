@@ -91,7 +91,7 @@ final class AdvanceDeps {
 }
 
 final class CaptureInput {
-  const CaptureInput({required this.source, this.text, this.images, this.audio});
+  const CaptureInput({required this.source, this.text, this.images, this.audio, this.vision});
 
   final SourceKind source;
 
@@ -103,6 +103,7 @@ final class CaptureInput {
 
   /// 已落盘的音频相对路径。
   final String? audio;
+  final bool? vision;
 }
 
 /// 落盘之后的第一步：插入草稿卡。**纯数据库操作、不碰网络**，
@@ -139,6 +140,7 @@ MemoryCard createDraft(
     audioPath: input.audio,
     // 有图即视为「尚未成功分析过」；成功后由理解步骤置 1，无图恒为 null
     visionAnalyzed: images != null ? false : null,
+    visionRequested: images != null ? input.vision : null,
     tags: null,
     confidence: null,
     ask: null,
@@ -369,7 +371,7 @@ Future<AdvanceResult> advanceCard(
   // ── 第二步：理解 ──────────────────────────────────────────
   UnderstandingResult result;
   try {
-    result = await runUnderstanding(deps, card, vision: vision ?? true);
+    result = await runUnderstanding(deps, card, vision: card.visionRequested ?? vision ?? true);
   } catch (e) {
     final error = _messageOf(e);
     markRetry(deps.db, cardId, error, clock());

@@ -163,15 +163,15 @@ BuiltDeps buildAdvanceDeps(RuntimeState rt) {
   );
 }
 
-/// 本次队列统一使用的图片分析开关。
+/// 新录入的图片分析默认值，也用于没有保存选择的旧记录。
 bool currentVision(RuntimeState rt) =>
     effectiveVision(rt.capture, visionSupported(rt.llm));
 
 /// 跑一次解析队列。返回 `null` 表示「配置不全，跳过了」，界面照提示即可。
-Future<QueueRunResult?> runQueueNow(RuntimeState rt, {bool? vision}) async {
+Future<QueueRunResult?> runQueueNow(RuntimeState rt) async {
   final built = buildAdvanceDeps(rt);
   if (built is! DepsReady) return null;
-  return runQueue(built.deps, vision: vision ?? currentVision(rt));
+  return runQueue(built.deps, vision: currentVision(rt));
 }
 
 /// 单卡操作（编辑闭环）用：拿不到可用配置就直接抛，调用方负责提示。

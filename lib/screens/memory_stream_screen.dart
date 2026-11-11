@@ -147,6 +147,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
           photos: payload.photos,
           audio: payload.audio,
           attachments: payload.attachments,
+          vision: payload.vision,
         ),
       );
     } catch (e) {
@@ -158,16 +159,15 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     // 录入后重搜一次：新卡可能命中当前检索，列表与结果才不打架。
     await ref.read(memoryStreamProvider.notifier).reload(reSearch: true);
     // 队列要跑模型调用，几秒到几十秒；**不能让录入条一直转**，所以放后台。
-    // 本次弹窗里选的图片分析开关直接传给这一轮队列，不写回设置。
-    unawaited(_advanceAfterSubmit(vision: payload.vision));
+    unawaited(_advanceAfterSubmit());
     return true;
   }
 
-  Future<void> _advanceAfterSubmit({bool? vision}) async {
+  Future<void> _advanceAfterSubmit() async {
     try {
       // 重读运行时：设置可能刚变过，`rt.capture` 还是旧快照
       await ref.read(runtimeProvider.notifier).refresh();
-      await ref.read(memoryStreamProvider.notifier).drainQueue(vision: vision);
+      await ref.read(memoryStreamProvider.notifier).drainQueue();
     } catch (_) {
       // 同上：失败只是留在「待解析」，素材没丢
     }

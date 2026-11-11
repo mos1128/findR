@@ -9,9 +9,7 @@
 //   - 触发器跟着重建，之后新插入的行也能被搜到；
 //   - PRAGMA foreign_keys 被恢复成 ON（v2 临时关过）。
 //
-// 造数据与断言都走仓储（`insertCard` / `getCard` / `listCategories` / `listLocations`）
-// —— 这样「**仓储写入的列名与 v1 的 DDL 对得上**」这件事由这条路径本身押着。
-// 只有两处必须手写 SQL，各自注明了原因（都是「那一列已经从仓储的列清单里摘掉了」）。
+// 旧数据按冻结的 v1 列名直接写入；迁移后用当前仓储读取，避免新增列反过来改变旧库样本。
 
 import 'package:findr_core/findr_core.dart';
 import 'package:test/test.dart';
@@ -34,26 +32,12 @@ SqliteDriver makeV1Db() {
     ('l1', NULL, '主卧', 0), ('l2', 'l1', '衣柜', 1)''',
   );
 
-  // c1 走仓储写入：仓储的列清单必须是 v1 表的子集，且 JSON 编码要能被 v1 的列直接存下
-  insertCard(
-    db,
-    makeCard(
-      id: 'c1',
-      entity: '备用手电筒',
-      categoryId: 'cat_item',
-      pathIds: <String>['l1', 'l2'],
-      pathNames: '主卧/衣柜',
-      tags: <String>['应急', '备用'],
-      transcript: '备用手电筒放主卧衣柜顶层',
-      desc: '备用手电筒放在主卧衣柜顶层收纳盒里。',
-      images: <String>['files/cards/202609/c1/01.webp'],
-      visionAnalyzed: true,
-      confidence: 0.86,
-      source: SourceKind.photo,
-      createdAt: '2026-09-01T00:00:00.000Z',
-      updatedAt: '2026-09-01T00:00:00.000Z',
-    ),
-  );
+  db.exec(r'''INSERT INTO cards (id, status, category_id, entity, path_ids, path_names, tags,
+       transcript, desc_text, images, vision_analyzed, confidence, source, created_at, updated_at)
+     VALUES ('c1', 'active', 'cat_item', '备用手电筒', '["l1","l2"]', '主卧/衣柜', '["应急","备用"]',
+       '备用手电筒放主卧衣柜顶层', '备用手电筒放在主卧衣柜顶层收纳盒里。',
+       '["files/cards/202609/c1/01.webp"]', 1, 0.86, 'photo',
+       '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')''');
 
   // 【手写 SQL 之一】把「要删的列」全部填满：迁移后这些值应当整体消失，而不是被搬到别处。
   // 只能手写 —— 这些列已经从仓储的列清单里摘掉了，而这正是被测的事实本身。
@@ -89,6 +73,29 @@ SqliteDriver makeV1Db() {
 }
 
 void main() {
+  test('v3 升级后保留旧卡片，图片分析选择留空供旧默认值兜底', () {
+    final db = Sqlite3Driver.openInMemory();
+    addTearDown(db.close);
+    for (final statement in [...schemaV1Statements, ...v2Statements, ...v3Statements]) {
+      db.exec(statement);
+    }
+    db.exec('CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    db.exec("INSERT INTO schema_meta VALUES ('schema_version', '3')");
+    db.exec(
+      "INSERT INTO cards (id, status, transcript, created_at, updated_at) "
+      "VALUES ('old', 'pending', '护照在抽屉里', '2026-11-01', '2026-11-01')",
+    );
+
+    migrate(db);
+    migrate(db);
+
+    expect(columnsOf(db, 'cards'), contains('vision_requested'));
+    final row = db.prepare("SELECT * FROM cards WHERE id = 'old'").get()!;
+    expect(row['vision_requested'], isNull);
+    expect(row['transcript'], '护照在抽屉里');
+    expect(_ftsIds(db, '护照在'), ['old']);
+  });
+
   test('v1 → v2：列真的没了，该留的数据一列不漏', () {
     final db = makeV1Db();
     addTearDown(db.close);

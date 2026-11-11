@@ -382,9 +382,9 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
   /// 推进入库队列（回前台 / 录完一条之后）。
   ///
   /// 只重读列表，不重跑检索（`reload` 的 `reSearch` 默认 false）—— 见 [reload]。
-  Future<QueueRunResult?> drainQueue({bool? vision}) async {
+  Future<QueueRunResult?> drainQueue() async {
     final rt = _rt;
-    final res = await runQueueNow(rt, vision: vision);
+    final res = await runQueueNow(rt);
     await reload();
     return res;
   }
