@@ -43,10 +43,9 @@ android {
     }
 
     defaultConfig {
-        // 改 applicationId 等于换一个 App 身份：老安装的数据目录碰不到、
-        // 用户得重装。**没有迁移方案之前别动这一行。**
-        // namespace 保持 com.findr.findr_app（那是代码包名，与 App 身份无关，别动）。
-        applicationId = "com.findr.app.dev"
+        // 正式包名。上架商店后不可修改；换包名等于换一个 App 身份，
+        // 老安装无法覆盖升级。namespace 保持 com.findr.findr_app（那是代码包名，与 App 身份无关）。
+        applicationId = "com.findr.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

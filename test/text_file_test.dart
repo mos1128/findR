@@ -55,21 +55,36 @@ void main() {
     });
   });
 
-  group('8000 字上限：超限必须拒绝，绝不静默截断', () {
-    test('正好 8000 字放行', () async {
+  group('$maxPlainTextChars 字上限：超限必须拒绝，绝不静默截断', () {
+    test('正好 $maxPlainTextChars 字放行', () async {
       final text = '字' * maxPlainTextChars;
       final res = await decodePlainText(name: 'a.txt', readBytes: () => _bytes(text));
       expect(res, isA<TextFileOk>());
       expect((res as TextFileOk).text.length, maxPlainTextChars);
     });
 
-    test('8001 字拒绝，且告知实际字数（不返回被截断的 8000 字）', () async {
+    test('${maxPlainTextChars + 1} 字拒绝，且告知实际字数（不返回被截断的 $maxPlainTextChars 字）', () async {
       final text = '字' * (maxPlainTextChars + 1);
       final res = await decodePlainText(name: 'a.txt', readBytes: () => _bytes(text));
       expect(res, isA<TextFileRejected>());
       final msg = (res as TextFileRejected).message;
       expect(msg, contains('${maxPlainTextChars + 1} 字'));
       expect(msg, contains('$maxPlainTextChars'));
+    });
+  });
+
+  group('读盘前的前置上限（不把大文件读进内存）', () {
+    test('超过 maxPlainTextBytes 拒绝，并说明实际大小', () {
+      final msg = plainTextSizeRejection('huge.log', maxPlainTextBytes + 1);
+      expect(msg, isNotNull);
+      expect(msg, contains('huge.log'));
+      expect(msg, contains('KB'));
+      expect(msg, contains('$maxPlainTextChars'));
+    });
+
+    test('不超过上限 / 大小未知时放行', () {
+      expect(plainTextSizeRejection('a.txt', maxPlainTextBytes), isNull);
+      expect(plainTextSizeRejection('a.txt', null), isNull);
     });
   });
 

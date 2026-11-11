@@ -10,11 +10,13 @@
 /// 它必须活在所有路由之上（下载从设置页发起，用户随即去干别的），所以挂这里而不是 `home`。
 library;
 
+import 'package:findr_core/findr_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'platform/app_paths.dart';
+import 'platform/runtime.dart';
 import 'screens/memory_stream_screen.dart';
 import 'theme/tokens.dart';
 import 'ui/update_pill.dart';
@@ -27,11 +29,15 @@ Future<void> main() async {
   runApp(const ProviderScope(child: FindrApp()));
 }
 
-class FindrApp extends StatelessWidget {
+class FindrApp extends ConsumerWidget {
   const FindrApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 运行时还没加载好时按「跟随系统」—— 这也是加主题设置之前的行为。
+    final appearance =
+        ref.watch(runtimeProvider).value?.appearance ??
+        defaultAppearanceSettings;
     return MaterialApp(
       title: 'findR',
       debugShowCheckedModeBanner: false,
@@ -42,8 +48,12 @@ class FindrApp extends StatelessWidget {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: buildFindrTheme(Brightness.light),
       darkTheme: buildFindrTheme(Brightness.dark),
-      // 跟系统走。暗色下那套令牌是配好对儿的，不存在「深底深字」。
-      themeMode: ThemeMode.system,
+      // 用户在「设置 → 外观」里选：跟随系统 / 亮色 / 暗色。
+      themeMode: switch (appearance.themeMode) {
+        ThemeModePreference.dark => ThemeMode.dark,
+        ThemeModePreference.light => ThemeMode.light,
+        ThemeModePreference.system => ThemeMode.system,
+      },
       // 所有路由之上的一层：目前只有「更新下载」小图标（没在下载时它什么都不画）。
       // 同时把系统字号上限钳到 1.3×：录入坞与顶栏有大量固定高度，
       // 2.0× 时文字会被裁掉（工具型 App 用 1.3× 是明确取舍）。

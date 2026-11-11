@@ -8,4 +8,7 @@
 
     <!-- 启动窗口底色（res/drawable/launch_background.xml 引用） -->
     <color name="launch_background">@color/brand_paper</color>
+
+    <!-- 深色启动屏底色（Android 12+ 的 values-night-v31 引用），与 App 深色底一致 -->
+    <color name="launch_background_dark">#121212</color>
 </resources>

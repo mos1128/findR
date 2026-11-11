@@ -8,7 +8,7 @@ import 'package:findr_core/findr_core.dart';
 
 import 'app_paths.dart';
 
-/// 库文件名（applicationId 是 `com.findr.app.dev`）。
+/// 库文件名（applicationId 是 `com.findr.app`）。
 /// **改名等于把用户已有的库撇在一边**（沙盒里会新开一个空库），没有迁移方案之前别动。
 const String dbFileName = 'findr.sqlite';
 

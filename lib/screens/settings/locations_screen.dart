@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../platform/runtime.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
+import '../../ui/runtime_fallback.dart';
 
 class LocationsScreen extends ConsumerStatefulWidget {
   const LocationsScreen({super.key});
@@ -130,7 +131,18 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
   void _rename(String id) {
     final name = _renameText.text.trim();
     if (name.isEmpty) return;
-    renameLocation(_rt.driver, id, name);
+    try {
+      renameLocation(_rt.driver, id, name);
+    } catch (e) {
+      // 同一父节点下重名会撞唯一索引 idx_locations_parent_name。
+      // 不能让它冒到 onTap 外面 —— release 下表现为「点了保存没反应」。
+      _toast(
+        e.toString().contains('UNIQUE')
+            ? '「$name」在这个层级下已经存在了。'
+            : '改名失败：$e',
+      );
+      return;
+    }
     // ⚠️ 改名后同步卡片的冗余位置串，否则按旧名/新名都搜不到
     final changed = refreshPathNames(_rt.driver, DateTime.now());
     _renameText.clear();
@@ -180,9 +192,10 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final rt = ref.watch(runtimeProvider).value;
+    final runtimeState = ref.watch(runtimeProvider);
+    final rt = runtimeState.value;
     if (rt == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return RuntimeFallback(title: '位置树', state: runtimeState);
     }
     final all = listLocations(rt.driver);
     final byId = <String, LocationNode>{for (final l in all) l.id: l};

@@ -22,6 +22,7 @@ import '../../platform/runtime.dart';
 import '../../platform/secure.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
+import '../../ui/runtime_fallback.dart';
 
 enum ProviderSlot { llm, asr }
 
@@ -86,6 +87,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
   String? _probeText;
   bool _loaded = false;
   bool _obscureKey = true;
+  bool _presetsExpanded = false;
 
   @override
   void initState() {
@@ -147,6 +149,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
       _apiKey.text = rt.asrKey ?? '';
     }
     _probeText = null;
+    _presetsExpanded = false;
     setState(() {});
   }
 
@@ -159,6 +162,121 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
       _probeText = null;
     });
     _toast('已填入 ${preset.label} 的地址与模型名');
+  }
+
+  /// 常用服务商：默认单行横向滑动（右侧渐隐提示还有更多），可展开成多行。
+  /// 与记忆流顶部的分类栏是同一套交互。
+  Widget _buildPresetRail(List<_Preset> presets, FindrColors c) {
+    if (_presetsExpanded) {
+      return Container(
+        decoration: BoxDecoration(
+          color: c.surfaceSunken,
+          borderRadius: BorderRadius.circular(Radii.md),
+        ),
+        padding: const EdgeInsets.all(Spacing.three),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: <Widget>[
+                Text(
+                  '全部服务商（${presets.length}）',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: c.textSecondary,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => setState(() => _presetsExpanded = false),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text('收起', style: TextStyle(fontSize: 12, color: c.textMuted)),
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.keyboard_arrow_up_rounded,
+                        size: 18,
+                        color: c.textMuted,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: Spacing.two),
+            Wrap(
+              spacing: Spacing.two,
+              runSpacing: Spacing.two,
+              children: <Widget>[
+                for (final preset in presets)
+                  FindrChip(
+                    label: preset.label,
+                    dense: true,
+                    onPressed: () => _applyPreset(preset),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: SizedBox(
+            height: 32,
+            child: ShaderMask(
+              shaderCallback: (Rect bounds) {
+                return const LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: <Color>[Colors.white, Colors.white, Colors.transparent],
+                  stops: <double>[0.0, 0.88, 1.0],
+                ).createShader(bounds);
+              },
+              blendMode: BlendMode.dstIn,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(right: Spacing.two),
+                itemCount: presets.length,
+                separatorBuilder: (_, _) => const SizedBox(width: Spacing.two),
+                itemBuilder: (_, i) {
+                  final preset = presets[i];
+                  return FindrChip(
+                    label: preset.label,
+                    dense: true,
+                    onPressed: () => _applyPreset(preset),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+        if (presets.length > 3) ...<Widget>[
+          const SizedBox(width: Spacing.two),
+          Material(
+            color: c.surfaceAlt,
+            borderRadius: BorderRadius.circular(Radii.pill),
+            child: InkWell(
+              onTap: () => setState(() => _presetsExpanded = true),
+              borderRadius: BorderRadius.circular(Radii.pill),
+              child: Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 20,
+                  color: c.textSecondary,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   LlmSettings _buildLlm(RuntimeState rt, {bool keepCaps = true}) {
@@ -280,16 +398,20 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
 
   @override
   Widget build(BuildContext context) {
-    final rt = ref.watch(runtimeProvider).value;
+    final runtimeState = ref.watch(runtimeProvider);
+    final rt = runtimeState.value;
     if (rt == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return RuntimeFallback(
+        title: _slot == ProviderSlot.llm ? '主模型 (LLM)' : '语音识别配置',
+        state: runtimeState,
+      );
     }
     _fillOnce(rt);
     final c = FindrColors.of(context);
     final isLlm = _slot == ProviderSlot.llm;
 
     return Scaffold(
-      appBar: FindrTopBar(title: isLlm ? '主模型配置' : '语音识别配置'),
+      appBar: FindrTopBar(title: isLlm ? '主模型 (LLM)' : '语音识别配置'),
       body: ScreenBody.column(
         padding: const EdgeInsets.fromLTRB(
           Spacing.four,
@@ -306,7 +428,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                 Row(
                   children: <Widget>[
                     FindrChip(
-                      label: '主语言与多模态模型',
+                      label: '主模型 (LLM)',
                       active: isLlm,
                       onPressed: () => _switchSlot(ProviderSlot.llm),
                     ),
@@ -334,18 +456,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
               children: <Widget>[
                 SectionTitle(isLlm ? '常用服务商' : '常用语音识别服务'),
                 const SizedBox(height: Spacing.two),
-                Wrap(
-                  spacing: Spacing.two,
-                  runSpacing: Spacing.two,
-                  children: <Widget>[
-                    for (final preset in isLlm ? _llmPresets : _asrPresets)
-                      FindrChip(
-                        label: preset.label,
-                        dense: true,
-                        onPressed: () => _applyPreset(preset),
-                      ),
-                  ],
-                ),
+                _buildPresetRail(isLlm ? _llmPresets : _asrPresets, c),
                 const SizedBox(height: Spacing.one),
                 Text(
                   '点一下填入地址与模型名，只需再填 API Key；也可以直接手改下面的字段。',

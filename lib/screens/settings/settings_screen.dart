@@ -498,6 +498,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
 
+          // ── 外观 ──────────────────────────────────────
+          Panel(
+            title: '外观',
+            child: Wrap(
+              spacing: Spacing.two,
+              runSpacing: Spacing.two,
+              children: <Widget>[
+                for (final mode in ThemeModePreference.values)
+                  FindrChip(
+                    label: mode.label,
+                    dense: true,
+                    active: rt.appearance.themeMode == mode,
+                    onPressed: () => _guarded(() {
+                      writeAppearanceSettings(
+                        rt.driver,
+                        AppearanceSettings(themeMode: mode),
+                      );
+                      unawaited(ref.read(runtimeProvider.notifier).refresh());
+                    }),
+                  ),
+              ],
+            ),
+          ),
+
           // ── 空间与分类 ──────────────────────────────────
           Panel(
             title: '空间与分类',

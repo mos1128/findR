@@ -28,6 +28,7 @@ final class RuntimeState {
     required this.asr,
     required this.capture,
     required this.search,
+    required this.appearance,
     required this.llmKey,
     required this.asrKey,
     required this.version,
@@ -45,6 +46,9 @@ final class RuntimeState {
 
   final CaptureSettings capture;
   final SearchSettings search;
+
+  /// 主题模式：跟随系统 / 亮色 / 暗色。
+  final AppearanceSettings appearance;
 
   /// Key 只在内存里过一手，**从不进 DB**。
   final String? llmKey;
@@ -68,6 +72,7 @@ final class RuntimeState {
     asr: asr,
     capture: capture,
     search: search,
+    appearance: appearance,
     llmKey: llmKey,
     asrKey: asrKey,
     version: value,
@@ -82,25 +87,6 @@ Future<RuntimeState> openRuntime({
   String? version,
   String? buildNumber,
 }) async {
-  // 数据库平滑升级与分类规范化
-  try {
-    // 升级旧预设：流程备忘 改为 流程记录
-    db
-        .prepare(
-          "UPDATE categories SET name = '流程记录', description = '怎么做的步骤、流程与材料' "
-          "WHERE id = 'cat_procedure' AND name = '流程备忘'",
-        )
-        .run();
-    // 插入新增的预设分类：备忘事项
-    db
-        .prepare(
-          "INSERT OR IGNORE INTO categories (id, name, emoji, description, sort, is_preset) "
-          "VALUES ('cat_memo', '备忘事项', NULL, '出行提醒、日常琐事、待办与生活备忘', 3, 1)",
-        )
-        .run();
-    // 清理分类历史残留的 emoji
-    db.prepare('UPDATE categories SET emoji = NULL WHERE emoji IS NOT NULL').run();
-  } catch (_) {}
   final llmKey = await keys.read(ApiKeySlot.llm);
   final asrKey = await keys.read(ApiKeySlot.asr);
   return RuntimeState(
@@ -110,6 +96,7 @@ Future<RuntimeState> openRuntime({
     asr: readAsrSettings(db),
     capture: readCaptureSettings(db),
     search: readSearchSettings(db),
+    appearance: readAppearanceSettings(db),
     llmKey: llmKey,
     asrKey: asrKey,
     version: version,
@@ -272,12 +259,12 @@ final class RuntimeNotifier extends AsyncNotifier<RuntimeState> {
 
   /// 重读设置与 Key。保存设置、导入备份之后调它。
   Future<RuntimeState?> refresh() async {
+    // ⚠️ Riverpod 3 的 `AsyncValue.value` 是可空的（旧版的 `valueOrNull` 已删）；
+    // 同时 `copyWithPrevious` 被标成包内 API，别用 —— 这里不需要它，
+    // 因为刷新过程中界面读的是旧的 `AsyncData`（我们不主动切到 loading，
+    // 免得保存一下设置整页就闪成转圈）。
+    final prev = state.value;
     try {
-      // ⚠️ Riverpod 3 的 `AsyncValue.value` 是可空的（旧版的 `valueOrNull` 已删）；
-      // 同时 `copyWithPrevious` 被标成包内 API，别用 —— 这里不需要它，
-      // 因为刷新过程中界面读的是旧的 `AsyncData`（我们不主动切到 loading，
-      // 免得保存一下设置整页就闪成转圈）。
-      final prev = state.value;
       final next = await openRuntime(
         db: ref.read(dbProvider),
         keys: ref.read(apiKeyStoreProvider),
@@ -289,7 +276,12 @@ final class RuntimeNotifier extends AsyncNotifier<RuntimeState> {
       if (next.version == null) unawaited(_fillVersion(next));
       return next;
     } catch (e, st) {
-      state = AsyncError<RuntimeState>(e, st);
+      // 刷新失败不该把上一份可用快照一起丢掉 —— 界面会读不到 rt，
+      // 表现为所有设置页永久转圈。首次加载失败（prev == null）才进错误态，
+      // 由设置页的 RuntimeFallback 提供重试。
+      if (prev == null) {
+        state = AsyncError<RuntimeState>(e, st);
+      }
       return null;
     }
   }

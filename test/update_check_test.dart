@@ -58,7 +58,9 @@ void main() {
     final calls = <String>[];
     final client = MockClient((req) async {
       calls.add(req.url.toString());
-      if (req.url.toString() == _gitee) return _json(_release(tag: 'v0.2.0+1', notes: '改了两处'));
+      if (req.url.toString() == _gitee) {
+        return _json(_release(tag: 'v0.2.0+1', notes: '改了两处'));
+      }
       return _json(_release(tag: 'v9.9.9'));
     });
 

@@ -16,6 +16,27 @@ void main() {
   setUp(() => db = makeDb());
   tearDown(() => db.close());
 
+  group('外观设置', () {
+    test('没写过时默认跟随系统', () {
+      expect(readAppearanceSettings(db).themeMode, ThemeModePreference.system);
+    });
+
+    test('写读往返，落库的是 wire 字面值', () {
+      writeAppearanceSettings(
+        db,
+        const AppearanceSettings(themeMode: ThemeModePreference.dark),
+      );
+      expect(readAppearanceSettings(db).themeMode, ThemeModePreference.dark);
+      final raw = getSetting<Map<String, Object?>>(db, SettingsKeys.appearance)!;
+      expect(raw['themeMode'], 'dark');
+    });
+
+    test('坏值退回跟随系统', () {
+      setSetting(db, SettingsKeys.appearance, {'themeMode': 'bogus'});
+      expect(readAppearanceSettings(db).themeMode, ThemeModePreference.system);
+    });
+  });
+
   group('主模型设置', () {
     test('没写过时读出来是 null', () {
       expect(readLlmSettings(db), isNull);

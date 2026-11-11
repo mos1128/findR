@@ -358,7 +358,7 @@ class _ComposerState extends State<Composer> {
     final picked = await pickPlainTextFile();
     if (picked == null || !mounted) return;
     try {
-      // 扩展名白名单 / 8000 字上限 / 编码识别都在 `text_file.dart` 里，
+      // 扩展名白名单 / 20000 字上限 / 编码识别都在 `text_file.dart` 里，
       // 这里必须走同一条判定 —— 自己再写一套的结果是「保存成功但搜不到」。
       final result = await readPlainTextFile(picked);
       if (!mounted) return;

@@ -22,6 +22,7 @@ import '../../platform/runtime.dart';
 import '../../platform/secure.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
+import '../../ui/runtime_fallback.dart';
 
 class BackupScreen extends ConsumerStatefulWidget {
   const BackupScreen({super.key});
@@ -148,7 +149,10 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
         picked,
         fullReplace: _lastFullImport,
       );
-      final keys = await _restoreKeys(res.apiKeys, fullReplace: _lastFullImport);
+      final keys = await _restoreKeys(
+        res.apiKeys,
+        fullReplace: _lastFullImport,
+      );
       if (!mounted) return;
       setState(() {
         _picked = null;
@@ -175,7 +179,10 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        title: Text('全量导入会清空本机数据', style: TextStyle(fontSize: 16, color: c.text)),
+        title: Text(
+          '全量导入会清空本机数据',
+          style: TextStyle(fontSize: 16, color: c.text),
+        ),
         content: Text(
           '本机现有的卡片、分类、位置、设置、媒体与 API Key 都会被清空，'
           '然后完整使用这份备份。此操作不可撤销。',
@@ -245,7 +252,10 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
         title: Text(title, style: TextStyle(fontSize: 16, color: c.text)),
-        content: Text(body, style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary)),
+        content: Text(
+          body,
+          style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
+        ),
         actions: <Widget>[
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -259,161 +269,186 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final rt = ref.watch(runtimeProvider).value;
+    final runtimeState = ref.watch(runtimeProvider);
+    final rt = runtimeState.value;
     if (rt == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return RuntimeFallback(title: '备份与恢复', state: runtimeState);
     }
 
     final exported = _exported;
     final imported = _imported;
 
-    return Scaffold(
-      appBar: FindrTopBar(title: '备份与恢复'),
-      body: ScreenBody.column(
-        padding: const EdgeInsets.fromLTRB(
-          Spacing.four,
-          Spacing.four,
-          Spacing.four,
-          Spacing.six,
-        ),
-        children: <Widget>[
-          Text(
-            '备份文件用于换机或重装后恢复数据。',
-            style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
+    return PopScope(
+      // 导出/导入跑完前不离开：导出是流式的，中途 dispose 会让 onPhase 的
+      // setState 抛错，已写好的备份文件也会被 catch 删掉。
+      canPop: !_busy,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _toast('正在处理，完成后会自动结束');
+      },
+      child: Scaffold(
+        appBar: FindrTopBar(title: '备份与恢复'),
+        body: ScreenBody.column(
+          padding: const EdgeInsets.fromLTRB(
+            Spacing.four,
+            Spacing.four,
+            Spacing.four,
+            Spacing.six,
           ),
-
-          // ── 导出 ─────────────────────────────────────────
-          Panel(
-            title: '导出',
-            hint: '包含卡片、分类、位置、媒体素材与模型 API 密钥',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                FindrButton(
-                  title: _busy && _phase != null ? _phaseText(_phase!, _elapsed) : '导出并分享',
-                  loading: _busy,
-                  onPressed: _runExport,
-                ),
-                if (exported != null) ...<Widget>[
-                  const SizedBox(height: Spacing.three),
-                  Notice(
-                    title: '已生成 ${exported.fileName}',
-                    tone: NoticeTone.success,
-                    text:
-                        '卡片 ${exported.report.cards} · 分类 ${exported.report.categories} · '
-                        '位置 ${exported.report.locations} · 别名 ${exported.report.aliases}\n'
-                        '媒体 ${exported.report.mediaWritten}/${exported.report.mediaTotal} 个 · '
-                        '${_fmtBytes(exported.report.bytes)}'
-                        '${exported.report.mediaMissing.isEmpty ? '' : '\n⚠ 有 ${exported.report.mediaMissing.length} 个媒体文件在磁盘上已不存在，没能进包（DB 里仍引用着它们）'}',
-                  ),
-                  const SizedBox(height: Spacing.two),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: FindrButton(
-                      title: '再分享一次',
-                      variant: FindrButtonVariant.secondary,
-                      compact: true,
-                      expand: false,
-                      onPressed: () => shareBackup(exported.path, exported.fileName),
-                    ),
-                  ),
-                ],
-              ],
+          children: <Widget>[
+            Text(
+              '备份文件用于换机或重装后恢复数据。',
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.5,
+                color: c.textSecondary,
+              ),
             ),
-          ),
 
-          // ── 导入 ─────────────────────────────────────────
-          Panel(
-            title: '导入',
-            hint: _fullImport ? '先清空本机，再完整恢复' : '保留本机，只合并备份',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  '增量导入：同 id 卡片按修改时间新者胜；分类/位置重名保留本机、新名字插入；'
-                  '媒体按路径覆盖；设置与 API Key 全量覆盖。\n'
-                  '全量导入：先清空本机全部数据，再完整使用备份。',
-                  style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
-                ),
-                const SizedBox(height: Spacing.three),
-                Row(
-                  children: <Widget>[
-                    FindrChip(
-                      label: '增量导入',
-                      dense: true,
-                      active: !_fullImport,
-                      onPressed: () => setState(() => _fullImport = false),
+            // ── 导出 ─────────────────────────────────────────
+            Panel(
+              title: '导出',
+              hint: '包含卡片、分类、位置、媒体素材与模型 API 密钥',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  FindrButton(
+                    title: _busy && _phase != null
+                        ? _phaseText(_phase!, _elapsed)
+                        : '导出并分享',
+                    loading: _busy,
+                    onPressed: _runExport,
+                  ),
+                  if (exported != null) ...<Widget>[
+                    const SizedBox(height: Spacing.three),
+                    Notice(
+                      title: '已生成 ${exported.fileName}',
+                      tone: NoticeTone.success,
+                      text:
+                          '卡片 ${exported.report.cards} · 分类 ${exported.report.categories} · '
+                          '位置 ${exported.report.locations} · 别名 ${exported.report.aliases}\n'
+                          '媒体 ${exported.report.mediaWritten}/${exported.report.mediaTotal} 个 · '
+                          '${_fmtBytes(exported.report.bytes)}'
+                          '${exported.report.mediaMissing.isEmpty ? '' : '\n⚠ 有 ${exported.report.mediaMissing.length} 个媒体文件在磁盘上已不存在，没能进包（DB 里仍引用着它们）'}',
                     ),
-                    const SizedBox(width: Spacing.two),
-                    FindrChip(
-                      label: '全量导入',
-                      dense: true,
-                      active: _fullImport,
-                      onPressed: () => setState(() => _fullImport = true),
+                    const SizedBox(height: Spacing.two),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: FindrButton(
+                        title: '再分享一次',
+                        variant: FindrButtonVariant.secondary,
+                        compact: true,
+                        expand: false,
+                        onPressed: () =>
+                            shareBackup(exported.path, exported.fileName),
+                      ),
                     ),
                   ],
-                ),
-                if (_fullImport) ...<Widget>[
-                  const SizedBox(height: Spacing.two),
-                  Text(
-                    '全量导入会清空本机卡片、分类、位置、设置、媒体与 API Key，再完整恢复备份。',
-                    style: TextStyle(fontSize: 11.5, height: 1.45, color: c.danger),
-                  ),
                 ],
-                const SizedBox(height: Spacing.four),
-                FindrButton(
-                  title: '选择备份文件',
-                  variant: FindrButtonVariant.secondary,
-                  onPressed: _pick,
-                ),
-                if (_picked != null) ...<Widget>[
-                  const SizedBox(height: Spacing.three),
-                  ListRow(title: _picked!.name, subtitle: '已选中，点下面开始导入'),
-                  const SizedBox(height: Spacing.two),
-                  FindrButton(
-                    title: '开始导入',
-                    variant: FindrButtonVariant.primary,
-                    loading: _busy,
-                    onPressed: _import,
-                  ),
-                  const SizedBox(height: Spacing.two),
-                  FindrButton(
-                    title: '换一个文件',
-                    variant: FindrButtonVariant.ghost,
-                    onPressed: () => setState(() {
-                      _picked = null;
-                      _imported = null;
-                    }),
-                  ),
-                ],
-                if (imported != null) ...<Widget>[
-                  const SizedBox(height: Spacing.three),
-                  Notice(
-                    title: '导入完成 · 备份来自 ${_fmtWhen(imported.manifestInfo.exportedAt)}',
-                    tone: NoticeTone.success,
-                    text: _importSummary(imported),
-                  ),
-                ],
-                if (_keyRestore != null &&
-                    (_keyRestore!.restored > 0 || _keyRestore!.cleared > 0)) ...<Widget>[
-                  const SizedBox(height: Spacing.two),
-                  Notice(
-                    title: 'API Key',
-                    tone: NoticeTone.info,
-                    text: _keyRestore!.restored > 0
-                        ? '已恢复 ${_keyRestore!.restored} 把 Key'
-                            '${_keyRestore!.cleared > 0 ? '，并清空 ${_keyRestore!.cleared} 把备份里没有的 Key' : ''}。'
-                        : '已清空 ${_keyRestore!.cleared} 把备份里没有的 Key。',
-                  ),
-                ],
-              ],
+              ),
             ),
-          ),
 
-          if (_note != null) Notice(text: _note!),
+            // ── 导入 ─────────────────────────────────────────
+            Panel(
+              title: '导入',
+              hint: _fullImport ? '先清空本机，再完整恢复' : '保留本机，只合并备份',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Text(
+                    '增量导入：同 id 卡片按修改时间新者胜；分类/位置重名保留本机、新名字插入；'
+                    '媒体按路径覆盖；设置与 API Key 全量覆盖。\n'
+                    '全量导入：先清空本机全部数据，再完整使用备份。',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 1.45,
+                      color: c.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: Spacing.three),
+                  Row(
+                    children: <Widget>[
+                      FindrChip(
+                        label: '增量导入',
+                        dense: true,
+                        active: !_fullImport,
+                        onPressed: () => setState(() => _fullImport = false),
+                      ),
+                      const SizedBox(width: Spacing.two),
+                      FindrChip(
+                        label: '全量导入',
+                        dense: true,
+                        active: _fullImport,
+                        onPressed: () => setState(() => _fullImport = true),
+                      ),
+                    ],
+                  ),
+                  if (_fullImport) ...<Widget>[
+                    const SizedBox(height: Spacing.two),
+                    Text(
+                      '全量导入会清空本机卡片、分类、位置、设置、媒体与 API Key，再完整恢复备份。',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        height: 1.45,
+                        color: c.danger,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: Spacing.four),
+                  FindrButton(
+                    title: '选择备份文件',
+                    variant: FindrButtonVariant.secondary,
+                    onPressed: _pick,
+                  ),
+                  if (_picked != null) ...<Widget>[
+                    const SizedBox(height: Spacing.three),
+                    ListRow(title: _picked!.name, subtitle: '已选中，点下面开始导入'),
+                    const SizedBox(height: Spacing.two),
+                    FindrButton(
+                      title: '开始导入',
+                      variant: FindrButtonVariant.primary,
+                      loading: _busy,
+                      onPressed: _import,
+                    ),
+                    const SizedBox(height: Spacing.two),
+                    FindrButton(
+                      title: '换一个文件',
+                      variant: FindrButtonVariant.ghost,
+                      onPressed: () => setState(() {
+                        _picked = null;
+                        _imported = null;
+                      }),
+                    ),
+                  ],
+                  if (imported != null) ...<Widget>[
+                    const SizedBox(height: Spacing.three),
+                    Notice(
+                      title:
+                          '导入完成 · 备份来自 ${_fmtWhen(imported.manifestInfo.exportedAt)}',
+                      tone: NoticeTone.success,
+                      text: _importSummary(imported),
+                    ),
+                  ],
+                  if (_keyRestore != null &&
+                      (_keyRestore!.restored > 0 ||
+                          _keyRestore!.cleared > 0)) ...<Widget>[
+                    const SizedBox(height: Spacing.two),
+                    Notice(
+                      title: 'API Key',
+                      tone: NoticeTone.info,
+                      text: _keyRestore!.restored > 0
+                          ? '已恢复 ${_keyRestore!.restored} 把 Key'
+                                '${_keyRestore!.cleared > 0 ? '，并清空 ${_keyRestore!.cleared} 把备份里没有的 Key' : ''}。'
+                          : '已清空 ${_keyRestore!.cleared} 把备份里没有的 Key。',
+                    ),
+                  ],
+                ],
+              ),
+            ),
 
-
-        ],
+            if (_note != null) Notice(text: _note!),
+          ],
+        ),
       ),
     );
   }
@@ -429,7 +464,9 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       '别名 新增 ${rep.aliasesInserted} · 设置 写入 ${rep.settingsWritten}（全量覆盖）',
     ];
     if (rep.remappedCategoryRefs + rep.remappedLocationRefs > 0) {
-      lines.add('按名字重对齐：分类 ${rep.remappedCategoryRefs} · 位置 ${rep.remappedLocationRefs}');
+      lines.add(
+        '按名字重对齐：分类 ${rep.remappedCategoryRefs} · 位置 ${rep.remappedLocationRefs}',
+      );
     }
     if (rep.droppedRefs > 0) {
       lines.add('⚠ ${rep.droppedRefs} 处引用对不上，已置空');

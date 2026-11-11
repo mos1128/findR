@@ -142,7 +142,7 @@ void main() {
   });
 
   test('弹窗只显示 `---` 之前的更新说明（之后是给网页看的安装须知）', () {
-    final body = '第一个版本。\n\n新增检查更新。\n\n---\n\nfindR 的开发版 APK（包名 com.findr.app.dev）。\n\n- 备份是标准 ZIP。';
+    final body = '第一个版本。\n\n新增检查更新。\n\n---\n\nfindR 的开发版 APK（包名 com.findr.app）。\n\n- 备份是标准 ZIP。';
     expect(releaseNotesForApp(body), '第一个版本。\n\n新增检查更新。');
 
     expect(releaseNotesForApp('没有分隔线就整段都要'), '没有分隔线就整段都要');

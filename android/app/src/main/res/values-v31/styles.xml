@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ 由系统 SplashScreen 接管启动屏：这里把品牌色与图标交给系统。
+         旧版的 windowBackground（layer-list）在这一档不生效，不配这个文件的话，
+         系统会用默认底色，冷启动会先闪一下不是品牌色的背景。 -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">@color/brand_paper</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+    </style>
+</resources>

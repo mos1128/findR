@@ -331,7 +331,9 @@ void main() {
       final client = MockClient.streaming((req, _) async {
         hits.add(req.url.toString());
         // 加速镜像挂了；原站正常
-        if (req.url.host == 'accel.example') return _response(const <List<int>>[], status: 500);
+        if (req.url.host == 'accel.example') {
+          return _response(const <List<int>>[], status: 500);
+        }
         return _response(<List<int>>[body]);
       });
       final platform = _FakePlatform();

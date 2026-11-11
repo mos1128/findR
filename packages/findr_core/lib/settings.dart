@@ -26,6 +26,7 @@ abstract final class SettingsKeys {
   static const String asr = 'asr';
   static const String capture = 'capture';
   static const String search = 'search';
+  static const String appearance = 'appearance';
 }
 
 /// 设备本地状态：**不进备份，导入时也不覆盖本机**。
@@ -218,6 +219,50 @@ final class SearchSettings {
 }
 
 const SearchSettings defaultSearchSettings = SearchSettings(autoAnswer: false);
+
+/// 主题模式。wire 值是**存在库里的字面值**，改不得；新值只能追加。
+enum ThemeModePreference {
+  dark('dark', '暗色'),
+  light('light', '亮色'),
+  system('system', '跟随系统');
+
+  const ThemeModePreference(this.wire, this.label);
+
+  final String wire;
+
+  /// 给界面直接显示的中文名。
+  final String label;
+
+  /// 坏值/缺省一律跟随系统 —— 这和加这个设置之前的行为一致。
+  static ThemeModePreference fromWire(Object? raw) => switch (raw) {
+    'dark' => dark,
+    'light' => light,
+    _ => system,
+  };
+}
+
+final class AppearanceSettings {
+  const AppearanceSettings({required this.themeMode});
+
+  final ThemeModePreference themeMode;
+
+  Map<String, Object?> toJson() => {'themeMode': themeMode.wire};
+}
+
+const AppearanceSettings defaultAppearanceSettings = AppearanceSettings(
+  themeMode: ThemeModePreference.system,
+);
+
+AppearanceSettings readAppearanceSettings(SqliteDriver db) {
+  final stored = asMap(db_settings.getSetting<Object?>(db, SettingsKeys.appearance));
+  return AppearanceSettings(
+    themeMode: ThemeModePreference.fromWire(stored?['themeMode']),
+  );
+}
+
+void writeAppearanceSettings(SqliteDriver db, AppearanceSettings value) {
+  db_settings.setSetting(db, SettingsKeys.appearance, value.toJson());
+}
 
 /// 浅合并：**键在就用它的值（哪怕值是 null）**，键不在才用默认值。
 bool _mergeBool(Map<String, Object?>? stored, String key, bool fallback) {

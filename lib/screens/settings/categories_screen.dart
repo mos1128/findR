@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../platform/runtime.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
+import '../../ui/runtime_fallback.dart';
 
 class CategoriesScreen extends ConsumerStatefulWidget {
   const CategoriesScreen({super.key});
@@ -139,9 +140,10 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    final rt = ref.watch(runtimeProvider).value;
+    final runtimeState = ref.watch(runtimeProvider);
+    final rt = runtimeState.value;
     if (rt == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return RuntimeFallback(title: '分类', state: runtimeState);
     }
     final categories = listCategories(rt.driver);
     final editing = _editingId != null;
