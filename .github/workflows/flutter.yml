@@ -346,7 +346,9 @@ jobs:
       #    是否与文档一致（Gitee 的接口行为以实跑为准）。
       #    ⚠️ 曾经还有个风险点「Gitee 是否接受 tag 里带 `+`」，版本号改成三段 `X.Y.Z` 之后
       #       已不存在（tag 就是 `v1.0.1`）；下面那句百分号编码留着，防以后又用回 `+`。
-      # 这一步一旦报红，就照报错信息在 Gitee 网页上手动补一次发布 —— App 侧不受影响。
+      # 这一步一旦报红（多数是国际链路把 22MB 传断了：curl (56) / 长时间卡在 1~2KB/s），
+      # 发行版其实已经建出来了、只差附件 —— 别为它重发一版，跑一次
+      # `.github/workflows/gitee-resync.yml`（workflow_dispatch，填 tag）把附件补上。
       - name: 同步到 Gitee 发行版
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}

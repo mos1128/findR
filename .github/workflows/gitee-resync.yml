@@ -1,0 +1,71 @@
+name: gitee-resync
+
+# 补传安装包到 Gitee 发行版。
+#
+# 正常发版由 flutter.yml 的「同步到 Gitee 发行版」一步完成。但 runner 到 gitee.com 是国际链路：
+# v1.0.13 那次传 22MB，卡在 1.9KB/s，18 分钟后 `curl: (56) Recv failure: Connection timed out` ——
+# GitHub 的发布已经好了，只差 Gitee 那份附件，而 App 的「检查更新」先问 Gitee，
+# 选 Gitee 下载就会 404。为一个附件再发一版太重，所以留这个手动入口：
+# 从 GitHub 取回**同一份**安装包，重新挂到已经建好的 Gitee 发行版上。
+#
+# 前提：Gitee 那边的发行版得先在（正常发版那一步会在挂附件之前把发行版建出来），
+# 这里只补附件，不建、不改发行版 —— 正文和 tag 仍以发版那一次为准。
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要补传的 tag（Gitee 上要有同名发行版，例如 v1.0.13）'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  attach:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: 取安装包（GitHub 上已发布的那一份）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          gh release download "${{ inputs.tag }}" --repo "$GITHUB_REPOSITORY" \
+            --pattern app-release.apk --dir build
+          ls -l build/app-release.apk
+
+      - name: 挂到 Gitee 发行版
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GITEE_TOKEN:-}" ]; then
+            echo "未配 GITEE_TOKEN —— 仓库密钥里加一个（权限只勾 projects），否则补不了。"
+            exit 1
+          fi
+          api="https://gitee.com/api/v5/repos/ms6/findR"
+          tag="${{ inputs.tag }}"
+          tag_path="$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1], safe=""))' "$tag")"
+          apk=build/app-release.apk
+
+          curl -sS --fail-with-body "$api/releases/tags/$tag_path?access_token=$GITEE_TOKEN" -o /tmp/release.json
+          python3 -c 'import json;d=json.load(open("/tmp/release.json"));print("发行版 id=%s  已有附件=%s" % (d["id"], [a["name"] for a in (d.get("assets") or [])]))'
+          id="$(python3 -c 'import json;print(json.load(open("/tmp/release.json"))["id"])')"
+          have_apk="$(python3 -c 'import json;print(any(a.get("name")=="app-release.apk" for a in (json.load(open("/tmp/release.json")).get("assets") or [])))')"
+          # 已经有附件就别再挂一份（Gitee 允许同名附件并存，挂两份之后自己都分不清哪份是好的）。
+          # 若那份附件是坏的（上传中断留下的半截），先去 Gitee 网页上删掉，再跑这个工作流。
+          if [ "$have_apk" = "True" ]; then
+            echo "这份发行版已经挂着 app-release.apk，不用补 —— 完事。"
+            exit 0
+          fi
+
+          # 慢链路保险：低于 1KB/s 持续 2 分钟就掐断重来，最多 3 次（约 1 小时封顶，别撞上 90 分钟作业超时）
+          # （「掐断」对 curl 是致命错误，所以必须带 --retry-all-errors 才会重试）。
+          curl -sS --fail-with-body --retry 3 --retry-delay 15 --retry-all-errors \
+            --speed-limit 1024 --speed-time 120 --max-time 1200 \
+            -X POST "$api/releases/$id/attach_files" \
+            -F "access_token=$GITEE_TOKEN" -F "file=@$apk" -o /tmp/attach.json \
+            -w '附件上传耗时 %{time_total}s，平均 %{speed_upload} B/s\n'
+          python3 -c 'import json;d=json.load(open("/tmp/attach.json"));print("附件 OK:", d.get("browser_download_url") or d)'
+          echo "Gitee 补传完成：https://gitee.com/ms6/findR/releases/tag/$tag_path"
