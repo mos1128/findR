@@ -6,8 +6,9 @@
 ///
 /// 三条界面上的硬约束（真机反馈改出来的，别再退回去）：
 /// 1. **按钮横排** —— 竖着排四个按钮会把弹窗撑得又长又没主次；
-/// 2. **浏览器兜底收进长按** —— 不再单独放「浏览器打开下载页」按钮：
-///    长按 Gitee / GitHub 下载按钮就在浏览器打开该渠道的**发布页**；
+/// 2. **浏览器兜底收进渠道按钮的右半格** —— 不再单独放「浏览器打开下载页」按钮：
+///    每个渠道是一个分裂按钮，右半格 `↗` 就在浏览器打开该渠道的**发布页**
+///    （长按同一个按钮也还是这条路，但界面上不再用一行字去教它）；
 /// 3. **正文只显示 `---` 之前的更新说明**（`releaseNotesForApp`）—— 之后的安装须知
 ///    是给发布页读者看的，塞进弹窗既占地方又要跟着版本维护。
 library;
@@ -82,11 +83,6 @@ AlertDialog _sourceDialog(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Text(notes, style: TextStyle(fontSize: 13, height: 1.55, color: c.textSecondary)),
-          const SizedBox(height: Spacing.three),
-          Text(
-            '长按下载按钮可以在浏览器打开',
-            style: TextStyle(fontSize: 11.5, height: 1.5, color: c.textMuted),
-          ),
           const SizedBox(height: Spacing.five),
           // 选源交给用户：两个源并列、一样大、**同一个样式** ——
           // 不设"默认源"的视觉暗示（真机上反馈过：把 GitHub 塞进"手动"里读着别扭）。
@@ -95,14 +91,11 @@ AlertDialog _sourceDialog(
               for (var i = 0; i < channels.length; i++) ...<Widget>[
                 if (i > 0) const SizedBox(width: Spacing.two),
                 Expanded(
-                  child: GestureDetector(
-                    onLongPress: () => Navigator.of(ctx).pop(
+                  child: _ChannelButton(
+                    channel: channels[i],
+                    onDownload: () => Navigator.of(ctx).pop(channels[i]),
+                    onBrowser: () => Navigator.of(ctx).pop(
                       _BrowserChoice(releasePageFor(channels[i])),
-                    ),
-                    child: FindrButton(
-                      title: '${channels[i].name} 下载',
-                      variant: FindrButtonVariant.secondary,
-                      onPressed: () => Navigator.of(ctx).pop(channels[i]),
                     ),
                   ),
                 ),
@@ -119,6 +112,64 @@ AlertDialog _sourceDialog(
       ),
     ],
   );
+}
+
+/// 一个下载渠道：左半开始应用内下载，右半直接在浏览器打开发布页。
+///
+/// 两半共用一张底、一条竖线 ⇒ 读起来是**一个控件**，弹窗里可点区域的数量没变
+/// （这正是当初把浏览器收进长按的原因）；不同的是它现在看得见。
+/// 左半只写渠道名，不带「下载」：两个渠道并排时再挤两个字就会溢出。
+class _ChannelButton extends StatelessWidget {
+  const _ChannelButton({
+    required this.channel,
+    required this.onDownload,
+    required this.onBrowser,
+  });
+
+  final UpdateChannel channel;
+  final VoidCallback onDownload;
+  final VoidCallback onBrowser;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = FindrColors.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(Radii.md),
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // 长按保留：老用户的手已经会了，不花一分钱
+            Expanded(
+              child: GestureDetector(
+                onLongPress: onBrowser,
+                child: FindrButton(
+                  title: channel.name,
+                  variant: FindrButtonVariant.secondary,
+                  compact: true,
+                  onPressed: onDownload,
+                ),
+              ),
+            ),
+            Container(width: 1, color: c.border),
+            TextButton(
+              onPressed: onBrowser,
+              style: TextButton.styleFrom(
+                backgroundColor: c.surfaceSunken,
+                foregroundColor: c.textSecondary,
+                minimumSize: const Size(44, 44),
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: const RoundedRectangleBorder(),
+              ),
+              child: const Icon(Icons.open_in_new_rounded, size: 17),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// 把源交给控制器。三种「不用重下」的情形在这里挡掉，别打断正在跑的任务。
