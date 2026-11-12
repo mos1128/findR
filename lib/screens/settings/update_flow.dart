@@ -83,7 +83,16 @@ AlertDialog _sourceDialog(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Text(notes, style: TextStyle(fontSize: 13, height: 1.55, color: c.textSecondary)),
-          const SizedBox(height: Spacing.five),
+          const SizedBox(height: Spacing.four),
+          // 更新说明和「怎么装」是两件事，用一条线断开。`c.border` 在弹窗白底上
+          // 淡到看不见（4% 黑），这里要 `borderStrong` 才画得出来。
+          Container(height: 1, color: c.borderStrong),
+          const SizedBox(height: Spacing.four),
+          Text(
+            '选择下载源',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: c.textSecondary),
+          ),
+          const SizedBox(height: Spacing.two),
           // 选源交给用户：两个源并列、一样大、**同一个样式** ——
           // 不设"默认源"的视觉暗示（真机上反馈过：把 GitHub 塞进"手动"里读着别扭）。
           Row(
@@ -116,9 +125,10 @@ AlertDialog _sourceDialog(
 
 /// 一个下载渠道：左半开始应用内下载，右半直接在浏览器打开发布页。
 ///
-/// 两半共用一张底、一条竖线 ⇒ 读起来是**一个控件**，弹窗里可点区域的数量没变
-/// （这正是当初把浏览器收进长按的原因）；不同的是它现在看得见。
-/// 左半只写渠道名，不带「下载」：两个渠道并排时再挤两个字就会溢出。
+/// 两半共用一张底、中间一条竖线 ⇒ 读起来是**一个控件**，弹窗里可点区域的数量
+/// 没变（这正是当初把浏览器收进长按的原因）；不同的是它现在看得见。
+/// 所以这里不用 `FindrButton`：它四角全圆，左半右缘的圆角缺口会在两半之间
+/// 裂出一道白缝，四个圆角方块并排就是四个按钮（真机上就是这么裂开的）。
 class _ChannelButton extends StatelessWidget {
   const _ChannelButton({
     required this.channel,
@@ -133,8 +143,16 @@ class _ChannelButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
-    return ClipRRect(
+    final style = TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.1,
+      color: c.text,
+    );
+    return Material(
+      color: c.surfaceSunken,
       borderRadius: BorderRadius.circular(Radii.md),
+      clipBehavior: Clip.antiAlias,
       child: SizedBox(
         height: 44,
         child: Row(
@@ -142,28 +160,32 @@ class _ChannelButton extends StatelessWidget {
           children: <Widget>[
             // 长按保留：老用户的手已经会了，不花一分钱
             Expanded(
-              child: GestureDetector(
+              child: InkWell(
+                onTap: onDownload,
                 onLongPress: onBrowser,
-                child: FindrButton(
-                  title: channel.name,
-                  variant: FindrButtonVariant.secondary,
-                  compact: true,
-                  onPressed: onDownload,
+                child: Center(
+                  child: Text(
+                    channel.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: style,
+                  ),
                 ),
               ),
             ),
-            Container(width: 1, color: c.border),
-            TextButton(
-              onPressed: onBrowser,
-              style: TextButton.styleFrom(
-                backgroundColor: c.surfaceSunken,
-                foregroundColor: c.textSecondary,
-                minimumSize: const Size(44, 44),
-                padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: const RoundedRectangleBorder(),
+            Container(width: 1, color: c.borderStrong),
+            InkWell(
+              onTap: onBrowser,
+              child: SizedBox(
+                width: 44,
+                child: Center(
+                  child: Icon(
+                    Icons.open_in_new_rounded,
+                    size: 17,
+                    color: c.textSecondary,
+                  ),
+                ),
               ),
-              child: const Icon(Icons.open_in_new_rounded, size: 17),
             ),
           ],
         ),
