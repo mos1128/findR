@@ -13,6 +13,8 @@
 ///    用户不需要为它改配置，更不该因此被锁掉功能。
 library;
 
+import 'dart:async';
+
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -89,6 +91,15 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
   bool _obscureKey = true;
   bool _presetsExpanded = false;
 
+  /// 刚点过的预设：芯片据此亮起，用户一动字段就灭 —— 亮着就等于「现在就是这个」。
+  _Preset? _applied;
+
+  /// 预设下面那行回声（`已填入 qwen-plus`）。文字和显隐分开：隐去时留着字，
+  /// 收起动画才不会先变成一句空话。
+  String _filled = '';
+  bool _filledOn = false;
+  Timer? _filledTimer;
+
   @override
   void initState() {
     super.initState();
@@ -97,6 +108,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
 
   @override
   void dispose() {
+    _filledTimer?.cancel();
     _baseUrl.dispose();
     _model.dispose();
     _userAgent.dispose();
@@ -150,19 +162,64 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     }
     _probeText = null;
     _presetsExpanded = false;
+    _dropPreset();
     setState(() {});
   }
 
+  /// 用户手改了地址或模型名：预设的选中态与回声都不再成立。
+  void _dropPreset() {
+    _filledTimer?.cancel();
+    if (_applied == null && !_filledOn) return;
+    setState(() {
+      _applied = null;
+      _filledOn = false;
+    });
+  }
+
   /// 点预设只改「协议 / 地址 / 模型名」三件事：Key 不动，填好的值也仍可手改。
+  ///
+  /// 不弹浮层 —— 两个字段就在下面，改没改一眼看得见。只把「填成了哪个模型」
+  /// 在预设下面停两秒：服务商名芯片上已经有了，会变的只有模型名。
   void _applyPreset(_Preset preset) {
+    _filledTimer?.cancel();
     setState(() {
       _providerType = preset.type;
       _baseUrl.text = preset.baseUrl;
       _model.text = preset.model;
       _probeText = null;
+      _applied = preset;
+      _filled = '已填入 ${preset.model}';
+      _filledOn = true;
     });
-    _toast('已填入 ${preset.label} 的地址与模型名');
+    _filledTimer = Timer(const Duration(milliseconds: 2400), () {
+      if (mounted) setState(() => _filledOn = false);
+    });
   }
+
+  /// 预设下面的回声。收起后占零高度，不留下一条空行。
+  Widget _buildFilledHint(FindrColors c) => AnimatedCrossFade(
+    duration: const Duration(milliseconds: 200),
+    sizeCurve: Curves.easeOutCubic,
+    crossFadeState: _filledOn ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+    firstChild: const SizedBox.shrink(),
+    secondChild: Padding(
+      padding: const EdgeInsets.only(top: Spacing.two),
+      child: Row(
+        children: <Widget>[
+          Icon(Icons.check_rounded, size: 14, color: c.success),
+          const SizedBox(width: Spacing.one),
+          Expanded(
+            child: Text(
+              _filled,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: c.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 
   /// 常用服务商：默认单行横向滑动（右侧渐隐提示还有更多），可展开成多行。
   /// 与记忆流顶部的分类栏是同一套交互。
@@ -214,6 +271,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                   FindrChip(
                     label: preset.label,
                     dense: true,
+                    active: _applied == preset,
                     onPressed: () => _applyPreset(preset),
                   ),
               ],
@@ -247,6 +305,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                   return FindrChip(
                     label: preset.label,
                     dense: true,
+                    active: _applied == preset,
                     onPressed: () => _applyPreset(preset),
                   );
                 },
@@ -317,9 +376,9 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
       }
       await ref.read(runtimeProvider.notifier).refresh();
       if (!mounted) return;
-      _toast('已保存');
+      showFindrToast(context, '已保存');
     } catch (e) {
-      if (mounted) _toast('保存失败：$e');
+      if (mounted) showFindrToast(context, '保存失败：${plainError(e)}', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -383,19 +442,6 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     }
   }
 
-  void _toast(String message) {
-    final c = FindrColors.of(context);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
-          backgroundColor: c.surface,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-  }
-
   @override
   Widget build(BuildContext context) {
     final runtimeState = ref.watch(runtimeProvider);
@@ -450,6 +496,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                 SectionTitle(isLlm ? '常用服务商' : '常用语音识别服务'),
                 const SizedBox(height: Spacing.two),
                 _buildPresetRail(isLlm ? _llmPresets : _asrPresets, c),
+                _buildFilledHint(c),
                 const SizedBox(height: Spacing.three),
                 if (isLlm) ...<Widget>[
                   const SectionTitle('协议格式'),
@@ -492,6 +539,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                           : 'https://api.openai.com')
                       : 'https://api.openai.com',
                   hint: '可填局域网地址',
+                  onChanged: (_) => _dropPreset(),
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(
@@ -502,6 +550,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                           ? 'claude-sonnet-5-5'
                           : 'gpt-6.1-sol')
                       : 'gpt-transcribe',
+                  onChanged: (_) => _dropPreset(),
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(

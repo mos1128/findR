@@ -28,6 +28,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../platform/app_paths.dart';
 import '../theme/tokens.dart';
+import '../ui/kit.dart';
 import 'image_compress.dart';
 import 'photo_picker.dart';
 import 'recorder.dart';
@@ -208,17 +209,7 @@ class _ComposerState extends State<Composer> {
 
   void _toast(String message) {
     if (!mounted) return;
-    final c = FindrColors.of(context);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
-          backgroundColor: c.surface,
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+    showFindrToast(context, message);
   }
 
   Future<void> _alert(

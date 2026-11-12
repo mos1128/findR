@@ -33,6 +33,8 @@ final class FindrColors extends ThemeExtension<FindrColors> {
     required this.searchSurface,
     required this.record,
     required this.recordText,
+    required this.toast,
+    required this.toastText,
     required this.badgePending,
     required this.badgePendingBg,
     required this.badgeConfirm,
@@ -79,6 +81,13 @@ final class FindrColors extends ThemeExtension<FindrColors> {
   /// 压在 [record] 上的前景色（按钮文字 / 图标）。
   final Color recordText;
 
+  /// 浮层提示（toast）的底与字。
+  ///
+  /// **一律反色**：它要压在任意一层 [surface] 上（面板、输入框、卡片），
+  /// 同色系只能靠阴影撑边界 —— 而暗色里阴影落在近黑的底上等于没画。
+  final Color toast;
+  final Color toastText;
+
   final Color badgePending;
   final Color badgePendingBg;
   final Color badgeConfirm;
@@ -108,6 +117,8 @@ final class FindrColors extends ThemeExtension<FindrColors> {
     searchSurface: Color(0xFFEFF2F4),
     record: Color(0xFF0066FF),
     recordText: Color(0xFFFFFFFF),
+    toast: Color(0xFF1D2129),
+    toastText: Color(0xFFFFFFFF),
     badgePending: Color(0xFF4E5969),
     badgePendingBg: Color(0xFFE5E9EC),
     badgeConfirm: Color(0xFFD97706),
@@ -135,6 +146,8 @@ final class FindrColors extends ThemeExtension<FindrColors> {
     searchSurface: Color(0xFF121212),
     record: Color(0xFF2563EB),
     recordText: Color(0xFFFFFFFF),
+    toast: Color(0xFFEDEDED),
+    toastText: Color(0xFF121212),
     badgePending: Color(0xFFA1A1AA),
     badgePendingBg: Color(0xFF2C2C2E),
     badgeConfirm: Color(0xFFFBBF24),
@@ -163,6 +176,8 @@ final class FindrColors extends ThemeExtension<FindrColors> {
     Color? searchSurface,
     Color? record,
     Color? recordText,
+    Color? toast,
+    Color? toastText,
     Color? badgePending,
     Color? badgePendingBg,
     Color? badgeConfirm,
@@ -188,6 +203,8 @@ final class FindrColors extends ThemeExtension<FindrColors> {
     searchSurface: searchSurface ?? this.searchSurface,
     record: record ?? this.record,
     recordText: recordText ?? this.recordText,
+    toast: toast ?? this.toast,
+    toastText: toastText ?? this.toastText,
     badgePending: badgePending ?? this.badgePending,
     badgePendingBg: badgePendingBg ?? this.badgePendingBg,
     badgeConfirm: badgeConfirm ?? this.badgeConfirm,
@@ -219,6 +236,8 @@ final class FindrColors extends ThemeExtension<FindrColors> {
       searchSurface: mix(searchSurface, other.searchSurface),
       record: mix(record, other.record),
       recordText: mix(recordText, other.recordText),
+      toast: mix(toast, other.toast),
+      toastText: mix(toastText, other.toastText),
       badgePending: mix(badgePending, other.badgePending),
       badgePendingBg: mix(badgePendingBg, other.badgePendingBg),
       badgeConfirm: mix(badgeConfirm, other.badgeConfirm),
@@ -281,6 +300,9 @@ const double maxContentWidth = 800;
 /// 刻意**只挂自己这套令牌**，不去覆写一堆 Material 组件的主题：
 /// 覆写越多，将来升 Flutter 时被改名的 API 就越多（`CardTheme` → `CardThemeData` 那类）。
 /// 需要定制的组件都在 `ui/kit.dart` 里自己画。
+///
+/// 唯一的例外是 SnackBar：它自带队列与脚手架定位，自绘不划算，
+/// 所以这里按令牌配一次 `snackBarTheme` —— 全 App 的浮层提示由此统一。
 ThemeData buildFindrTheme(Brightness brightness) {
   final colors = brightness == Brightness.dark ? FindrColors.dark : FindrColors.light;
   final scheme = ColorScheme.fromSeed(
@@ -292,6 +314,9 @@ ThemeData buildFindrTheme(Brightness brightness) {
     primary: colors.record,
     onPrimary: colors.recordText,
     error: colors.danger,
+    // SnackBar 的默认底色取的就是这一对 —— 换掉，省得每个调用点各写一次。
+    inverseSurface: colors.toast,
+    onInverseSurface: colors.toastText,
   );
 
   return ThemeData(
@@ -303,5 +328,12 @@ ThemeData buildFindrTheme(Brightness brightness) {
     canvasColor: colors.surface,
     splashFactory: InkSparkle.splashFactory,
     extensions: <ThemeExtension<dynamic>>[colors],
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      // 反色底已经分得开了；再加阴影只会在**纯黑**的投影色上多出一圈硬边
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
+      insetPadding: const EdgeInsets.fromLTRB(Spacing.five, 0, Spacing.five, Spacing.five),
+    ),
   );
 }

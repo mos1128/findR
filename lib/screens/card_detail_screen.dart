@@ -154,49 +154,8 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
 
   void _reload() => setState(() => _tick++);
 
-  void _toast(String message, {bool isError = false}) {
-    final c = FindrColors.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Row(
-            children: <Widget>[
-              Icon(
-                isError ? Icons.error_outline_rounded : Icons.check_circle_rounded,
-                size: 20,
-                color: isError ? c.danger : c.record,
-              ),
-              const SizedBox(width: Spacing.two),
-              Expanded(
-                child: Text(
-                  message,
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: isError
-                        ? (isDark ? const Color(0xFFFCA5A5) : const Color(0xFF991B1B))
-                        : c.text,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: isError
-              ? (isDark ? const Color(0xFF2C1515) : const Color(0xFFFEF2F2))
-              : c.surfaceAlt,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(Radii.lg),
-            side: BorderSide.none,
-          ),
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.only(left: 20, right: 20, bottom: 36),
-          duration: const Duration(seconds: 4),
-          elevation: 4,
-        ),
-      );
-  }
+  void _toast(String message, {bool isError = false}) =>
+      showFindrToast(context, message, error: isError);
 
   Future<void> _run(Future<Object?> Function(AdvanceDeps deps) body, String label) async {
     if (!mounted) return;

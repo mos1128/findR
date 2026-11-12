@@ -19,6 +19,7 @@ import 'package:flutter/material.dart';
 import '../platform/app_paths.dart';
 import '../platform/media.dart';
 import '../theme/tokens.dart';
+import 'kit.dart';
 
 /// 播放 [relPath] 指向的本地音频。`relPath` 是 core 的**相对路径**
 /// （`files/audio/<yyyymm>/<id>.m4a`），绝对路径由 `AppPaths` 拼。
@@ -98,9 +99,7 @@ class _AudioPlayBarState extends State<AudioPlayBar> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _playing = false);
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('这段录音播不了：$e')));
+      showFindrToast(context, '这段录音播不了：$e', error: true);
     }
   }
 

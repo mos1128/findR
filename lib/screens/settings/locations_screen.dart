@@ -41,18 +41,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
     super.dispose();
   }
 
-  void _toast(String message) {
-    final c = FindrColors.of(context);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
-          backgroundColor: c.surface,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-  }
+  void _toast(String message) => showFindrToast(context, message);
 
   List<LocationNode> _childrenOf(List<LocationNode> all, String? pid) =>
       all.where((l) => l.parentId == pid).toList()..sort((a, b) => a.sort.compareTo(b.sort));

@@ -173,18 +173,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     }
   }
 
-  void _toast(String message) {
-    final c = FindrColors.of(context);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
-          backgroundColor: c.surface,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-  }
+  void _toast(String message) => showFindrToast(context, message);
 
   Future<void> _openCard(String id) async {
     // 只是打开看一眼就返回，不该重跑检索（更不该再发一次模型请求）。

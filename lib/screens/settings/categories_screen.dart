@@ -49,18 +49,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
     setState(() {});
   }
 
-  void _toast(String message) {
-    final c = FindrColors.of(context);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
-          backgroundColor: c.surface,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-  }
+  void _toast(String message) => showFindrToast(context, message);
 
   void _save() {
     final name = _name.text.trim();

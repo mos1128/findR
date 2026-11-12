@@ -118,18 +118,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  void _toast(String message) {
-    final c = FindrColors.of(context);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
-          backgroundColor: c.surface,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-  }
+  void _toast(String message) => showFindrToast(context, message);
 
   /// 版本展示串。**只显示版本号**，不再挂「（+构建号）」——
   /// 版本号现在就是三段 `X.Y.Z`、不带 `+N`，Android 的 versionCode 恒定是 1，

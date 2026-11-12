@@ -203,18 +203,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
     return yes == true;
   }
 
-  void _toast(String message) {
-    final c = FindrColors.of(context);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
-          backgroundColor: c.surface,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-  }
+  void _toast(String message) => showFindrToast(context, message);
 
   /// 把本机 Key 同步成备份里的状态：有的覆盖，没有的清空。
   ///

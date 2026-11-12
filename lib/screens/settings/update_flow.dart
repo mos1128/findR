@@ -204,15 +204,4 @@ Future<void> _openUrl(BuildContext context, String url) async {
   if (!ok && context.mounted) _toast(context, '打不开浏览器，请手动访问：$url');
 }
 
-void _toast(BuildContext context, String message) {
-  final c = FindrColors.of(context);
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        content: Text(message, style: TextStyle(fontSize: 13, color: c.text)),
-        backgroundColor: c.surface,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-}
+void _toast(BuildContext context, String message) => showFindrToast(context, message);

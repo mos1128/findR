@@ -794,6 +794,48 @@ class FindrTopBar extends StatelessWidget implements PreferredSizeWidget {
 /// 屏幕宽度（给布局判断用，顺便让测试能覆盖「窄屏」这一档）。
 double screenWidth(BuildContext context) => MediaQuery.sizeOf(context).width;
 
+/// 浮层提示。**全 App 只用这一个入口** —— 样式在 `buildFindrTheme` 里，改一次到处都是。
+///
+/// 去掉上一条再弹：连点两下不该排队看两遍同一句话。
+void showFindrToast(BuildContext context, String message, {bool error = false}) {
+  final c = FindrColors.of(context);
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        // 出错要留够读完的时间，成功扫一眼就够
+        duration: Duration(milliseconds: error ? 4000 : 2200),
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          // 居中：它是一条通知，不是一段左对齐的正文
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(
+              error ? Icons.error_outline_rounded : Icons.check_rounded,
+              size: 16,
+              // 图标只靠形状区分，不上色：反色底上红色只剩 3:1，看不清不如不涂
+              color: c.toastText,
+            ),
+            const SizedBox(width: Spacing.two),
+            Flexible(
+              // 字号/字重写在这里而不是主题里：`SnackBarThemeData.contentTextStyle`
+              // 会整段顶掉继承来的字体，中文就得靠引擎默认字体兜底了。
+              child: Text(
+                message,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                  color: c.toastText,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+}
+
 /// 异常转成人话。
 ///
 /// Dart 的 `toString()` 会把类型名当代词缀在前头 —— `Bad state: 尚未配置主模型`、
