@@ -125,7 +125,7 @@ void main() {
     expect(find.text('记一笔…（回车即存）'), findsOneWidget);
     expect(find.text('存'), findsOneWidget);
     // 未配模型时的提示条**必须在文档流里**（曾经做成浮层盖住搜索框，真机反馈「找不到搜索入口」）
-    expect(find.textContaining('还没配模型，点这里填写'), findsOneWidget);
+    expect(find.text('还没配模型'), findsOneWidget);
   });
 
   testWidgets('打字录入 → 先落盘，卡片立刻出现在流里（不依赖模型）', (tester) async {

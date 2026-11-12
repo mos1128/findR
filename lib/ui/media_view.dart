@@ -31,13 +31,13 @@ class MediaThumb extends StatelessWidget {
   const MediaThumb({
     super.key,
     this.relPath,
-    this.fallbackIcon = '📷',
+    this.fallbackIcon = Icons.image_outlined,
     this.size = 68,
   });
 
   /// null / 空 ⇒ 直接显示占位块。
   final String? relPath;
-  final String fallbackIcon;
+  final IconData fallbackIcon;
   final double size;
 
   @override
@@ -53,7 +53,7 @@ class MediaThumb extends StatelessWidget {
         borderRadius: BorderRadius.circular(Radii.md),
       ),
       alignment: Alignment.center,
-      child: Text(fallbackIcon, style: TextStyle(fontSize: size * 0.38)),
+      child: Icon(fallbackIcon, size: size * 0.38, color: c.textMuted),
     );
 
     if (file == null) return placeholder();

@@ -585,23 +585,13 @@ class _ComposerState extends State<Composer> {
                   ),
                 ),
               ),
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      '添加素材',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: c.text,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '已有内容会一起带上',
-                    style: TextStyle(fontSize: 12, color: c.textMuted),
-                  ),
-                ],
+              Text(
+                '添加素材',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: c.text,
+                ),
               ),
               const SizedBox(height: Spacing.four),
               Row(
@@ -1117,23 +1107,13 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
                 ),
               ),
             ),
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    '存入选项',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: c.text,
-                    ),
-                  ),
-                ),
-                Text(
-                  '选择素材的处理方式',
-                  style: TextStyle(fontSize: 12, color: c.textMuted),
-                ),
-              ],
+            Text(
+              '存入选项',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: c.text,
+              ),
             ),
             const SizedBox(height: Spacing.three),
             if (widget.hasPhotos) ...<Widget>[

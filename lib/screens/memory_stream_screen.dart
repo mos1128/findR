@@ -874,7 +874,7 @@ class _SearchBarState extends State<_SearchBar> {
                           const SizedBox(width: Spacing.two),
                           Expanded(
                             child: Text(
-                              '还没配模型，点这里填写 →',
+                              '还没配模型',
                               style: TextStyle(
                                 fontSize: 11.5,
                                 color: c.textSecondary,

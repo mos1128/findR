@@ -296,19 +296,10 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
             Spacing.six,
           ),
           children: <Widget>[
-            Text(
-              '备份文件用于换机或重装后恢复数据。',
-              style: TextStyle(
-                fontSize: 13,
-                height: 1.5,
-                color: c.textSecondary,
-              ),
-            ),
-
             // ── 导出 ─────────────────────────────────────────
             Panel(
               title: '导出',
-              hint: '包含卡片、分类、位置、媒体素材与模型 API 密钥',
+              hint: '含媒体与 API Key',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
@@ -329,7 +320,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                           '位置 ${exported.report.locations} · 别名 ${exported.report.aliases}\n'
                           '媒体 ${exported.report.mediaWritten}/${exported.report.mediaTotal} 个 · '
                           '${_fmtBytes(exported.report.bytes)}'
-                          '${exported.report.mediaMissing.isEmpty ? '' : '\n⚠ 有 ${exported.report.mediaMissing.length} 个媒体文件在磁盘上已不存在，没能进包（DB 里仍引用着它们）'}',
+                          '${exported.report.mediaMissing.isEmpty ? '' : '\n注意：有 ${exported.report.mediaMissing.length} 个媒体文件在磁盘上已不存在，没能进包（DB 里仍引用着它们）'}',
                     ),
                     const SizedBox(height: Spacing.two),
                     Align(
@@ -356,9 +347,8 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   Text(
-                    '增量导入：同 id 卡片按修改时间新者胜；分类/位置重名保留本机、新名字插入；'
-                    '媒体按路径覆盖；设置与 API Key 全量覆盖。\n'
-                    '全量导入：先清空本机全部数据，再完整使用备份。',
+                    '同 id 卡片取较新的一份；分类、位置重名保留本机。'
+                    '设置与 API Key 一律用备份里的覆盖。',
                     style: TextStyle(
                       fontSize: 11.5,
                       height: 1.45,
@@ -402,7 +392,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                   ),
                   if (_picked != null) ...<Widget>[
                     const SizedBox(height: Spacing.three),
-                    ListRow(title: _picked!.name, subtitle: '已选中，点下面开始导入'),
+                    ListRow(title: _picked!.name),
                     const SizedBox(height: Spacing.two),
                     FindrButton(
                       title: '开始导入',
@@ -469,7 +459,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       );
     }
     if (rep.droppedRefs > 0) {
-      lines.add('⚠ ${rep.droppedRefs} 处引用对不上，已置空');
+      lines.add('注意：${rep.droppedRefs} 处引用对不上，已置空');
     }
     if (rep.conflicts.isNotEmpty) {
       final names = rep.conflicts

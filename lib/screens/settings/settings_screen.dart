@@ -188,8 +188,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 '处理队列与系统诊断',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.text),
               ),
-              const SizedBox(height: Spacing.one),
-              Text('处理排队任务与设备自检', style: TextStyle(fontSize: 12, color: c.textMuted)),
               const SizedBox(height: Spacing.four),
               FindrButton(
                 title: '推进解析队列',
@@ -530,14 +528,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               children: <Widget>[
                 ListRow(
                   title: '空间位置树',
-                  subtitle: '管理房间、家具与收纳容器',
                   onTap: () => _push(const LocationsScreen()),
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
                 FindrDivider(),
                 ListRow(
                   title: '分类标签',
-                  subtitle: '管理物品、证件、备忘等分类及标识',
                   onTap: () => _push(const CategoriesScreen()),
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
@@ -560,7 +556,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 FindrDivider(),
                 ListRow(
                   title: '处理队列与诊断',
-                  subtitle: '重试转写与解析，运行自检',
                   onTap: _showDiagnosticsSheet,
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
@@ -608,7 +603,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ? '正在检查…'
                       : hasUpdate
                       ? '发现新版本 $updateTag'
-                      : '检查是否有新版本',
+                      : null,
                   onTap: _busy ? null : () => _checkUpdate(rt),
                   right: _busy
                       ? SizedBox(
@@ -673,7 +668,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 FindrDivider(),
                 ListRow(
                   title: '开源仓库',
-                  subtitle: '在 GitHub / Gitee 看源码与发布',
                   onTap: _showRepoDialog,
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),

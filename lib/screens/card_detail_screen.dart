@@ -562,7 +562,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                       itemBuilder: (_, i) => GestureDetector(
                         // 整组一起交出去 + 从点的那张开始，才能左右滑着看下一张。
                         onTap: () => openImageViewer(context, images, initialIndex: i),
-                        child: MediaThumb(relPath: images[i], size: 96, fallbackIcon: '📷'),
+                        child: MediaThumb(relPath: images[i], size: 96),
                       ),
                     ),
                   ),
@@ -883,7 +883,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: <Widget>[
-                        const Text('📍', style: TextStyle(fontSize: 16)),
+                        Icon(Icons.place_outlined, size: 18, color: c.record),
                         const SizedBox(width: Spacing.two),
                         Expanded(
                           child: Column(
@@ -920,7 +920,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 else
                   ListRow(
                     title: '暂未指定位置',
-                    subtitle: '选所在房间、家具或容器',
                     onTap: () => _pickLocation(locations),
                     right: Text(
                       '选择',
@@ -953,7 +952,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 FindrField(
-                  label: '实体名称（核心标识）',
+                  label: '实体名称',
                   controller: _entity,
                   placeholder: '名称，如「备用钥匙」',
                   onChanged: (_) => _scheduleSave(),

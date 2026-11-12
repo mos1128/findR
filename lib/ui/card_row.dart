@@ -12,17 +12,7 @@ import '../theme/tokens.dart';
 import 'kit.dart';
 import 'media_view.dart';
 
-/// 输入来源的图标与短标签。
-///
-/// 列表以前看不出「这条是长按说话记的，还是打字记的」（真机反馈）：
-/// 角标一旦清掉（转写完成 / 解析完成）就再也分不出来。
-/// 所以缩略图位给没图的卡当占位符，副标题第一段再给一行白纸黑字。
-const Map<SourceKind, String> sourceIcon = <SourceKind, String>{
-  SourceKind.voice: '🎙️',
-  SourceKind.text: '⌨️',
-  SourceKind.photo: '📷',
-};
-
+/// 输入来源的短标签。空标题要按来源给占位符，所以它和角标共用一套词。
 const Map<SourceKind, String> sourceLabel = <SourceKind, String>{
   SourceKind.voice: '语音',
   SourceKind.text: '文字',
@@ -270,11 +260,7 @@ class CardRow extends StatelessWidget {
                 const SizedBox(width: Spacing.three),
                 Stack(
                   children: <Widget>[
-                    MediaThumb(
-                      relPath: cover,
-                      size: 72,
-                      fallbackIcon: '📷',
-                    ),
+                    MediaThumb(relPath: cover, size: 72),
                     if (images.length > 1)
                       Positioned(
                         right: 4,

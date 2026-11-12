@@ -217,8 +217,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
         ),
         children: <Widget>[
           Panel(
-            title: '当前添加层级',
-            hint: '点选下方位置可指定父级',
+            title: '添加到',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
@@ -295,20 +294,12 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
           ),
           Panel(
             title: '位置树',
-            hint: '点击设为父级',
             child: all.isEmpty
                 ? const EmptyState(title: '还没有位置')
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: _renderTree(all, byId, null, 0),
                   ),
-          ),
-          Panel(
-            title: '说明',
-            child: Text(
-              '位置在录入时由模型自动生成，也可在此调整层级或名称。',
-              style: TextStyle(fontSize: 12, height: 1.6, color: c.textMuted),
-            ),
           ),
         ],
       ),

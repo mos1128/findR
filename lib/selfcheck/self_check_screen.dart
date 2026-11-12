@@ -109,10 +109,7 @@ class _SelfCheckScreenState extends State<SelfCheckScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: <Widget>[
-            const Text(
-              '检查数据库、全文索引与沙盒读写。\n'
-              '全部通过表示环境正常。',
-            ),
+            const Text('检查数据库、全文索引与沙盒读写。'),
             const SizedBox(height: 12),
             if (_error != null)
               Card(

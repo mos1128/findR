@@ -160,7 +160,6 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
         children: <Widget>[
           Panel(
             title: '分类池',
-            hint: 'AI 拿不准时归到这里',
             child: categories.isEmpty
                 ? const EmptyState(title: '还没有分类', hint: '预设分类已删光，在下面新建一个。')
                 : Column(
@@ -217,8 +216,7 @@ class _CategoriesScreenState extends ConsumerState<CategoriesScreen> {
                 ),
                 const SizedBox(height: Spacing.three),
                 Text(
-                  '分类只决定归属。卡片结构（位置、步骤）'
-                  '由内容自动决定。',
+                  '不会改动卡片上已有的位置与步骤。',
                   style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
                 ),
                 const SizedBox(height: Spacing.four),

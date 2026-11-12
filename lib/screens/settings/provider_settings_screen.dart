@@ -440,13 +440,6 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                     ),
                   ],
                 ),
-                const SizedBox(height: Spacing.three),
-                Text(
-                  isLlm
-                      ? '主模型负责读图、总结与结构化抽取。'
-                      : '语音识别可选，负责把录音转成文字。',
-                  style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
-                ),
               ],
             ),
           ),
@@ -457,11 +450,6 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                 SectionTitle(isLlm ? '常用服务商' : '常用语音识别服务'),
                 const SizedBox(height: Spacing.two),
                 _buildPresetRail(isLlm ? _llmPresets : _asrPresets, c),
-                const SizedBox(height: Spacing.one),
-                Text(
-                  '点一下填入地址与模型名，只需再填 API Key；也可以直接手改下面的字段。',
-                  style: TextStyle(fontSize: 11.5, height: 1.45, color: c.textMuted),
-                ),
                 const SizedBox(height: Spacing.three),
                 if (isLlm) ...<Widget>[
                   const SectionTitle('协议格式'),
@@ -503,7 +491,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                           ? 'https://api.anthropic.com'
                           : 'https://api.openai.com')
                       : 'https://api.openai.com',
-                  hint: '公网或局域网地址',
+                  hint: '可填局域网地址',
                 ),
                 const SizedBox(height: Spacing.four),
                 FindrField(
@@ -534,10 +522,9 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                 if (isLlm) ...<Widget>[
                   const SizedBox(height: Spacing.four),
                   FindrField(
-                    label: 'User-Agent（可选）',
+                    label: 'User-Agent',
                     controller: _userAgent,
                     placeholder: 'Findr/1.0',
-                    hint: '自定义客户端标识头，一般留空',
                   ),
                 ],
               ],
