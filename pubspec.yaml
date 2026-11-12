@@ -44,3 +44,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    # 设置页「关于」身份行用真图标，不再手画一个字母占位
+    - assets/branding/icon.png

@@ -257,7 +257,6 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final c = FindrColors.of(context);
     final runtimeState = ref.watch(runtimeProvider);
     final rt = runtimeState.value;
     if (rt == null) {
@@ -288,7 +287,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
             // ── 导出 ─────────────────────────────────────────
             Panel(
               title: '导出',
-              hint: '含媒体与 API Key',
+              hint: '含媒体文件',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
@@ -335,16 +334,6 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Text(
-                    '同 id 卡片取较新的一份；分类、位置重名保留本机。'
-                    '设置与 API Key 一律用备份里的覆盖。',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      height: 1.45,
-                      color: c.textMuted,
-                    ),
-                  ),
-                  const SizedBox(height: Spacing.three),
                   Row(
                     children: <Widget>[
                       FindrChip(
@@ -362,17 +351,6 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                       ),
                     ],
                   ),
-                  if (_fullImport) ...<Widget>[
-                    const SizedBox(height: Spacing.two),
-                    Text(
-                      '全量导入会清空本机卡片、分类、位置、设置、媒体与 API Key，再完整恢复备份。',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        height: 1.45,
-                        color: c.danger,
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: Spacing.four),
                   FindrButton(
                     title: '选择备份文件',

@@ -562,22 +562,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 ListRow(
-                  leading: Container(
+                  // 图标本体自带透明圆角（`tool/gen_icons.dart` 生成的 1024 主图），
+                  // 别再套一层圆角容器 —— 两层圆角对不齐，边上会露出底色。
+                  leading: Image.asset(
+                    'assets/branding/icon.png',
                     width: 36,
                     height: 36,
-                    decoration: BoxDecoration(
-                      color: c.record,
-                      borderRadius: BorderRadius.circular(Radii.md),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      'F',
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w800,
-                        color: c.recordText,
-                      ),
-                    ),
                   ),
                   title: 'Findr',
                   subtitle: '版本 ${_versionLabel(rt)}',
