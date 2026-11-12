@@ -154,7 +154,7 @@ class _ChannelButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(Radii.md),
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
-        height: 44,
+        height: 36,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -177,11 +177,11 @@ class _ChannelButton extends StatelessWidget {
             InkWell(
               onTap: onBrowser,
               child: SizedBox(
-                width: 44,
+                width: 36,
                 child: Center(
                   child: Icon(
                     Icons.open_in_new_rounded,
-                    size: 17,
+                    size: 16,
                     color: c.textSecondary,
                   ),
                 ),
@@ -212,7 +212,8 @@ Future<void> _startDownload(
     return;
   }
   ref.read(updateDownloadProvider.notifier).start(info: info, channel: channel);
-  _toast(context, '已从 ${channel.name} 开始下载，进度见右下角小图标');
+  // 起下载不弹提示：控制器会立刻把状态切成「下载中」，右下角小图标自己出现并展开
+  // （`ui/update_pill.dart`），再喊一句「已开始下载」就是同一件事说两遍。
 }
 
 /// 打开外部链接。**失败要说话** —— 静默失败会被当成「点了没反应」。
