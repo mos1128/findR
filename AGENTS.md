@@ -29,3 +29,7 @@
 - 空态的第一步（`用底部的输入框记下第一笔`）
 - 长按等隐藏交互的发现入口
 - 表单 `placeholder` 里的填写示例
+
+## 发版
+
+流程和失败处置写在 `DEVELOPMENT.md`「发版失败了怎么办」。一句话：Gitee 附件掉了就补传（`gh workflow run gitee-resync.yml -f tag=…`），别为它重发一版。

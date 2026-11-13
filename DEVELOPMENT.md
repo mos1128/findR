@@ -94,6 +94,26 @@ bash release.sh
 
 **CI 自动**：构建 APK → 发 GitHub → 镜像代码到 Gitee → 建 Gitee 发行版传同一个 APK。
 
+**发版失败了怎么办** —— 先跑一条命令，它决定后面全不一样：
+
+```bash
+gh release view vX.Y.Z --json assets      # 里面有没有 app-release.apk？
+```
+
+| 情况 | 判据 | 动作 |
+|---|---|---|
+| 包在 GitHub 上，Gitee 那步红 | 日志是 `curl: (56)` / `Connection timed out`，或长时间卡在 1~2 KB/s | `gh workflow run gitee-resync.yml -f tag=vX.Y.Z`，等它绿（慢的时候 17 分钟） |
+| 同上，但日志是 401 / 403 / `access_token` | 令牌失效或没勾 projects | 换仓库密钥 `GITEE_TOKEN`，再跑补传 |
+| 构建或产物断言红 | 没有包 | 当普通 CI 失败修，补传没东西可补 |
+| `Publish GitHub release` 红 | 包没发出去 | 先修 GitHub 侧，补传救不了 |
+
+四条规矩：
+
+- **不为一个附件再发一版**：新 tag 只会在 Gitee 多出一个同样没附件的空壳版本，旧版本照旧缺包。
+- **补传是幂等的**：发行版里已有 `app-release.apk` 就直接跳过并成功退出，可以放心重跑。
+- 补传只有上传那一步会自己重试（3 次，每次 20 分钟封顶），**整包重传、不是断点续传**；4 次都掉就是链路真不行，停下来问人，别连环触发。
+- 补传只挂附件、不建发行版：按 tag 查发行版报 404，说明 Gitee 那边发行版没建出来，先在 Gitee 网页上按同一个 tag 建一个，再跑补传。
+
 **关键配置**（已完成）：
 - 正式签名：`CN=Findr` + 4 个 CI 密钥（`KEYSTORE_BASE64` / `*_PASSWORD` / `KEY_ALIAS`）
 - Gitee 令牌：`GITEE_TOKEN`（GitHub 仓库密钥）
