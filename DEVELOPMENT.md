@@ -32,7 +32,7 @@ cd packages/findr_core && dart test          # 只测 core（快）
 bash release.sh                              # 发版
 ```
 
-**基线不许破**：core 305 条 + app 139 条，静态分析干净。
+**基线不许破**：core 314 条 + app 149 条，静态分析干净。
 
 ## 关键约束
 
@@ -133,7 +133,7 @@ gh release view vX.Y.Z --json assets      # 里面有没有 app-release.apk？
 
 **versionCode 自动推算**：`1.0.0` → 10000、`1.0.1` → 10001（`主×10000+次×100+修`）。
 
-## 真机验收（10 条）
+## 真机验收（11 条）
 
 0. 自检两组全绿
 1. 配置主 LLM → 探测通过

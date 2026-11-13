@@ -98,7 +98,7 @@ flutter build apk --target-platform android-arm64
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 开启 Pull Request
 
-> 代码提交前请确保 `flutter analyze` 与 `flutter test` 均通过（基线：core 305 条 + app 139 条）。
+> 代码提交前请确保 `flutter analyze` 与 `flutter test` 均通过（基线：core 314 条 + app 149 条）。
 
 ---
 
