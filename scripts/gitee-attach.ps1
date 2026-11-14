@@ -44,7 +44,11 @@ function Get-GiteeRelease {
 
 $token = $env:GITEE_TOKEN
 if (-not $token -and (Get-Command gitee -ErrorAction SilentlyContinue)) {
+    # 「没登录」时 CLI 往 stderr 写一行就退 —— 5.1 会把那行当错误当场终止（见下面等包那段），
+    # 而这里只想要「取不到就往下走，让下面报令牌没配」。
+    $ErrorActionPreference = 'Continue'
     $token = & gitee auth token 2>$null | Select-Object -First 1
+    $ErrorActionPreference = 'Stop'
 }
 if (-not $token) {
     throw @"
@@ -61,6 +65,11 @@ $ghRepo = (git remote get-url origin) -replace '^.*github\.com[:/]', '' -replace
 # 盯 release 的附件而不是盯 workflow run：真正要等的是那个包。同时看 run 结论，
 # 构建红了就立刻退出，不陪着白等 45 分钟。
 Write-Host "等 GitHub 出包：$Tag（约 12~18 分钟）…"
+# ⚠️ 这段必须放宽错误处理。Windows PowerShell 5.1（release.sh 调的就是它）把原生命令写进 stderr 的
+#    每一行都当成错误，配上开头那句 $ErrorActionPreference='Stop' —— 第一轮 `gh release view` 时 CI
+#    还没发完发行版，gh 往 stderr 写 "release not found"，这本来是**正常的等待状态**，却会当场终止脚本
+#    （PS 7 同样写法没事，5.1 直接炸；`2>$null` 挡不住）。兜底仍由下面的 throw 和 45 分钟上限负责。
+$ErrorActionPreference = 'Continue'
 $deadline = (Get-Date).AddMinutes(45)
 while ($true) {
     $json = & gh release view $Tag --repo $ghRepo --json assets 2>$null
@@ -75,6 +84,7 @@ while ($true) {
     if ((Get-Date) -gt $deadline) { throw "等了 45 分钟还没出包 —— gh run list --workflow=flutter.yml 看卡在哪。" }
     Start-Sleep -Seconds 20
 }
+$ErrorActionPreference = 'Stop'
 
 # ── 2. 下载 ─────────────────────────────────────────────────────────────────
 New-Item -ItemType Directory -Force build | Out-Null

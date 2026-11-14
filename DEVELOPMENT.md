@@ -192,6 +192,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Ta
 - **令牌类叫 `Radii`**（`Radius` 撞 `dart:ui`）
 - **release 包权限要自己声明**（见上）
 - **`flutter build apk` 产物名不带 ABI**（用 glob 取，别赌名字）
+- **Windows PowerShell 5.1 会把原生命令的 stderr 当错误**：`$ErrorActionPreference='Stop'` 下，`gh release view` 一句「release not found」（还没发完，本来正常）就能当场终止脚本，`2>$null` 拦不住（同样代码 PS 7 不会炸）。写轮询就得在那一小段放宽错误处理。
 
 ---
 
