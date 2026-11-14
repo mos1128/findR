@@ -90,11 +90,23 @@ bash release.sh
 # 输入新版本号（X.Y.Z，每次最后一位+1）
 # 输入更新说明（手写，进 tag 注释）
 # → 跑测试 → 改 pubspec.yaml → 提交 → 打 tag → 推 GitHub
+# → 等 CI 出包（十几分钟）→ 本机把 APK 传上 Gitee → 按字节数校验 → 翻成正式
 ```
 
-**CI 自动**：构建 APK → 发 GitHub → 镜像代码到 Gitee → 建 Gitee 发行版传同一个 APK。
+**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 149 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee → 在 Gitee 建**预发布**发行版（不传附件）→ 留最新 10 个发行版。
 
-**发版失败了怎么办** —— 先跑一条命令，它决定后面全不一样：
+**本机自动**（`release.sh` 的最后一步，`scripts/gitee-attach.ps1`）：等 GitHub 出包 → 下载 → 传 Gitee 附件 → HEAD 比字节数 → PATCH 成正式。
+
+**为什么这么分工**：runner 在境外，往 gitee.com 传 21MB 实测 1.9~20 KB/s（18~90 分钟，常以 `curl: (56)` 断在半路）；从国内宽带传只要十几秒。代价是这期间**别关终端** —— 关了 Gitee 上会留一个没附件的预发布发行版，App 看不见它，国内用户只是看不到新版（不会点到 404），补跑一条命令即可。
+
+**Gitee 令牌（本机，一次性）**：最后那步要用。脚本按顺序取，取不到就把下面两条配法打出来：
+
+1. `npm i -g @gitee/gitee-cli`，再 `gitee auth login`（令牌存 `~/.config/gitee/`，脚本用 `gitee auth token` 取）
+2. `setx GITEE_TOKEN <令牌>`，重开终端生效（令牌在 Gitee → 设置 → 私人令牌，权限只勾 projects）
+
+**换设备后要做的**：`gh auth login`（GitHub）+ 上面任选一条配 Gitee 令牌。Flutter 可以不装 —— `release.sh` 检测不到就跳过本地测试（打一行提醒），CI 里那遍照跑，测试红了不出包。别的都不用搬。
+
+**发版失败了怎么办** —— 先认清是「GitHub 没包」还是「Gitee 没附件」：
 
 ```bash
 gh release view vX.Y.Z --json assets      # 里面有没有 app-release.apk？
@@ -102,21 +114,32 @@ gh release view vX.Y.Z --json assets      # 里面有没有 app-release.apk？
 
 | 情况 | 判据 | 动作 |
 |---|---|---|
-| 包在 GitHub 上，Gitee 那步红 | 日志是 `curl: (56)` / `Connection timed out`，或长时间卡在 1~2 KB/s | `gh workflow run gitee-resync.yml -f tag=vX.Y.Z`，等它绿（慢的时候 17 分钟） |
-| 同上，但日志是 401 / 403 / `access_token` | 令牌失效或没勾 projects | 换仓库密钥 `GITEE_TOKEN`，再跑补传 |
-| 构建或产物断言红 | 没有包 | 当普通 CI 失败修，补传没东西可补 |
-| `Publish GitHub release` 红 | 包没发出去 | 先修 GitHub 侧，补传救不了 |
+| 构建、测试或产物断言红 | 没有包；`release.sh` 等十几分钟后就报错退出 | 当普通 CI 失败修，下个版本重发（tag 不能复用） |
+| `Publish GitHub release` 红 | 没有包 | 先修 GitHub 侧，Gitee 这边补不了 |
+| 包在 GitHub、Gitee 上没有发行版 | Gitee 网页该 tag 404 | CI 里「建 Gitee 发行版」那步红了：在 Gitee 网页按同一个 tag 建一个，再跑下面那条命令 |
+| 包在 GitHub、Gitee 发行版带「预发布」标记 | 页面标着预发布 | 正常中间态，就是等本机补传，见下面那条命令 |
+| 附件大小对不上 | 脚本报「大小不对」 | 上次传了半截：到 Gitee 网页删掉那份 `app-release.apk`，再重跑脚本 |
 
-四条规矩：
+补传命令（幂等，重跑安全）：
 
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Tag vX.Y.Z
+```
+
+五条规矩：
+
+- **Gitee 只留最新 10 个发行版**：社区版配额是单附件 ≤100MB、**单仓库附件总量 1G**（一个包 21MB，不清理的话四十来版就传不上去了）。CI 发完版会顺手删掉第 11 个起的旧发行版；GitHub 那边没有总量限制，历史全留。删掉的老版本链接会失效（App 只读 `/releases/latest`，不受影响）。
 - **不为一个附件再发一版**：新 tag 只会在 Gitee 多出一个同样没附件的空壳版本，旧版本照旧缺包。
-- **补传是幂等的**：发行版里已有 `app-release.apk` 就直接跳过并成功退出，可以放心重跑。
-- 补传只有上传那一步会自己重试（3 次，每次 20 分钟封顶），**整包重传、不是断点续传**；4 次都掉就是链路真不行，停下来问人，别连环触发。
-- 补传只挂附件、不建发行版：按 tag 查发行版报 404，说明 Gitee 那边发行版没建出来，先在 Gitee 网页上按同一个 tag 建一个，再跑补传。
+- **补传是幂等的**：已有同名、同样大小的附件就跳过上传，重跑不会传第二份。
+- **上传不带重试**：断了就重跑脚本。带重试的 POST 一旦在「服务端已收下、连接断了」时重发，会挂两份同名附件。
+- **附件没到位 = 新版对 App 不可见**：发行版停在预发布，`/releases/latest` 会跳过它 —— 这是故意的，宁可国内用户晚看到，也不要弹窗点进去 404。
 
 **关键配置**（已完成）：
 - 正式签名：`CN=Findr` + 4 个 CI 密钥（`KEYSTORE_BASE64` / `*_PASSWORD` / `KEY_ALIAS`）
-- Gitee 令牌：`GITEE_TOKEN`（GitHub 仓库密钥）
+- Gitee 令牌：CI 侧用 GitHub 仓库密钥 `GITEE_TOKEN`（建发行版、清旧发行版）；本机侧用上面任一条配法（传附件）。
+  换令牌的地方：GitHub 仓库 → Settings → Secrets and variables → Actions → `GITEE_TOKEN` → Update；
+  或 `gh secret set GITEE_TOKEN --repo mos1128/findR`。**旧令牌不会因为覆盖而失效**，要自己去 Gitee
+  私人令牌页撤销，否则它照样能推这个仓库。
 
 **CI 三道断言**：
 1. SQLite 含 FTS5 + trigram

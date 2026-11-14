@@ -1,7 +1,7 @@
 name: flutter
 
-# 两个作业的定位（**CI 跑测试这件事已经去掉**：改完在本地跑 `flutter test`，
-# 发版时 `release.sh` 还会先跑一遍；CI 只留「对本机测不出来的东西」的断言）：
+# 两个作业的定位（测试有两处，分工不同：本机 `release.sh` 先跑一遍 = 提前知道、别白打 tag；
+# apk 作业里也跑同一套 = **环境无关的兜底**，一台没装 Flutter 的机器也发得出版）：
 #   - mirror：main 推送时把代码镜像到 Gitee。
 #   - apk   ：打发布 tag（`v*`，由仓库根的 release.sh 打）时出包：
 #             构建 → **三道产物级断言** → 发 GitHub 发布 → 同步 Gitee 发行版。
@@ -134,8 +134,15 @@ jobs:
         #    纯 dart 的 pub 解析不了；在 member 目录里单独 pub get 也不再需要。
         run: flutter pub get
 
-      # ⚠️ 这里的测试步骤**刻意没有**：测试在本地跑（改完 `flutter test`；发版时 `release.sh`
-      #    还会先跑一遍）。CI 只留「本机测不出来」的东西 —— 也就是下面那三道产物级断言。
+      # 同一套测试，`release.sh` 在本机也跑（那一步只为「提前 40 秒知道」，省一个版本号）。
+      # 这里这步的意义是**环境无关**：没装 Flutter 的机器发版时本机会跳过测试，这一版仍然被测过。
+      # 测试红了就停在这里 —— 不出包、不发 GitHub 发布、不建 Gitee 发行版。
+      # 约 2.5 分钟（core 314 条 + app 149 条），放进十几分钟的构建里看不出来。
+      - name: 测试
+        run: |
+          ( cd packages/findr_core && dart analyze && dart test )
+          flutter analyze
+          flutter test
       # 发布约定：**一版一 tag**，tag = `v` + pubspec 的版本号（`1.0.1` → `v1.0.1`）。
       # App 的「检查更新」就是读各渠道「最新一次发布」的 tag 来比版本 ⇒
       # **每次发版必须让 pubspec 的版本号发生变化**：版本号是三段 `X.Y.Z`，
@@ -337,18 +344,22 @@ jobs:
       # App 的「检查更新」**先问 Gitee**（国内直连最稳），Gitee 不通才落到 GitHub ——
       # 所以两边都得有「最新一次发布」，tag 与 GitHub 那条完全一样。
       #
+      # ⚠️ 这一步**只建发行版、不传附件**。runner 在境外，往 gitee.com 传 21MB 实测 1.9~20 KB/s
+      #    （18~90 分钟，常以 curl: (56) 断在半路）；从国内宽带传只要十几秒。附件改由
+      #    `scripts/gitee-attach.ps1` 在本机补（release.sh 末尾自动调）。
+      #    所以这里建成**预发布（prerelease=true）**：附件还没挂上时 `/releases/latest` 会跳过它，
+      #    国内用户看到的仍是上一版 —— 空壳发行版不会变成「能点、点进去 404」的更新弹窗。
+      #    本地脚本传完、按字节数校验通过后，再 PATCH 成正式，那一刻才对 App 可见。
+      #
       # ⚠️ GITEE_TOKEN 没配就整步跳过：别人的 fork、以及你还没建令牌之前，不会因此变红。
       #    令牌怎么配：Gitee → 设置 → 私人令牌（权限只勾 projects）→ 存成仓库密钥 GITEE_TOKEN。
       #    ⚠️ 这个「跳过」只能靠 run 里早退实现，**不能写成 `if: secrets.GITEE_TOKEN != ''`** ——
       #       `secrets` 在 `if` 里不可用，写了会让整个 workflow 文件被判无效（0 秒失败、无日志）。
       #
-      # ⚠️ 这一步里「第一次真跑才知道」的点：建发行版与传附件这两个接口的字段名
-      #    是否与文档一致（Gitee 的接口行为以实跑为准）。
+      # ⚠️ 这一步里「第一次真跑才知道」的点：建/删发行版这两个接口的字段名是否与文档一致
+      #    （Gitee 的接口行为以实跑为准）。
       #    ⚠️ 曾经还有个风险点「Gitee 是否接受 tag 里带 `+`」，版本号改成三段 `X.Y.Z` 之后
       #       已不存在（tag 就是 `v1.0.1`）；下面那句百分号编码留着，防以后又用回 `+`。
-      # 这一步一旦报红（多数是国际链路把 22MB 传断了：curl (56) / 长时间卡在 1~2KB/s），
-      # 发行版其实已经建出来了、只差附件 —— 别为它重发一版，跑一次
-      # `.github/workflows/gitee-resync.yml`（workflow_dispatch，填 tag）把附件补上。
       - name: 同步到 Gitee 发行版
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
@@ -362,7 +373,6 @@ jobs:
           tag="v${{ steps.ver.outputs.value }}"
           # 路径里用百分号编码过的 tag（万一又用回带 `+` 的写法：`+` → `%2B`），免得被当空格解
           tag_path="$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1], safe=""))' "$tag")"
-          apk="$(ls build/app/outputs/flutter-apk/*.apk | head -1)"
 
           # 默认分支名：tag 只能指向 Gitee 自己仓库里的提交（GitHub 的 SHA 在这边不存在）
           branch="$(curl -sS "$api?access_token=$GITEE_TOKEN" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("default_branch") or "master")')"
@@ -375,7 +385,8 @@ jobs:
             curl -sS -X DELETE "$api/releases/$old_id?access_token=$GITEE_TOKEN" -o /dev/null || true
           fi
 
-          # 建发行版。CI 只镜像 main、**不推 tag** ⇒ Gitee 上这个 tag 通常还不存在，用
+          # 建发行版，先建成**预发布**：附件由本地脚本补，补完再翻正式（见上面那段注释）。
+          # CI 只镜像 main、**不推 tag** ⇒ Gitee 上这个 tag 通常还不存在，用
           # target_commitish 让 Gitee 自己建；若同一版本重跑、tag 已存在，Gitee 可能拒绝这种建法
           # ⇒ 去掉 target_commitish（复用已存在的 tag）再试一次。
           # `--fail-with-body` 让 Gitee 的报错原文直接进日志。
@@ -385,7 +396,7 @@ jobs:
               --data-urlencode "tag_name=$tag" \
               --data-urlencode "name=Findr · $tag" \
               --data-urlencode "body@build/release-body.md" \
-              --data-urlencode "prerelease=false" \
+              --data-urlencode "prerelease=true" \
               "$@" \
               -o /tmp/gitee_release.json
           }
@@ -394,18 +405,37 @@ jobs:
             create_release
           fi
           new_id="$(python3 -c 'import json;print(json.load(open("/tmp/gitee_release.json"))["id"])')"
-          echo "新发行版 id=$new_id"
+          echo "新发行版 id=$new_id（预发布，等本机补附件）"
 
-          # 附件只有安装包（版本号在 tag 里，不再需要额外的版本文件）
-          # `-w` 打出耗时与上传速度：runner 在境外、推 gitee.com 很慢（git 推 2.9MB 用了 4 分半），
-          # 21MB 的包到底传了多久，只有这行数字说得清。
-          curl -sS --fail-with-body -X POST "$api/releases/$new_id/attach_files" \
-            -F "access_token=$GITEE_TOKEN" -F "file=@$apk" -o /tmp/gitee_attach.json \
-            -w '附件上传耗时 %{time_total}s，平均 %{speed_upload} B/s\n'
-          python3 -c 'import json;d=json.load(open("/tmp/gitee_attach.json"));print("附件 OK:", d.get("browser_download_url") or d)'
+          echo "Gitee 发行版已建（尚未对 App 可见）：https://gitee.com/ms6/findR/releases/tag/$tag_path"
 
-          # ⚠️ **不自动清理旧的发行版**：删东西这事留给人来定。
-          #    要留意的是 Gitee 的容量规矩 —— 单附件 ≤100M、**每仓库附件总量 ≤1G**，
-          #    每发一版挂一个包，大约二十来版就会充满；到那时手动删几个旧发行版即可。
-          #    （GitHub 那边没有总量限制，历史全留。）
-          echo "Gitee 同步完成：https://gitee.com/ms6/findR/releases/tag/$tag_path"
+          # ── 只留最新 10 个发行版 ────────────────────────────────────────────────
+          # Gitee 社区版的硬顶（help.gitee.com/account/usage-quota）：单附件 ≤100MB、
+          # **单仓库附件总量 1G**。一个包 21MB，不清理的话四十来版就再也传不上去了。
+          # App 只读 `/releases/latest`，旧版没人下，留着只占额度。
+          # （GitHub 那边没有总量限制，历史全留。）
+          # ⚠️ 列表接口是按时间**正序**返回的（实测最旧在前），别指望它倒序。
+          # 删失败不判红：发行版本身已经建好、这一版该发的都发了；额度问题下次自会报错。
+          python3 - "$api" "$GITEE_TOKEN" <<'PY'
+          import json, subprocess, sys
+          api, token = sys.argv[1], sys.argv[2]
+          keep = 10
+
+          def call(*args):
+              return subprocess.run(['curl', '-sS', '-f', *args], capture_output=True, text=True)
+
+          out = call(f'{api}/releases?per_page=100&access_token={token}').stdout
+          try:
+              releases = json.loads(out)
+          except Exception:
+              releases = None
+          if not isinstance(releases, list):
+              print('读不到发行版列表，跳过这次整理')
+              raise SystemExit(0)
+
+          releases.sort(key=lambda r: r['created_at'], reverse=True)
+          for old in releases[keep:]:
+              ok = call('-X', 'DELETE', f'{api}/releases/{old["id"]}?access_token={token}', '-o', '/dev/null').returncode == 0
+              print(('删掉旧发行版 ' if ok else '旧发行版没删掉（不影响本次发布） ') + old['tag_name'])
+          print(f'Gitee 发行版共 {len(releases)} 个，保留最新 {min(len(releases), keep)} 个')
+          PY

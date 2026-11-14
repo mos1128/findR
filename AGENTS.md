@@ -32,4 +32,4 @@
 
 ## 发版
 
-流程和失败处置写在 `DEVELOPMENT.md`「发版失败了怎么办」。一句话：Gitee 附件掉了就补传（`gh workflow run gitee-resync.yml -f tag=…`），别为它重发一版。
+流程和失败处置写在 `DEVELOPMENT.md`「发版失败了怎么办」。一句话：Gitee 附件掉了就补传（`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Tag vX.Y.Z`），别为它重发一版。传附件这一步在**本机**跑（境外 runner 只有 1.9~20 KB/s），所以发版期间别关 `release.sh` 的窗口。

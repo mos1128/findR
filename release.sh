@@ -4,8 +4,11 @@
 #   用法：bash release.sh                # 正常发布（先跑本地验收网）
 #         SKIP_TESTS=1 bash release.sh   # 跳过本地验收网（赶时间时用）
 #
-# 推完 GitHub Actions 会自动：构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee → 在 Gitee 建发行版
-# （同一个 tag、同一个包，见 .github/workflows/flutter.yml）。**本地不需要配 Gitee 凭据。**
+# 推完 GitHub Actions 会自动：构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee → 在 Gitee 建「预发布」发行版
+# （同一个 tag、同一个包，见 .github/workflows/flutter.yml）。之后本脚本做最后一步：
+# 等出包 → 下载 → 传 Gitee → 按字节数校验 → 翻成正式（scripts/gitee-attach.ps1）。
+# **传附件之所以在本机**：runner 在境外，往 gitee.com 传 21MB 实测 1.9~20 KB/s（18~90 分钟、常断），
+# 从国内宽带传只要十几秒。所以这一步要求本机有 Gitee 令牌（取法见那个脚本开头）。
 #
 # ⚠️ 与 App 的「检查更新」绑死的约定：**一版一 tag**，tag = `v` + pubspec 的版本号
 #    （`1.0.1` → `v1.0.1`）。版本号是三段 `X.Y.Z`，**每发一版把最后一位加一** ——
@@ -31,14 +34,18 @@ say "  findR 发布"
 say "========================================"
 say ""
 
-# ── 1/5 前置：工作区干净、在 main 上 ─────────────────────────────────────────
+# ── 1/6 前置：工作区干净、在 main 上 ─────────────────────────────────────────
 git diff --quiet && git diff --cached --quiet \
   || die "工作区有未提交的改动，先提交或 stash（发布提交只该包含版本号那一行）"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 [ "$branch" = "$MAIN_BRANCH" ] || die "当前在 $branch 分支上；发布只在 $MAIN_BRANCH 上做"
-say "[1/5] 工作区干净，在 $MAIN_BRANCH 上；远端 origin=$(git remote get-url origin)"
+say "[1/6] 工作区干净，在 $MAIN_BRANCH 上；远端 origin=$(git remote get-url origin)"
+# 第 6 步要本机把附件传上 Gitee：令牌不在就先说一声，别等十几分钟构建完才报
+if ! command -v gitee >/dev/null 2>&1 && [ -z "${GITEE_TOKEN:-}" ]; then
+  say "  ⚠️ 本机没有 Gitee 令牌，最后一步传附件会失败 —— 配法见 scripts/gitee-attach.ps1 开头两行"
+fi
 
-# ── 2/5 版本号：给建议值、验格式、要求变大、挡住重发 ─────────────────────────
+# ── 2/6 版本号：给建议值、验格式、要求变大、挡住重发 ─────────────────────────
 # 版本号就是三段 `X.Y.Z`，**不带 `+构建号`**：每次发版把最后一位加一（`1.0.0` → `1.0.1`）。
 # 不带 `+N` 时 Flutter 给 Android 填的 versionCode 固定是 1（Gradle 插件的默认值），
 # 覆盖安装照样能装；代价是「同一个版本号重发一次包」在用户端发现不了 ——
@@ -72,7 +79,7 @@ if tags="$(git ls-remote --tags origin 2>/dev/null)"; then
 else
   say "  ⚠️ origin 暂时连不上，跳过远端的 tag 检查"
 fi
-say "[2/5] 版本检查通过：$current → $version"
+say "[2/6] 版本检查通过：$current → $version"
 
 # 更新说明：写进 tag 注释（CI 读它当发布页正文）。连着敲 3 个空行结束；不写就空按三次。
 say ""
@@ -99,25 +106,25 @@ done
 notes="$(printf '%s\n' "$notes" | awk 'NF { last = NR } { line[NR] = $0 } END { for (i = 1; i <= last; i++) print line[i] }')"
 [ -n "$notes" ] || notes="（本次没有更新说明）"
 
-# ── 3/5 本地验收网（CI 不跑测试，测试就靠这里；先跑，省得白等十几分钟构建）─────────
+# ── 3/6 本地验收网（CI 里也有同一套，这里跑只为「提前知道」；能省下一个版本号）────────
 if [ "${SKIP_TESTS:-0}" = "1" ]; then
-  say "[3/5] 按 SKIP_TESTS=1 跳过本地验收网"
+  say "[3/6] 按 SKIP_TESTS=1 跳过本地验收网"
 else
   if ! command -v flutter >/dev/null 2>&1 && [ -x "$FLUTTER_BIN_DIR/flutter" ]; then
     # scoop 装的 Flutter 只在新的用户环境里进 PATH；git bash 里要显式加
     export PATH="$FLUTTER_BIN_DIR:$PATH"
   fi
   if ! command -v flutter >/dev/null 2>&1; then
-    say "[3/5] ⚠️ 找不到 flutter 命令，跳过本地验收网 —— 这一版不会有任何测试把关（CI 也不跑测试）"
+    say "[3/6] ⚠️ 找不到 flutter 命令，跳过本地验收网 —— 这一版仍然会被 CI 测到（测试红了就不出包）"
   else
-    say "[3/5] 本地验收网：core 分析 + 测试，app 分析 + 测试"
+    say "[3/6] 本地验收网：core 分析 + 测试，app 分析 + 测试"
     ( cd packages/findr_core && dart analyze && dart test )
     flutter analyze
     flutter test
   fi
 fi
 
-# ── 4/5 确认（这一步就是「停一下」）────────────────────────────────────────────
+# ── 4/6 确认（这一步就是「停一下」）────────────────────────────────────────────
 say ""
 say "========================================"
 say "  发布  v$version"
@@ -125,7 +132,8 @@ say "  说明  （写进 tag 注释；发布页与 App 的更新弹窗都用它�
 printf '%s\n' "$notes" | sed 's/^/        /'
 say "  提交  chore: 发布 v$version（版本号本来就是它时跳过这次提交）"
 say "  推送  origin（$MAIN_BRANCH + tag）"
-say "  之后  CI 自动：构建 → 发 GitHub 发布 → 镜像代码到 Gitee → 建 Gitee 发行版"
+say "  之后  CI 自动：构建 → 发 GitHub 发布 → 镜像代码到 Gitee → 建 Gitee 预发布发行版"
+say "  再后  本机：等出包 → 传 Gitee → 校验大小 → 翻成正式（十几秒，别关窗口）"
 say "  ⚠️ 推完 GitHub 立刻开始构建（十几分钟）；这期间别再改这一版"
 say "========================================"
 read -rp "确认发布？(y/N)：" ok
@@ -134,8 +142,8 @@ case "$ok" in
   *) say "[已取消]"; exit 0 ;;
 esac
 
-# ── 5/5 写版本号 → 提交 → 打 tag → 推 GitHub（这一步触发 CI）──────────────────
-say "[5/5] 写入版本号、提交、打 tag、推 GitHub …"
+# ── 5/6 写版本号 → 提交 → 打 tag → 推 GitHub（这一步触发 CI）──────────────────
+say "[5/6] 写入版本号、提交、打 tag、推 GitHub …"
 sed -i "s/^version: .*/version: $version/" pubspec.yaml
 git add pubspec.yaml
 # 版本号本来就是这个值（首次发版）时没有 diff —— 空提交会让 git 直接报错退出，
@@ -149,9 +157,20 @@ git tag -a "v$version" --cleanup=whitespace -m "$notes"
 git push origin "$MAIN_BRANCH"
 git push origin "v$version"
 
+# ── 6/6 等 CI 出包 → 本机把附件传上 Gitee → 翻成正式 ──────────────────────────
+# 这是唯一一步必须在本机跑完的：附件不走境外 runner（那边只有 1.9~20 KB/s）。
+# 中断/关窗口不要紧 —— 重跑 `bash release.sh` 不行（tag 已存在），单独重跑那个脚本即可：
+#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Tag v$version
+say ""
+say "[6/6] 等 GitHub 出包，然后本机传 Gitee（约 15 分钟，别关窗口）…"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Tag "v$version" \
+  || die "Gitee 那步没成（发行版停在「预发布」，App 看不到这一版，国内用户不受影响）。
+      按上面的报错处理后重跑：
+      powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Tag v$version"
+
 say ""
 say "========================================"
-say "  v$version 已推送，CI 正在构建："
-say "    看进度：gh run list --workflow=flutter.yml"
-say "    发布处：GitHub 自动发；Gitee 的代码与发行版由 CI 同步（同一个 tag、同一个包）"
+say "  v$version 发布完成"
+say "    GitHub  https://github.com/$(git remote get-url origin | sed -e 's#.*github.com[:/]##' -e 's#\.git$##')/releases/tag/v$version"
+say "    Gitee   https://gitee.com/ms6/findR/releases/tag/v$version"
 say "========================================"
