@@ -83,7 +83,7 @@ flutter run
 flutter build apk --target-platform android-arm64
 ```
 
-> 正式发版走 `bash release.sh`：打 tag → CI 跑测试、出包、发 GitHub 发布、在 Gitee 建预发布发行版 → 本机把 APK 补传到 Gitee 并校验 → 翻成正式（境外 runner 往 Gitee 传只有 1.9~20 KB/s，所以附件不走 CI）。
+> 正式发版走 `bash release.sh`：打 tag → CI 跑测试、出包、发 GitHub 发布、镜像代码到 Gitee → 本机建 Gitee 发行版并把 APK 传上去、校验字节、清旧版（境外 runner 往 Gitee 传只有 1.9~20 KB/s，所以 Gitee 那半边不走 CI）。
 > 开发须知（环境、约束、发布流程、真机验收）见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
 ---

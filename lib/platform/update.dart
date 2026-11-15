@@ -31,8 +31,9 @@ import 'app_paths.dart';
 
 /// 发布接口，**按顺序尝试**（先 Gitee 后 GitHub，见文件头）。
 ///
-/// 两家都是「最新一次发布」：GitHub 的 `/releases/latest` 会跳过草稿与预发布，
-/// 所以 CI 发的是**正式 release**（不再打 prerelease 标记）。
+/// 两家都是「最新一次发布」，但口径不同：GitHub 的 `/releases/latest` 会跳过草稿与预发布，
+/// Gitee 的**不会**。所以两边都必须是一条正式发布、且发布里已经挂着 APK —— Gitee 那条由本机
+/// 在传完附件之后才建（见 `DEVELOPMENT.md`「发布流程」），空壳发行版永远不会出现。
 const List<String> updateApiSources = <String>[
   'https://gitee.com/api/v5/repos/ms6/findR/releases/latest',
   'https://api.github.com/repos/mos1128/findR/releases/latest',

@@ -90,21 +90,23 @@ bash release.sh
 # 输入新版本号（X.Y.Z，每次最后一位+1）
 # 输入更新说明（手写，进 tag 注释）
 # → 跑测试 → 改 pubspec.yaml → 提交 → 打 tag → 推 GitHub
-# → 等 CI 出包（十几分钟）→ 本机把 APK 传上 Gitee → 按字节数校验 → 翻成正式
+# → 等 CI 出包（十几分钟）→ 本机建 Gitee 发行版 → 传附件 → 按字节数校验 → 清旧版
 ```
 
-**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 149 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee → 在 Gitee 建**预发布**发行版（不传附件）→ 留最新 10 个发行版。
+**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 149 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
 
-**本机自动**（`release.sh` 的最后一步，`scripts/gitee-attach.ps1`）：等 GitHub 出包 → 下载 → 传 Gitee 附件 → HEAD 比字节数 → PATCH 成正式。
+**本机自动**（`release.sh` 的最后一步，`scripts/gitee-attach.sh`）：等 GitHub 出包 → 下载 → 在 Gitee 建发行版（名字与正文整份抄 GitHub 那条）→ 传附件 → HEAD 比字节数 → 删旧版（保留最新 10 个 + 清掉没有附件的空壳）。
 
-**为什么这么分工**：runner 在境外，往 gitee.com 传 21MB 实测 1.9~20 KB/s（18~90 分钟，常以 `curl: (56)` 断在半路）；从国内宽带传只要十几秒。代价是这期间**别关终端** —— 关了 Gitee 上会留一个没附件的预发布发行版，App 看不见它，国内用户只是看不到新版（不会点到 404），补跑一条命令即可。
+**为什么这么分工**：runner 在境外，往 gitee.com 传 21MB 实测 1.9~20 KB/s（18~90 分钟，常以 `curl: (56)` 断在半路）；从国内宽带传只要 4.9 秒（4.7 MB/s）。代价是这期间**别关终端**。
+
+**为什么 Gitee 的发行版要等到附件一起建**：Gitee 的 `/releases/latest` **不跳过预发布**（GitHub 会跳）。CI 先建个空壳的话，App 的「检查更新」立刻就能看到这个版本、点下载却是 404。所以规矩是 **「Gitee 上有这个版本 ⟺ 它的包能下」**：建 → 传 → 校验任一步失败，脚本会把刚建的发行版删掉；宁可国内用户晚看到，也不出现点不动的更新。
 
 **Gitee 令牌（本机，一次性）**：最后那步要用。脚本按顺序取，取不到就把下面两条配法打出来：
 
 1. `npm i -g @gitee/gitee-cli`，再 `gitee auth login`（令牌存 `~/.config/gitee/`，脚本用 `gitee auth token` 取）
 2. `setx GITEE_TOKEN <令牌>`，重开终端生效（令牌在 Gitee → 设置 → 私人令牌，权限只勾 projects）
 
-**换设备后要做的**：`gh auth login`（GitHub）+ 上面任选一条配 Gitee 令牌。Flutter 可以不装 —— `release.sh` 检测不到就跳过本地测试（打一行提醒），CI 里那遍照跑，测试红了不出包。别的都不用搬。
+**换设备后要做的**：`gh auth login`（GitHub）+ 上面任选一条配 Gitee 令牌 + **git bash**（`release.sh` 和那个脚本都是 bash）+ **python3**（脚本用它解析 Gitee 的接口返回；`python3` / `python` 任一个能调到就行）。Flutter 可以不装 —— `release.sh` 检测不到就跳过本地测试（打一行提醒），CI 里那遍照跑，测试红了不出包。别的都不用搬。
 
 **发版失败了怎么办** —— 先认清是「GitHub 没包」还是「Gitee 没附件」：
 
@@ -116,27 +118,28 @@ gh release view vX.Y.Z --json assets      # 里面有没有 app-release.apk？
 |---|---|---|
 | 构建、测试或产物断言红 | 没有包；`release.sh` 等十几分钟后就报错退出 | 当普通 CI 失败修，下个版本重发（tag 不能复用） |
 | `Publish GitHub release` 红 | 没有包 | 先修 GitHub 侧，Gitee 这边补不了 |
-| 包在 GitHub、Gitee 上没有发行版 | Gitee 网页该 tag 404 | CI 里「建 Gitee 发行版」那步红了：在 Gitee 网页按同一个 tag 建一个，再跑下面那条命令 |
-| 包在 GitHub、Gitee 发行版带「预发布」标记 | 页面标着预发布 | 正常中间态，就是等本机补传，见下面那条命令 |
-| 附件大小对不上 | 脚本报「大小不对」 | 上次传了半截：到 Gitee 网页删掉那份 `app-release.apk`，再重跑脚本 |
+| 包在 GitHub、Gitee 上没有发行版 | Gitee 网页该 tag 404 | 本机那步没跑完。重跑下面那条命令，脚本会自己把发行版建起来 |
+| 上传中途断了 | 脚本报上传失败 | 重跑下面那条命令：脚本会先删掉上次留下的发行版再重建 |
+| 附件大小对不上 | 脚本报「远端 X / 本地 Y」 | 上次传了半截：到 Gitee 网页删掉那份 `app-release.apk`，再重跑脚本 |
+| 脚本说「删不掉，请手动删掉」 | 回滚失败 | 到 Gitee 网页把那个版本删掉 —— 留着的话国内用户会看到点不动的新版本 |
 
 补传命令（幂等，重跑安全）：
 
 ```bash
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Tag vX.Y.Z
+bash scripts/gitee-attach.sh vX.Y.Z
 ```
 
 五条规矩：
 
-- **Gitee 只留最新 10 个发行版**：社区版配额是单附件 ≤100MB、**单仓库附件总量 1G**（一个包 21MB，不清理的话四十来版就传不上去了）。CI 发完版会顺手删掉第 11 个起的旧发行版；GitHub 那边没有总量限制，历史全留。删掉的老版本链接会失效（App 只读 `/releases/latest`，不受影响）。
-- **不为一个附件再发一版**：新 tag 只会在 Gitee 多出一个同样没附件的空壳版本，旧版本照旧缺包。
+- **Gitee 只留最新 10 个发行版**：社区版配额是单附件 ≤100MB、**单仓库附件总量 1G**（一个包 21MB，不清理的话四十来版就传不上去了）。本机传完版会顺手删掉第 11 个起的旧发行版，**外加没有附件的空壳**；GitHub 那边没有总量限制，历史全留。删掉的老版本链接会失效（App 只读 `/releases/latest`，不受影响）。
+- **不为一个附件再发一版**：新 tag 只会在 Gitee 多出一个同样没附件的空壳，旧版本照旧缺包。
 - **补传是幂等的**：已有同名、同样大小的附件就跳过上传，重跑不会传第二份。
 - **上传不带重试**：断了就重跑脚本。带重试的 POST 一旦在「服务端已收下、连接断了」时重发，会挂两份同名附件。
-- **附件没到位 = 新版对 App 不可见**：发行版停在预发布，`/releases/latest` 会跳过它 —— 这是故意的，宁可国内用户晚看到，也不要弹窗点进去 404。
+- **Gitee 上的版本必须带附件**：建发行版和传附件在同一步里，任一步失败就删掉刚建的那个 —— 于是「Gitee 上有某版本」与「它的包能下」永远等价。这是必须的：Gitee 的 `/releases/latest` **不跳过预发布**，空壳会被 App 当成新版本弹出来，点下载 404。
 
 **关键配置**（已完成）：
 - 正式签名：`CN=Findr` + 4 个 CI 密钥（`KEYSTORE_BASE64` / `*_PASSWORD` / `KEY_ALIAS`）
-- Gitee 令牌：CI 侧用 GitHub 仓库密钥 `GITEE_TOKEN`（建发行版、清旧发行版）；本机侧用上面任一条配法（传附件）。
+- Gitee 令牌：CI 侧用 GitHub 仓库密钥 `GITEE_TOKEN`（只给镜像那步推代码，不再建/删发行版）；本机侧用上面任一条配法（建发行版、传附件、清旧版）。
   换令牌的地方：GitHub 仓库 → Settings → Secrets and variables → Actions → `GITEE_TOKEN` → Update；
   或 `gh secret set GITEE_TOKEN --repo mos1128/findR`。**旧令牌不会因为覆盖而失效**，要自己去 Gitee
   私人令牌页撤销，否则它照样能推这个仓库。
@@ -192,7 +195,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Ta
 - **令牌类叫 `Radii`**（`Radius` 撞 `dart:ui`）
 - **release 包权限要自己声明**（见上）
 - **`flutter build apk` 产物名不带 ABI**（用 glob 取，别赌名字）
-- **Windows PowerShell 5.1 会把原生命令的 stderr 当错误**：`$ErrorActionPreference='Stop'` 下，`gh release view` 一句「release not found」（还没发完，本来正常）就能当场终止脚本，`2>$null` 拦不住（同样代码 PS 7 不会炸）。写轮询就得在那一小段放宽错误处理。
+- **Windows PowerShell 5.1 会把原生命令的 stderr 当错误**：`$ErrorActionPreference='Stop'` 下，`gh release view` 一句「release not found」（还没发完，本来正常）就能当场终止脚本，`2>$null` 拦不住（同样代码 PS 7 不会炸）。补传脚本原来就是 powershell 写的，为这类坑栽过一次后换成了 bash（`scripts/gitee-attach.sh`）：git bash 里一套写法到处一样，只用 python3 解析接口返回。
 
 ---
 

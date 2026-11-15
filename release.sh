@@ -4,11 +4,12 @@
 #   用法：bash release.sh                # 正常发布（先跑本地验收网）
 #         SKIP_TESTS=1 bash release.sh   # 跳过本地验收网（赶时间时用）
 #
-# 推完 GitHub Actions 会自动：构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee → 在 Gitee 建「预发布」发行版
-# （同一个 tag、同一个包，见 .github/workflows/flutter.yml）。之后本脚本做最后一步：
-# 等出包 → 下载 → 传 Gitee → 按字节数校验 → 翻成正式（scripts/gitee-attach.ps1）。
-# **传附件之所以在本机**：runner 在境外，往 gitee.com 传 21MB 实测 1.9~20 KB/s（18~90 分钟、常断），
-# 从国内宽带传只要十几秒。所以这一步要求本机有 Gitee 令牌（取法见那个脚本开头）。
+# 推完 GitHub Actions 会自动：构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee
+# （见 .github/workflows/flutter.yml）。之后本脚本做最后一步：等出包 → 下载 → **建 Gitee 发行版**
+# → 传附件 → 按字节数校验 → 清旧版（scripts/gitee-attach.sh）。
+# **Gitee 那半边整个在本机做**：runner 在境外，往 gitee.com 传 21MB 实测 1.9~20 KB/s
+# （18~90 分钟、常断），从国内宽带传只要几秒；而且 Gitee 的 `/releases/latest` 不跳过预发布，
+# 空壳发行版一建出来 App 就能看到（点下载 404）。所以要求本机有 Gitee 令牌（取法见那个脚本开头）。
 #
 # ⚠️ 与 App 的「检查更新」绑死的约定：**一版一 tag**，tag = `v` + pubspec 的版本号
 #    （`1.0.1` → `v1.0.1`）。版本号是三段 `X.Y.Z`，**每发一版把最后一位加一** ——
@@ -42,7 +43,7 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 say "[1/6] 工作区干净，在 $MAIN_BRANCH 上；远端 origin=$(git remote get-url origin)"
 # 第 6 步要本机把附件传上 Gitee：令牌不在就先说一声，别等十几分钟构建完才报
 if ! command -v gitee >/dev/null 2>&1 && [ -z "${GITEE_TOKEN:-}" ]; then
-  say "  ⚠️ 本机没有 Gitee 令牌，最后一步传附件会失败 —— 配法见 scripts/gitee-attach.ps1 开头两行"
+  say "  ⚠️ 本机没有 Gitee 令牌，最后一步建发行版会失败 —— 配法见 scripts/gitee-attach.sh 开头"
 fi
 
 # ── 2/6 版本号：给建议值、验格式、要求变大、挡住重发 ─────────────────────────
@@ -132,8 +133,8 @@ say "  说明  （写进 tag 注释；发布页与 App 的更新弹窗都用它�
 printf '%s\n' "$notes" | sed 's/^/        /'
 say "  提交  chore: 发布 v$version（版本号本来就是它时跳过这次提交）"
 say "  推送  origin（$MAIN_BRANCH + tag）"
-say "  之后  CI 自动：构建 → 发 GitHub 发布 → 镜像代码到 Gitee → 建 Gitee 预发布发行版"
-say "  再后  本机：等出包 → 传 Gitee → 校验大小 → 翻成正式（十几秒，别关窗口）"
+say "  之后  CI 自动：构建 → 发 GitHub 发布 → 镜像代码到 Gitee"
+say "  再后  本机：等出包 → 建 Gitee 发行版 → 传附件 → 校验字节 → 清旧版（十几秒，别关窗口）"
 say "  ⚠️ 推完 GitHub 立刻开始构建（十几分钟）；这期间别再改这一版"
 say "========================================"
 read -rp "确认发布？(y/N)：" ok
@@ -157,16 +158,16 @@ git tag -a "v$version" --cleanup=whitespace -m "$notes"
 git push origin "$MAIN_BRANCH"
 git push origin "v$version"
 
-# ── 6/6 等 CI 出包 → 本机把附件传上 Gitee → 翻成正式 ──────────────────────────
-# 这是唯一一步必须在本机跑完的：附件不走境外 runner（那边只有 1.9~20 KB/s）。
+# ── 6/6 等 CI 出包 → 本机建 Gitee 发行版、传附件 ──────────────────────────────
+# 这是唯一一步必须在本机跑完的：Gitee 那半边整个不走境外 runner（那边只有 1.9~20 KB/s）。
 # 中断/关窗口不要紧 —— 重跑 `bash release.sh` 不行（tag 已存在），单独重跑那个脚本即可：
-#   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Tag v$version
+#   bash scripts/gitee-attach.sh v$version
 say ""
 say "[6/6] 等 GitHub 出包，然后本机传 Gitee（约 15 分钟，别关窗口）…"
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Tag "v$version" \
-  || die "Gitee 那步没成（发行版停在「预发布」，App 看不到这一版，国内用户不受影响）。
+bash scripts/gitee-attach.sh "v$version" \
+  || die "Gitee 那步没成（发行版没留下来，App 看不到这一版，国内用户不受影响）。
       按上面的报错处理后重跑：
-      powershell -NoProfile -ExecutionPolicy Bypass -File scripts/gitee-attach.ps1 -Tag v$version"
+      bash scripts/gitee-attach.sh v$version"
 
 say ""
 say "========================================"
