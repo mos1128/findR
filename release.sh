@@ -48,8 +48,9 @@ fi
 
 # ── 2/6 版本号：给建议值、验格式、要求变大、挡住重发 ─────────────────────────
 # 版本号就是三段 `X.Y.Z`，**不带 `+构建号`**：每次发版把最后一位加一（`1.0.0` → `1.0.1`）。
-# 不带 `+N` 时 Flutter 给 Android 填的 versionCode 固定是 1（Gradle 插件的默认值），
-# 覆盖安装照样能装；代价是「同一个版本号重发一次包」在用户端发现不了 ——
+# 不带 `+N` 时 Flutter 的 `flutter.versionCode` 恒为 1，所以 `android/app/build.gradle.kts`
+# 自己从版本名推 Android 那个整数 versionCode（`主×10000+次×100+修`，`1.0.16` → 10016）。
+# 于是最后一位一变它自动跟着涨，「同一个版本号重发一次包」则两者都不变（系统视为同一版）——
 # 所以规则就一条：**要发版，最后一位必须变**。
 current="$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')"
 [ -n "$current" ] || die "pubspec.yaml 里读不到 version 行"
