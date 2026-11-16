@@ -30,7 +30,7 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
 
   RuntimeState get _rt {
     final v = ref.read(runtimeProvider).value;
-    if (v == null) throw StateError('运行时还没就绪');
+    if (v == null) throw StateError('运行时尚未就绪');
     return v;
   }
 
@@ -168,8 +168,8 @@ class _LocationsScreenState extends ConsumerState<LocationsScreen> {
     if (!res.ok) {
       _toast(
         res.reason == DeleteLocationRejection.hasChildren
-            ? '删不掉：下面还有 ${res.count} 个子位置。'
-            : '删不掉：有 ${res.count} 张卡片用了这个位置。',
+            ? '无法删除：下面还有 ${res.count} 个子位置。'
+            : '无法删除：有 ${res.count} 张卡片使用了这个位置。',
       );
       return;
     }

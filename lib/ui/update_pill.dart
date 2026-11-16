@@ -245,9 +245,9 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
         // 只有「真的拉不起系统安装」才需要走浏览器兜底 —— 正常待安装时那是一次多余的出口。
         final browserFallback = lastInstall == InstallOutcome.unavailable || lastInstall == InstallOutcome.failed;
         final hint = needsPermission
-            ? '系统还没允许安装应用。点「去设置」打开开关，返回后自动继续。'
+            ? '系统尚未允许安装应用。请点「去设置」打开开关，返回后会自动继续。'
             : browserFallback
-                ? '拉不起系统安装界面，改用浏览器下载后手动安装。'
+                ? '无法打开系统安装界面，请改用浏览器下载后手动安装。'
                 : null; // 标题已经说了「更新已下载」，正文不再复述
         return <Widget>[
           if (hint != null) ...<Widget>[
@@ -324,7 +324,7 @@ class _UpdateProgressPillState extends ConsumerState<UpdateProgressPill> {
       ok = false;
     }
     if (!ok && mounted) {
-      setState(() => _note = '打不开浏览器，手动访问：${state.channel.url}');
+      setState(() => _note = '无法打开浏览器，请手动访问：${state.channel.url}');
     }
   }
 

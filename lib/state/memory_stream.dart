@@ -156,7 +156,7 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
 
   RuntimeState get _rt {
     final v = ref.read(runtimeProvider).value;
-    if (v == null) throw StateError('运行时还没就绪');
+    if (v == null) throw StateError('运行时尚未就绪');
     return v;
   }
 
@@ -293,15 +293,15 @@ final class MemoryStreamNotifier extends AsyncNotifier<MemoryStreamState> {
       //（这里是「模型没从库里挑出直接相关的」，不是「模型不可达」），所以先判它。
       String? note;
       if (res.advice != null) {
-        note = res.usedFallback ? '模型没挑出直接相关的内容，下面是字面命中的条目。' : null;
+        note = res.usedFallback ? '模型未挑出直接相关的内容，以下为字面命中的条目。' : null;
       } else if (res.relaxed == true) {
         note = '模型给的条件太严（分类 / 时间 / 位置 / 全词命中），已放宽。';
       } else if (res.unclear) {
-        note = res.cards.isEmpty ? '模型没听懂这句话，换个说法试试。' : '模型没听懂，已退回字面检索，结果可能不全。';
+        note = res.cards.isEmpty ? '模型未能理解这句话，请换个说法。' : '模型未能理解，已退回字面检索，结果可能不完整。';
       } else if (res.usedFallback) {
         note = llmConfigured(_rt.llm)
             ? '模型不可达，已退回字面检索（无同义词扩展、无分类/位置约束）。'
-            : '还没配模型，按字面检索。多个关键词用空格分开更准。';
+            : '尚未配置模型，仅做字面检索。多个关键词用空格分开更准确。';
       }
 
       state = AsyncData(

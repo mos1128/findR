@@ -67,7 +67,7 @@ void main() {
     await _pump(tester, (_) async => false);
     // 路径尚不可读：若提前读取，这里会显示读图失败而非张数提示。
     await _selectPhotos(tester, List.generate(13, (i) => '${_root.path}/unread-$i.jpg'));
-    expect(find.text('图片有点多'), findsOneWidget);
+    expect(find.text('图片数量过多'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
@@ -122,7 +122,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('护照在主卧抽屉'), findsOneWidget, reason: '失败后输入必须还在');
-    expect(find.text('没能存下，内容还在，稍后重试'), findsOneWidget);
+    expect(find.text('保存失败，内容仍保留，请稍后重试'), findsOneWidget);
 
     ok = true;
     await tester.tap(find.text('存'));

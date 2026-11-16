@@ -54,13 +54,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       write();
     } catch (e) {
-      if (mounted) _toast('没能保存：${plainError(e)}');
+      if (mounted) _toast('保存失败：${plainError(e)}');
     }
   }
 
   RuntimeState get _rt {
     final v = ref.read(runtimeProvider).value;
-    if (v == null) throw StateError('运行时还没就绪');
+    if (v == null) throw StateError('运行时尚未就绪');
     return v;
   }
 
@@ -133,7 +133,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     } catch (_) {
       ok = false;
     }
-    if (!ok && mounted) _toast('打不开浏览器，请手动访问：$url');
+    if (!ok && mounted) _toast('无法打开浏览器，请手动访问：$url');
   }
 
   Future<void> _push(Widget screen) async {
@@ -259,7 +259,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _checkUpdate(RuntimeState rt) async {
     final version = rt.version;
     if (version == null) {
-      _dialog('检查更新', '暂时读不到当前版本号，稍后再试。');
+      _dialog('检查更新', '无法读取当前版本号，请稍后重试。');
       return;
     }
     setState(() => _busy = true);
@@ -300,7 +300,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ctx,
           title: '检查更新',
           content: Text(
-            '拿不到更新信息（可能网络不稳）。\n稍后再试，或前往下载页。',
+            '无法读取更新信息，请稍后重试。',
             style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
           ),
           actions: <Widget>[

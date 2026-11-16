@@ -56,7 +56,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
 
   RuntimeState get _rt {
     final v = ref.read(runtimeProvider).value;
-    if (v == null) throw StateError('运行时还没就绪');
+    if (v == null) throw StateError('运行时尚未就绪');
     return v;
   }
 
@@ -129,7 +129,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       if (file == null || !mounted) return;
       setState(() => _picked = file);
     } catch (e) {
-      if (mounted) _dialog('打开文件选择器失败', '$e');
+      if (mounted) _dialog('无法打开文件选择器', '$e');
     }
   }
 
@@ -394,9 +394,9 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
                       title: 'API Key',
                       tone: NoticeTone.info,
                       text: _keyRestore!.restored > 0
-                          ? '已恢复 ${_keyRestore!.restored} 把 Key'
-                                '${_keyRestore!.cleared > 0 ? '，并清空 ${_keyRestore!.cleared} 把备份里没有的 Key' : ''}。'
-                          : '已清空 ${_keyRestore!.cleared} 把备份里没有的 Key。',
+                          ? '已恢复 ${_keyRestore!.restored} 个 Key'
+                                '${_keyRestore!.cleared > 0 ? '，并清空 ${_keyRestore!.cleared} 个备份中不存在的 Key' : ''}。'
+                          : '已清空 ${_keyRestore!.cleared} 个备份中不存在的 Key。',
                     ),
                   ],
                 ],

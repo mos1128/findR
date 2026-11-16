@@ -27,6 +27,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../platform/app_paths.dart';
+import '../platform/app_settings.dart';
 import '../theme/tokens.dart';
 import '../ui/kit.dart';
 import 'image_compress.dart';
@@ -262,7 +263,7 @@ class _ComposerState extends State<Composer> {
     if (files.isEmpty || !mounted) return;
     final limitHint = overImageLimitHint(_photos.length + files.length);
     if (limitHint != null) {
-      await _alert('图片有点多', limitHint);
+      await _alert('图片数量过多', limitHint);
       if (!mounted) return;
     }
 
@@ -314,7 +315,7 @@ class _ComposerState extends State<Composer> {
         photo.setFallback(bytes: source, reason: reason, ext: originalImageExt(source));
         if (!_fallbackToastShown) {
           _fallbackToastShown = true;
-          _toast('有图片没能压缩，已按原图保存');
+          _toast('部分图片无法压缩，已按原图保存');
         }
     }
     if (mounted) setState(() {});
@@ -326,9 +327,9 @@ class _ComposerState extends State<Composer> {
       final one = await takePhoto();
       if (one != null) await _addPhotos(<XFile>[one]);
     } on PickError catch (e) {
-      await _alert('没能拍照', e.message);
+      await _alert('无法拍照', e.message);
     } catch (e) {
-      await _alert('没能拍照', '$e');
+      await _alert('无法拍照', '$e');
     }
   }
 
@@ -337,9 +338,9 @@ class _ComposerState extends State<Composer> {
     try {
       await _addPhotos(await pickPhotos());
     } on PickError catch (e) {
-      await _alert('打不开相册', e.message);
+      await _alert('无法打开相册', e.message);
     } catch (e) {
-      await _alert('打不开相册', '$e');
+      await _alert('无法打开相册', '$e');
     }
   }
 
@@ -355,7 +356,7 @@ class _ComposerState extends State<Composer> {
       if (!mounted) return;
       switch (result) {
         case TextFileRejected(:final message):
-          await _alert('这个文件不能读', message);
+          await _alert('无法读取这个文件', message);
         case TextFileOk(:final text, :final fileName, :final bytes):
           setState(
             () => _files.add(
@@ -394,7 +395,7 @@ class _ComposerState extends State<Composer> {
         if (shouldAutoStopRecording(_recorder.elapsedMs)) {
           _ticker?.cancel();
           _ticker = null;
-          _toast('已到 1 分钟上限，录音自动结束');
+          _toast('已达到 1 分钟上限，录音自动结束');
           unawaited(_stopRecording());
           return;
         }
@@ -402,10 +403,36 @@ class _ComposerState extends State<Composer> {
       });
     } on RecorderError catch (e) {
       _pressing = false;
-      if (mounted) await _alert('录不了音', e.message);
+      if (!mounted) return;
+      if (!e.permission) {
+        await _alert('无法录音', e.message);
+        return;
+      }
+      // 没授权：权限框只在「还没拒绝过」时弹，永久拒绝后只能去设置页开，给个入口
+      final c = FindrColors.of(context);
+      await _alert(
+        '无法录音',
+        e.message,
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('取消', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              unawaited(openAppSettings());
+            },
+            child: Text(
+              '去设置',
+              style: TextStyle(color: c.record, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      );
     } catch (e) {
       _pressing = false;
-      if (mounted) await _alert('录不了音', '$e');
+      if (mounted) await _alert('无法录音', '$e');
     }
   }
 
@@ -520,7 +547,7 @@ class _ComposerState extends State<Composer> {
       if (!mounted) return;
       if (!ok) {
         // 落盘失败：**内容一个都不许清**。用户看到提示后可以重试。
-        _toast('没能存下，内容还在，稍后重试');
+        _toast('保存失败，内容仍保留，请稍后重试');
         return;
       }
       setState(() {
@@ -532,7 +559,7 @@ class _ComposerState extends State<Composer> {
       });
       _refreshCanSubmit();
     } catch (e) {
-      if (mounted) _toast('没能存下：$e');
+      if (mounted) _toast('保存失败：$e');
       return;
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -745,7 +772,7 @@ class _ComposerState extends State<Composer> {
                                     border: InputBorder.none,
                                     hintText: widget.enabled
                                         ? '记一笔…（回车即存）'
-                                        : '数据库还没就绪',
+                                        : '数据库尚未就绪',
                                     hintStyle: TextStyle(
                                       fontSize: 12.5,
                                       color: c.textMuted,
@@ -1237,7 +1264,7 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 child: Text(
-                  '没文字又不做分析，只能靠分类和标签找。',
+                  '没有文字也不做分析时，只能靠分类和标签查找。',
                   style: TextStyle(
                     fontSize: 11.5,
                     height: 1.4,

@@ -136,7 +136,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
   Future<bool> _submit(ComposerPayload payload) async {
     final rt = ref.read(runtimeProvider).value;
     if (rt == null) {
-      _toast('还没准备好，稍等一下');
+      _toast('尚未就绪，请稍候');
       return false;
     }
     try {
@@ -151,7 +151,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
         ),
       );
     } catch (e) {
-      _toast('没能存下：$e');
+      _toast('保存失败：$e');
       // 返回 false：Composer 会保留用户输入的全部素材
       return false;
     }
@@ -272,7 +272,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     if (fatal != null && s == null) {
       return ScreenBody.column(
         children: <Widget>[
-          Notice(title: '数据库没能打开', text: fatal, tone: NoticeTone.danger),
+          Notice(title: '数据库无法打开', text: fatal, tone: NoticeTone.danger),
         ],
       );
     }
@@ -393,7 +393,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
               // 列表本身是好的，这只是一次附加调用没跑成
               if (s?.answerError != null && !answering)
                 Notice(
-                  title: '没能组织答案',
+                  title: '无法生成答案',
                   text: s!.answerError!,
                   tone: NoticeTone.warn,
                   action: Text(
@@ -473,7 +473,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
                 hint: search != null
                     ? (llmConfigured(ref.read(runtimeProvider).value?.llm)
                           ? '换个说法试试'
-                          : '没配模型，只做字面匹配。试试更具体的词，'
+                          : '尚未配置模型，仅做字面匹配。试试更具体的词，'
                                 '或用空格分开，比如「护照 柜子」。')
                     : '用底部的输入框记下第一笔',
               ),
@@ -863,7 +863,7 @@ class _SearchBarState extends State<_SearchBar> {
                           const SizedBox(width: Spacing.two),
                           Expanded(
                             child: Text(
-                              '还没配模型',
+                              '尚未配置模型',
                               style: TextStyle(
                                 fontSize: 11.5,
                                 color: c.textSecondary,

@@ -24,9 +24,15 @@ final class RecordedAudio {
 
 /// 录音相关的失败。消息是人话。
 final class RecorderError implements Exception {
-  const RecorderError(this.message);
+  const RecorderError(this.message, {this.permission = false});
 
   final String message;
+
+  /// 是不是「没给权限」这一类：界面要额外给一个能落地的入口（去系统设置页）。
+  ///
+  /// 系统权限框只在「还没拒绝过」时才会弹出，用户点过「不再询问」之后
+  /// `hasPermission()` 直接返回 false —— 这时除了设置页没有别的路。
+  final bool permission;
 
   @override
   String toString() => message;
@@ -80,7 +86,7 @@ final class LongPressRecorder {
       final rec = _rec ??= AudioRecorder();
       // 没授权时这个调用会顺带把系统弹窗带出来
       if (!await rec.hasPermission()) {
-        throw const RecorderError('没有麦克风权限。在系统设置里给 Findr 打开麦克风。');
+        throw const RecorderError('需要麦克风权限', permission: true);
       }
       // 权限框期间用户已经松手了：什么都不启动。
       if (_cancelOnStart) {
@@ -115,7 +121,7 @@ final class LongPressRecorder {
     } on RecorderError {
       rethrow;
     } catch (e) {
-      throw RecorderError('录不了音：$e');
+      throw RecorderError('无法录音：$e');
     } finally {
       _busy = false;
     }

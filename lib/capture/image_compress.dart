@@ -79,7 +79,7 @@ CompressResult compressToWebp(Uint8List source) {
   if (source.isEmpty) return const CompressFailed('这个图片文件是空的。');
   if (source.length > maxSourceBytes) {
     return CompressFailed(
-      '这张图有 ${(source.length / (1024 * 1024)).toStringAsFixed(1)}MB，超过了单张 '
+      '这张图片有 ${(source.length / (1024 * 1024)).toStringAsFixed(1)}MB，超过单张 '
       '${maxSourceBytes ~/ (1024 * 1024)}MB 的上限。',
     );
   }
@@ -88,15 +88,15 @@ CompressResult compressToWebp(Uint8List source) {
   try {
     decoded = img.decodeImage(source);
   } catch (e) {
-    return CompressFailed('这张图没能读出来：$e');
+    return CompressFailed('无法读取这张图片：$e');
   }
   if (decoded == null) {
     // 解不出来的最常见原因是 HEIC（iPhone 直出的格式）。
     // 与其笼统说「读不出来」，不如把这一种点名 —— 它有明确的绕行办法。
     if (isHeic(source)) {
-      return const CompressFailed('HEIC 格式暂时读不了。把相机格式改成「兼容性最佳」，或先截图。');
+      return const CompressFailed('HEIC 格式暂不支持读取。请把相机格式改成「兼容性最佳」，或先截图。');
     }
-    return const CompressFailed('读不了这张图（不是 JPEG / PNG / WebP）。');
+    return const CompressFailed('无法读取这张图片（不是 JPEG / PNG / WebP）。');
   }
 
   // ⚠️⚠️ **这一段刻意什么都不做** —— 写下来免得下次又来「补一刀」。
@@ -144,7 +144,7 @@ CompressResult compressToWebp(Uint8List source) {
       method: 0,
     );
   } catch (e) {
-    return CompressFailed('这张图压不了：$e');
+    return CompressFailed('无法压缩这张图片：$e');
   }
 
   final outW = scaled.width;

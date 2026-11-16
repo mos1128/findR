@@ -139,7 +139,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
 
   RuntimeState get _rt {
     final v = ref.read(runtimeProvider).value;
-    if (v == null) throw StateError('运行时还没就绪');
+    if (v == null) throw StateError('运行时尚未就绪');
     return v;
   }
 

@@ -186,10 +186,10 @@ void main() {
       expect((r as CompressFailed).reason, contains('空的'));
     });
 
-    test('不是图片的字节：说「读不出来」', () {
+    test('不是图片的字节：说「无法读取」', () {
       final r = compressToWebp(Uint8List.fromList(List<int>.filled(64, 7)));
       expect(r, isA<CompressFailed>());
-      expect((r as CompressFailed).reason, contains('读不了'));
+      expect((r as CompressFailed).reason, contains('无法读取'));
     });
 
     test('超过单张上限：直接拒绝，且把上限说出来', () {

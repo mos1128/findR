@@ -183,7 +183,7 @@ final class UpdateDownloadNotifier extends Notifier<UpdateDownloadState> {
     }
     _cancel = null;
     final result = outcome ??
-        (cancel.isCancelled ? const DownloadCancelled() : const DownloadFailed('没有可用的下载地址'));
+        (cancel.isCancelled ? const DownloadCancelled() : const DownloadFailed('暂无可用下载地址'));
 
     switch (result) {
       case DownloadDone(:final file):
@@ -263,7 +263,7 @@ final class UpdateDownloadNotifier extends Notifier<UpdateDownloadState> {
       state = UpdateDownloadFailed(
         info: s.info,
         channel: s.channel,
-        reason: '删不掉旧安装包，请稍后再试',
+        reason: '无法删除旧安装包，请稍后再试',
       );
       return;
     }

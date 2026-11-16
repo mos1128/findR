@@ -224,7 +224,7 @@ Future<void> _openUrl(BuildContext context, String url) async {
   } catch (_) {
     ok = false;
   }
-  if (!ok && context.mounted) _toast(context, '打不开浏览器，请手动访问：$url');
+  if (!ok && context.mounted) _toast(context, '无法打开浏览器，请手动访问：$url');
 }
 
 void _toast(BuildContext context, String message) => showFindrToast(context, message);

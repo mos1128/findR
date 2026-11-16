@@ -19,10 +19,15 @@ import java.io.File
 ///      授权后用户返回，Dart 侧靠「回前台」事件自动重试安装（不用再点一次）；
 ///   3. **下载期间的保活前台服务** —— 见 [DownloadKeepAliveService]。
 ///
+/// 另外挂了一条 `findr/app` 通道（Dart 侧 `lib/platform/app_settings.dart`）：
+/// **打开本应用的系统设置页** —— 权限被「不再询问」永久拒绝后，系统不再弹权限框，
+/// 只有这页能把开关打开，界面得有个能点的入口。
+///
 /// ⚠️ 只做「拉起」不做「代替用户点」：**静默安装不存在**，这是 Android 的规矩，
 /// 文档里也这么写（别让任何人以为这是 OTA）。
 class MainActivity : FlutterActivity() {
     private val channelName = "findr/update"
+    private val appChannelName = "findr/app"
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
@@ -45,6 +50,15 @@ class MainActivity : FlutterActivity() {
                 }
                 "stopKeepAlive" -> {
                     DownloadKeepAliveService.stop(this, call.argument<Boolean>("ready") == true)
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(engine.dartExecutor.binaryMessenger, appChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openAppSettings" -> {
+                    openAppSettings()
                     result.success(true)
                 }
                 else -> result.notImplemented()
@@ -81,6 +95,17 @@ class MainActivity : FlutterActivity() {
             )
         } catch (_: Exception) {
             // 个别 ROM 砍了这页：拉不起来就拉倒，用户也能自己去系统设置里找
+        }
+    }
+
+    /// 打开本应用的「应用详情」页（权限开关都在这儿）。
+    private fun openAppSettings() {
+        try {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData(Uri.parse("package:$packageName")),
+            )
+        } catch (_: Exception) {
+            // 同上：拉不起来就拉倒
         }
     }
 }

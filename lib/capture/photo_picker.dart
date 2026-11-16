@@ -53,7 +53,7 @@ Future<Uint8List> readPhoto(XFile file) async {
   if (length > maxPickBytes) {
     throw PickError(
       '「${_shortName(file.name)}」有 ${(length / (1024 * 1024)).toStringAsFixed(1)}MB，'
-      '超过了单张 ${maxPickBytes ~/ (1024 * 1024)}MB 的上限。',
+      '超过单张 ${maxPickBytes ~/ (1024 * 1024)}MB 的上限。',
     );
   }
     return await file.readAsBytes();
@@ -62,7 +62,7 @@ Future<Uint8List> readPhoto(XFile file) async {
   } catch (e) {
     // 微信 / 云盘转存来的 `content://` 虚拟文档常常拿不到可读流 —— 这是真实存在的一类，
     // 所以给它一句明确的话，而不是把底层异常原样抛给用户
-    throw PickError('读不了这张图（${_shortName(file.name)}）：$e');
+    throw PickError('无法读取这张图片（${_shortName(file.name)}）：$e');
   }
 }
 

@@ -497,7 +497,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 else
                   Text(
                     card.audioPath != null
-                        ? '还没转写，可在「详细记录」里补。'
+                        ? '尚未转写，可在「详细记录」中补充。'
                         : '暂无文字记录。',
                     style: TextStyle(fontSize: 13, height: 1.5, color: c.textMuted),
                   ),
@@ -678,7 +678,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                 const SizedBox(height: Spacing.two),
                 if (categories.isEmpty)
                   Text(
-                    '没有分类。在「设置 → 分类标签」里加。',
+                    '暂无分类。请到「设置 → 分类标签」中添加。',
                     style: TextStyle(fontSize: 12, color: c.textMuted),
                   )
                 else

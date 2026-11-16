@@ -128,7 +128,7 @@ SelfCheckItem _checkForeignKeys(SqliteDriver db) {
       return const SelfCheckItem(
         name: '外键真的会拦人',
         ok: false,
-        detail: '非法 parent_id 竟然写进去了 —— PRAGMA foreign_keys 没起作用',
+        detail: '非法 parent_id 被写入成功 —— PRAGMA foreign_keys 未生效',
       );
     }
     return const SelfCheckItem(

@@ -134,7 +134,7 @@ class MediaFull extends StatelessWidget {
             height: 180,
             color: c.surfaceAlt,
             alignment: Alignment.center,
-            child: Text('图片读不出来', style: TextStyle(fontSize: 12.5, color: c.textMuted)),
+            child: Text('无法读取图片', style: TextStyle(fontSize: 12.5, color: c.textMuted)),
           ),
         ),
       ),
