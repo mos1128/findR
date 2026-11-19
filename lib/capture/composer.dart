@@ -14,8 +14,9 @@
 ///    读的就是同一个 controller，新旧值永远相等，`setState` 一次都不触发。
 ///    （这个 bug 被 `test/memory_stream_test.dart` 抓过。）
 /// 2. 图片选中后逐张读取并在后台压缩，处理期间附件条显示占位，避免整批原图常驻内存。
-/// 3. **录音从输入框本身长按触发**（没唤起键盘时），不再有「先切语音模式再按住」那颗按钮：
-///    轻点是打字、长按是说话，两者共用同一条坞。长按的抬手事件由 [HoldInput] 立刻报上来，
+/// 3. **录音从输入框本身长按触发**（没唤起键盘时），左边不再挂一颗「先切语音模式再按住」：
+///    轻点是打字、长按是说话，两者共用同一条坞（搜索页相反：那边两种输入各占一颗）。
+///    长按的抬手事件由 [HoldInput] 立刻报上来，
 ///    太短由 [shouldDiscardRecording] 判为误触丢掉，**不弹窗、不生成空卡**。
 ///    开录前留 200ms 的按稳判定 —— 真点一下不该让系统麦克风指示灯闪。
 library;
@@ -28,6 +29,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 
 import '../platform/inbound_share.dart';
 import '../theme/tokens.dart';
+import '../ui/dock.dart';
 import '../ui/haptics.dart';
 import '../ui/hold_input.dart';
 import '../ui/kit.dart';
@@ -895,8 +897,8 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
                         ),
                       ),
                       const SizedBox(width: Spacing.two),
-                      // 右2：＋ 展开素材
-                      _IconBox(
+                      // 右2：＋ 展开素材（就地弹一层，不跳页 —— 需求六）
+                      DockIconButton(
                         icon: _expanded
                             ? Icons.close_rounded
                             : Icons.add_rounded,
@@ -908,7 +910,8 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
                       ),
                       const SizedBox(width: Spacing.two),
                       // 右1（最右侧）：存按钮（逻辑终点）
-                      _SaveButton(
+                      DockCommitButton(
+                        label: '存',
                         enabled: widget.enabled && _canSubmit,
                         loading: _sending,
                         onPressed: () => unawaited(_submit()),
@@ -1441,103 +1444,3 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
   }
 }
 
-/// ＋：展开加素材。**就地展开（弹一层），不跳页** —— 需求六明确要求。
-class _IconBox extends StatelessWidget {
-  const _IconBox({
-    required this.icon,
-    this.onPressed,
-    this.active = false,
-    this.tooltip,
-  });
-
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final bool active;
-  final String? tooltip;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = FindrColors.of(context);
-    final on = onPressed != null;
-    Widget button = Material(
-      color: c.surfaceAlt,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(Radii.pill),
-        side: BorderSide.none,
-      ),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(Radii.pill),
-        child: SizedBox(
-          width: 38,
-          height: 38,
-          child: Icon(
-            icon,
-            size: 20,
-            color: active ? c.record : (on ? c.textSecondary : c.textMuted),
-          ),
-        ),
-      ),
-    );
-    if (tooltip != null) {
-      button = Tooltip(message: tooltip!, child: button);
-    }
-    return button;
-  }
-}
-
-/// 「存」—— 整屏唯一用「记」的强调色实心块（需求六：与「查」强区分）。
-class _SaveButton extends StatelessWidget {
-  const _SaveButton({
-    required this.enabled,
-    required this.loading,
-    required this.onPressed,
-  });
-
-  final bool enabled;
-  final bool loading;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = FindrColors.of(context);
-    final active = enabled || loading;
-    return Material(
-      color: active ? c.record : c.surfaceAlt,
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(Radii.pill),
-        side: BorderSide.none,
-      ),
-      child: InkWell(
-        onTap: enabled ? onPressed : null,
-        borderRadius: BorderRadius.circular(Radii.pill),
-        child: SizedBox(
-          width: 44,
-          height: 38,
-          child: loading
-              ? Center(
-                  child: SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: c.recordText,
-                    ),
-                  ),
-                )
-              : Center(
-                  child: Text(
-                    '存',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: enabled ? c.recordText : c.textMuted,
-                    ),
-                  ),
-                ),
-        ),
-      ),
-    );
-  }
-}

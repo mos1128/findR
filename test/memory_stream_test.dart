@@ -18,6 +18,7 @@ import 'package:findr_app/screens/memory_stream_screen.dart';
 import 'package:findr_app/screens/search_screen.dart';
 import 'package:findr_app/state/update_check.dart';
 import 'package:findr_app/theme/tokens.dart';
+import 'package:findr_app/ui/dock.dart';
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -184,22 +185,80 @@ void main() {
     );
   });
 
-  testWidgets('搜索页同样：键盘收起后还能长按说话', (tester) async {
+  testWidgets('搜索页：打字和说话是两种模式，左边那颗切过去才出现「按住 说话」', (tester) async {
     await pumpApp(tester);
     await openSearch(tester);
-    final face = find.descendant(
+
+    final field = find.descendant(
       of: find.byType(SearchScreen),
-      matching: find.text('搜索记忆…（长按说话）'),
+      matching: find.byType(TextField),
     );
-    expect(face, findsNothing, reason: '进来就抱着键盘，语音态要等键盘收掉');
+    final voiceFace = find.descendant(
+      of: find.byType(SearchScreen),
+      matching: find.text('按住 说话'),
+    );
+    // 进来是打字态：说不了话，输入框就是输入框
+    expect(voiceFace, findsNothing);
+    expect(field, findsOneWidget);
 
-    addTearDown(tester.view.reset);
-    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SearchScreen),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      ),
+    );
     await settle(tester);
+    expect(voiceFace, findsWidgets);
+    expect(
+      field,
+      findsNothing,
+      reason: '两种输入不共用一颗药丸：语音态里不该还留着输入框',
+    );
 
-    tester.view.viewInsets = FakeViewPadding.zero;
+    // 再点一下（这时画的是键盘）：切回打字，键盘自己起来
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SearchScreen),
+        matching: find.byIcon(Icons.keyboard_rounded),
+      ),
+    );
     await settle(tester);
-    expect(face, findsOneWidget);
+    expect(voiceFace, findsNothing);
+    expect(tester.widget<TextField>(field).focusNode?.hasFocus, isTrue);
+  });
+
+  testWidgets('搜索页右下那颗是「搜」：有字才亮，点它等于回车', (tester) async {
+    seedCard('护照放在主卧抽屉里');
+    await pumpApp(tester);
+    await openSearch(tester);
+
+    final submit = find.descendant(
+      of: find.byType(SearchScreen),
+      matching: find.byType(DockCommitButton),
+    );
+    expect(
+      find.descendant(of: submit, matching: find.text('搜')),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<DockCommitButton>(submit).enabled,
+      isFalse,
+      reason: '没字可搜时那颗按钮不该是亮的',
+    );
+
+    await tester.enterText(
+      find.descendant(
+        of: find.byType(SearchScreen),
+        matching: find.byType(TextField),
+      ),
+      '主卧抽屉',
+    );
+    await settle(tester, frames: 3);
+    expect(tester.widget<DockCommitButton>(submit).enabled, isTrue);
+
+    await tester.tap(submit);
+    await settle(tester);
+    expect(find.textContaining('检索结果'), findsOneWidget);
   });
 
   testWidgets('打字录入 → 先落盘，卡片立刻出现在流里（不依赖模型）', (tester) async {

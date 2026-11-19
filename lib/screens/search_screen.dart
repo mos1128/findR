@@ -9,8 +9,9 @@
 ///    所以退出这页时要把检索清掉，否则回到首页会看到「记忆流里混着上一次的检索结果」。
 /// 2. **输入框在底部**，和录入条同一个位置：搜索也要说话，而举着手机去够屏幕顶是反手的。
 ///    进来就聚焦（那一下点击已经表达了「要打字」），不用再点一次输入框。
-/// 3. **说话有两个入口**：抱着键盘时按右边的麦克风，收起键盘后长按药丸本身；
-///    唤起键盘时药丸长按就是输入框自己的选词，这里一个手势都不许抢（见 [HoldInput]）。
+/// 3. **打字和说话是两种模式，不共用一颗按钮**：左边那颗切，中间那颗按，右边那颗搜 ——
+///    和录入条从左到右是同一套手感。语音态才把长按交给 [HoldInput]，
+///    打字态里一个手势都不抢（长按就是输入框自己的选词）。
 /// 4. **分类筛选不在这页**：`searchCards` 没有分类参数，客户端再过滤一遍会被
 ///    「放宽条件」那套逻辑反复推翻，用户看到的是「筛了又没筛」。分类留在首页的记忆流上。
 library;
@@ -28,6 +29,7 @@ import '../platform/runtime.dart';
 import '../state/memory_stream.dart';
 import '../theme/tokens.dart';
 import '../ui/card_row.dart';
+import '../ui/dock.dart';
 import '../ui/haptics.dart';
 import '../ui/hold_input.dart';
 import '../ui/kit.dart';
@@ -43,24 +45,25 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen>
-    with WidgetsBindingObserver {
+class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   final _recorder = LongPressRecorder();
 
   List<String> _recent = const <String>[];
+
+  /// 现在是「语音输入」那一侧。两种输入各占一种手势，谁也不兼着谁。
+  bool _voice = false;
+
   bool _recording = false;
   bool _cancelArmed = false;
   bool _pressing = false;
 
-  /// 键盘上一次的状态。见 [didChangeMetrics]。
-  bool _keyboardUp = false;
-
   /// 正在把录音转成文字。这期间不接受新的长按。
   bool _transcribing = false;
 
-  /// 「按住说话」的确认延迟：短按只是想打字，立刻开麦会让系统录音指示器闪一下。
+  /// 开麦前的确认延迟：短按可能只是手滑，压 200ms 再开麦，
+  /// 免得系统的录音指示器闪一下又灭。
   static const Duration _armDelay = Duration(milliseconds: 200);
   Timer? _armTimer;
   Timer? _ticker;
@@ -68,8 +71,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _focus.addListener(_onFocusChanged);
     _loadRecent();
     // 进这页就先清掉上一次的检索：否则「最近搜索」旁边会躺着上一轮的结果。
     // 必须等这一帧画完 —— 在 initState 里改 provider 会撞上「build 期间修改 provider」。
@@ -80,29 +81,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _armTimer?.cancel();
     _ticker?.cancel();
-    _focus.removeListener(_onFocusChanged);
     _focus.dispose();
     _controller.dispose();
     unawaited(_recorder.dispose());
     super.dispose();
-  }
-
-  void _onFocusChanged() {
-    if (mounted) setState(() {});
-  }
-
-  /// 键盘被返回键收起后焦点还在，输入框会一直停在「输入态」：长按再也进不了语音。
-  /// 所以键盘「由起到落」的那一刻就主动放掉焦点，回到「轻点打字、长按说话」。
-  @override
-  void didChangeMetrics() {
-    super.didChangeMetrics();
-    final up = View.of(context).viewInsets.bottom > 0;
-    if (up == _keyboardUp) return;
-    _keyboardUp = up;
-    if (!up && _focus.hasFocus) _focus.unfocus();
   }
 
   /// 最近搜索只存在本机（`deviceLocalSettingKeys`），换机不跟着备份走。
@@ -179,10 +163,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   }
 
   // ── 语音搜索 ────────────────────────────────────────────────
-
-  void _onTapField() {
-    _focus.requestFocus();
-  }
 
   void _onHoldStart() {
     if (_recording || _transcribing) return;
@@ -391,7 +371,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  /// 底部这颗药丸，和录入条同宽同位：搜索也要说话，手不该伸到屏幕顶上去。
+  /// 底部这条坞和首页录入条同一套骨架：左边切输入方式，中间药丸，右边「按下去这件事就结束」。
+  /// 搜索也要说话，而手不该伸到屏幕顶上去。
   Widget _dock(FindrColors c) {
     return Container(
       decoration: BoxDecoration(
@@ -418,9 +399,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               ),
               child: Row(
                 children: <Widget>[
-                  Expanded(child: _field(c)),
+                  // 左：切「打字 / 说话」。画的是**下一步**能点成什么，不是当前状态。
+                  DockIconButton(
+                    icon: _voice
+                        ? Icons.keyboard_rounded
+                        : Icons.mic_none_rounded,
+                    tooltip: _voice ? '切换到文字输入' : '切换到语音输入',
+                    onPressed: _recording || _transcribing ? null : _toggleMode,
+                  ),
                   const SizedBox(width: Spacing.two),
-                  _micButton(c),
+                  Expanded(child: _voice ? _voicePill(c) : _textPill(c)),
+                  const SizedBox(width: Spacing.two),
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _controller,
+                    builder: (_, value, _) => DockCommitButton(
+                      label: '搜',
+                      enabled:
+                          value.text.trim().isNotEmpty &&
+                          !_recording &&
+                          !_transcribing,
+                      onPressed: () => unawaited(_run(_controller.text)),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -430,93 +430,46 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  /// 抱着键盘时唯一的说话入口。按下先收键盘：录音态要回到药丸里说，
-  /// 而键盘还在时那一层是藏着的。
-  void _onMicDown() {
+  /// 切「打字 / 说话」。两种输入不共用一颗药丸，用户不用猜「现在按下去会发生什么」。
+  void _toggleMode() {
+    if (_voice) {
+      // 输入框重新挂上时 `autofocus` 会自己把键盘叫回来 —— 切回打字就是要打字
+      setState(() => _voice = false);
+      return;
+    }
     _focus.unfocus();
-    _onHoldStart();
+    setState(() => _voice = true);
   }
 
-  Widget _micButton(FindrColors c) => HoldInput(
-    // 这块自己不承载输入框，永远处在「手势态」，所以永远接管指针。
-    focused: false,
-    enabled: !_transcribing,
-    onTap: _onTapField,
-    onHoldStart: _onMicDown,
-    onHoldEnd: _onHoldEnd,
-    onCancelChanged: _onCancelChanged,
-    placeholder: _micFace(c),
-    child: _micFace(c),
-  );
-
-  Widget _micFace(FindrColors c) => Container(
-    width: 38,
-    height: 38,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: _recording
-          ? Color.alphaBlend(c.danger.withValues(alpha: 0.1), c.surfaceAlt)
-          : c.surfaceAlt,
-      borderRadius: BorderRadius.circular(Radii.pill),
-    ),
-    child: Icon(
-      _recording ? Icons.mic_rounded : Icons.mic_none_rounded,
-      size: 20,
-      color: _recording ? c.danger : c.textSecondary,
-    ),
-  );
-
-  Widget _field(FindrColors c) {
+  /// 打字态：一颗真的输入框。药丸和内边距照抄录入条，两页看起来是同一个箱子。
+  Widget _textPill(FindrColors c) {
     return Container(
       constraints: const BoxConstraints(minHeight: 38),
       decoration: BoxDecoration(
-        color: c.surfaceSunken,
+        color: c.surfaceAlt,
         borderRadius: BorderRadius.circular(Radii.pill),
       ),
-      padding: const EdgeInsets.only(left: Spacing.three, right: Spacing.two),
+      padding: const EdgeInsets.only(
+        left: Spacing.three + Spacing.half,
+        right: Spacing.two,
+      ),
       child: Row(
         children: <Widget>[
-          Icon(
-            _recording ? Icons.mic_rounded : Icons.search_rounded,
-            size: 18,
-            color: _recording ? c.danger : c.search,
-          ),
-          const SizedBox(width: Spacing.two),
           Expanded(
-            child: HoldInput(
-              focused: _focus.hasFocus,
-              enabled: !_transcribing,
-              onTap: _onTapField,
-              onHoldStart: _onHoldStart,
-              onHoldEnd: _onHoldEnd,
-              onCancelChanged: _onCancelChanged,
-              placeholder: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  _faceText(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    color: _recording ? c.danger : c.textMuted,
-                  ),
-                ),
-              ),
-              child: TextField(
-                controller: _controller,
-                focusNode: _focus,
-                // 从首页点进来那一下就是「要打字」：省掉再点一次输入框
-                autofocus: true,
-                textInputAction: TextInputAction.search,
-                onSubmitted: (v) => unawaited(_run(v)),
-                style: TextStyle(fontSize: 14.5, color: c.text),
-                decoration: InputDecoration(
-                  isDense: true,
-                  border: InputBorder.none,
-                  hintText: '问一句，比如「护照放哪了」',
-                  hintStyle: TextStyle(fontSize: 14.5, color: c.textMuted),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 9),
-                ),
+            child: TextField(
+              controller: _controller,
+              focusNode: _focus,
+              // 进这页那一下已经表达了「要打字」：省掉再点一次输入框
+              autofocus: true,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (v) => unawaited(_run(v)),
+              style: TextStyle(fontSize: 14, color: c.text),
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: '问一句，比如「护照放哪了」',
+                hintStyle: TextStyle(fontSize: 12.5, color: c.textMuted),
+                contentPadding: const EdgeInsets.symmetric(vertical: 9.5),
               ),
             ),
           ),
@@ -547,18 +500,86 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  /// 未聚焦时的框内文字。**必须自己带「怎么用」**：这是收起键盘后唯一的长按入口。
-  String _faceText() {
-    if (_transcribing) return '正在转成文字…';
-    if (_recording) {
-      final sec = (_recorder.elapsedMs / 1000).ceil();
-      return _cancelArmed ? '松开取消搜索' : '● 录音中 ${sec}s · 上滑取消';
-    }
-    final typed = _controller.text.trim();
-    if (typed.isNotEmpty) return typed;
-    return '搜索记忆…（长按说话）';
+  /// 语音态：这颗药丸就是「按住 说话」本身，不给输入框留位置。
+  Widget _voicePill(FindrColors c) {
+    final face = _voiceFace(c);
+    return HoldInput(
+      focused: false,
+      enabled: !_transcribing,
+      // 轻点不做事：这里没有光标可放，要改字就点左边那颗
+      onTap: () {},
+      onHoldStart: _onHoldStart,
+      onHoldEnd: _onHoldEnd,
+      onCancelChanged: _onCancelChanged,
+      placeholder: face,
+      child: face,
+    );
   }
 
+  /// 语音态的药丸：和录入条那颗「说话」的脸同形 —— 左边一个麦克风，右边一行字。
+  /// 说完留着听到的那句：用户要能核对「它到底听成了什么」。
+  Widget _voiceFace(FindrColors c) => ValueListenableBuilder<TextEditingValue>(
+    valueListenable: _controller,
+    builder: (_, value, _) {
+      final heard = value.text.trim();
+      final String label;
+      final Color color;
+      final IconData icon;
+      if (_transcribing) {
+        label = '正在转成文字…';
+        color = c.textMuted;
+        icon = Icons.mic_none_rounded;
+      } else if (_recording) {
+        final sec = (_recorder.elapsedMs / 1000).ceil();
+        label = _cancelArmed ? '松开取消搜索' : '● 录音中 ${sec}s · 上滑取消';
+        color = c.danger;
+        icon = Icons.mic_rounded;
+      } else if (heard.isEmpty) {
+        label = '按住 说话';
+        color = c.textMuted;
+        icon = Icons.mic_none_rounded;
+      } else {
+        label = heard;
+        color = c.textSecondary;
+        icon = Icons.mic_none_rounded;
+      }
+      return Container(
+        constraints: const BoxConstraints(minHeight: 38),
+        decoration: BoxDecoration(
+          color: _recording
+              ? Color.alphaBlend(
+                  c.danger.withValues(alpha: 0.08),
+                  c.surfaceAlt,
+                )
+              : c.surfaceAlt,
+          borderRadius: BorderRadius.circular(Radii.pill),
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: Spacing.three + Spacing.half,
+          vertical: 9.5,
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(icon, size: 15, color: _recording ? c.danger : c.textMuted),
+            const SizedBox(width: Spacing.one + 2),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: heard.isEmpty || _recording || _transcribing
+                      ? 12.5
+                      : 14,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
   Widget _body(
     FindrColors c,
     MemoryStreamState? s,
