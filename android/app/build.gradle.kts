@@ -42,6 +42,16 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    packaging {
+        jniLibs {
+            // 原样塞进 APK 的 .so 是不压缩的（Android 默认，装完直接映射、启动快），
+            // 但端侧 ASR 带进来 26 MB 运行时，包体直接从 22 MB 涨到 49 MB ——
+            // 而应用内更新是整包下载。改成安装时解压：包体回到 22 MB，
+            // 代价是安装多一两秒、机上多占一份解压后的库。
+            useLegacyPackaging = true
+        }
+    }
+
     defaultConfig {
         // 正式包名。上架商店后不可修改；换包名等于换一个 App 身份，
         // 老安装无法覆盖升级。namespace 保持 com.findr.findr_app（那是代码包名，与 App 身份无关）。
