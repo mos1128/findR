@@ -404,24 +404,16 @@ class _ComposerState extends State<Composer> {
   void _onHoldStart() {
     if (_locked || !widget.enabled || _recording) return;
     _pressing = true;
-    // 不等 `start()` 回来再变脸：开麦要走系统，几十毫秒起步，这段空窗里
-    // 药丸必须有反应 —— 手感和脸都在这一帧给出，用户才不会「举着等」。
-    hapticHold();
-    _startTicker();
-    setState(() {});
     unawaited(_startRecording());
   }
 
-  /// 按下这一刻起就算「在位」：脸和秒数都看它。
-  bool get _live => _recording || _pressing;
-
-  /// 秒数与 1 分钟自停都靠这个节拍器，按下就起跑。
-  /// `_live` 一旦落下就自行收摊 —— 松手、启动失败、取消都只有这一条收尾路。
+  /// 秒数与 1 分钟自停都靠这个节拍器。只在麦克风真的开了之后才起跑：
+  /// 脸一变就等于「已经在录」，用户看到它才开口，前面的开麦空窗就吃不到音。
   void _startTicker() {
     if (_ticker != null) return;
     _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
       if (!mounted) return;
-      if (!_live) {
+      if (!_recording) {
         _ticker?.cancel();
         _ticker = null;
         setState(() {});
@@ -487,8 +479,10 @@ class _ComposerState extends State<Composer> {
         if (mounted) setState(() => _recording = false);
         return;
       }
+      // 麦克风已经在采音了，这一帧才变脸 + 震：脸不撒谎，用户看到它再开口
       setState(() => _recording = true);
-      // 节拍器在按下那一帧就起了，这里不再重置
+      hapticHold();
+      _startTicker();
     } on RecorderError catch (e) {
       _pressing = false;
       if (!mounted) return;
@@ -786,8 +780,8 @@ class _ComposerState extends State<Composer> {
       onHoldEnd: _onHoldEnd,
       onCancelChanged: _onCancelChanged,
       child: _pill(
-        color: _live
-            ? Color.alphaBlend(c.danger.withValues(alpha: 0.08), c.surfaceAlt)
+        color: _recording
+            ? Color.alphaBlend(c.record.withValues(alpha: 0.08), c.surfaceAlt)
             : c.surfaceAlt,
         child: face,
       ),
@@ -798,11 +792,12 @@ class _ComposerState extends State<Composer> {
   Widget _voiceFace(FindrColors c) {
     final String label;
     final Color color;
-    if (_live) {
+    if (_recording) {
       // 录音态就在这颗药丸里说，不另起一行：搜索页也是这么显示的
       final sec = (_recorder.elapsedMs / 1000).ceil();
       label = _cancelArmed ? '松开取消录入' : '● 录音中 ${sec}s · 上滑取消';
-      color = c.danger;
+      // 录着是进行中（主色）；已经划到取消区才是「松手就没了」，这时才配用红
+      color = _cancelArmed ? c.danger : c.record;
     } else {
       label = '按住 说话';
       color = c.textMuted;
@@ -818,9 +813,11 @@ class _ComposerState extends State<Composer> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             Icon(
-              _live ? Icons.mic_rounded : Icons.mic_none_rounded,
+              _recording ? Icons.mic_rounded : Icons.mic_none_rounded,
               size: 15,
-              color: _live ? c.danger : c.textMuted,
+              color: _cancelArmed
+                  ? c.danger
+                  : (_recording ? c.record : c.textMuted),
             ),
             const SizedBox(width: Spacing.one + 2),
             Flexible(
