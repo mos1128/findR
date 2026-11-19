@@ -1,6 +1,6 @@
 /// 底部录入条。
 ///
-/// **这是「记」的唯一入口**（需求六）：打字 / 拍照 / 相册 / 文本文件 / 长按语音全在这一条里，
+/// **这是「记」的唯一入口**（需求六）：打字 / 说话 / 拍照 / 相册 / 文本文件全在这一条里，
 /// 不再有「两个按钮通到同一个页面」那种事。
 ///
 /// 版式：底部做成一整块「坞」（圆角 + 上浮阴影），
@@ -14,11 +14,10 @@
 ///    读的就是同一个 controller，新旧值永远相等，`setState` 一次都不触发。
 ///    （这个 bug 被 `test/memory_stream_test.dart` 抓过。）
 /// 2. 图片选中后逐张读取并在后台压缩，处理期间附件条显示占位，避免整批原图常驻内存。
-/// 3. **录音从输入框本身长按触发**（没唤起键盘时），左边不再挂一颗「先切语音模式再按住」：
-///    轻点是打字、长按是说话，两者共用同一条坞（搜索页相反：那边两种输入各占一颗）。
-///    长按的抬手事件由 [HoldInput] 立刻报上来，
-///    太短由 [shouldDiscardRecording] 判为误触丢掉，**不弹窗、不生成空卡**。
-///    开录前留 200ms 的按稳判定 —— 真点一下不该让系统麦克风指示灯闪。
+/// 3. **打字和说话是两种模式**（左边那颗切，和检索页同一套）：打字态是一颗真输入框，
+///    长按归系统选词；只有语音态才把长按交给 [HoldInput]。
+///    按下就开麦、松手就停，太短由 [shouldDiscardRecording] 判为误触丢掉，
+///    **不弹窗、不生成空卡**。
 library;
 
 import 'dart:async';
@@ -107,7 +106,7 @@ class Composer extends StatefulWidget {
   State<Composer> createState() => _ComposerState();
 }
 
-class _ComposerState extends State<Composer> with WidgetsBindingObserver {
+class _ComposerState extends State<Composer> {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   final _recorder = LongPressRecorder();
@@ -122,10 +121,12 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
   RecordedAudio? _audio;
 
   bool _expanded = false;
-  bool _recording = false;
 
-  /// 键盘上一次的状态。见 [didChangeMetrics]。
-  bool _keyboardUp = false;
+  /// 现在是「说话」那一侧。两种输入各占一颗药丸，谁也不兼着谁 ——
+  /// 同一颗药丸又长按又轻点，用户得先猜按下去会发生什么。
+  bool _voice = false;
+
+  bool _recording = false;
 
   /// 指针是否仍按着。权限弹窗会夺走触摸流并触发 `onPointerCancel`，
   /// 靠它区分「用户松手了」与「权限弹窗还没回来」。
@@ -133,12 +134,6 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
 
   /// 手指是否已滑进「取消」区（松手即丢弃这段录音）。
   bool _cancelArmed = false;
-
-  /// 按稳判定：手指按住超过这个时长才真的开录。
-  static const Duration _holdArmDelay = Duration(milliseconds: 200);
-  Timer? _armTimer;
-
-  /// 上滑取消的阈值在 [HoldInput] 里，这里只管「到了就丢掉」。
 
   /// `_stopRecording` 的重入闸：自动到点与用户松手可能同时触发。
   bool _stopping = false;
@@ -151,23 +146,10 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
-    _focus.addListener(_onFocusChanged);
     widget.inbound?.addListener(_drainInbound);
     // 冷启动分享时，Notifier 可能在这一帧之前就已经有值了
     _drainInbound();
-  }
-
-  /// 键盘被返回键收起后焦点还在，输入框会一直停在「输入态」：长按再也进不了语音。
-  /// 所以键盘「由起到落」的那一刻就主动放掉焦点，回到「轻点打字、长按说话」。
-  @override
-  void didChangeMetrics() {
-    super.didChangeMetrics();
-    final up = View.of(context).viewInsets.bottom > 0;
-    if (up == _keyboardUp) return;
-    _keyboardUp = up;
-    if (!up && _focus.hasFocus) _focus.unfocus();
   }
 
   @override
@@ -201,13 +183,22 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
       unawaited(_addPhotos(share.paths.map(XFile.new).toList()));
     }
     // 分享过来通常还缺一句「这是什么」，直接把光标摆进输入框
-    _focus.requestFocus();
+    _focusField();
     setState(() {});
   }
 
-  /// 焦点一变就要换脸：聚焦显示真输入框，失焦显示「轻点输入 / 长按说话」那一层。
-  void _onFocusChanged() {
-    if (mounted) setState(() {});
+  /// 把光标交给输入框。输入框可能是这一帧才挂上去的（刚从语音态切回来），
+  /// 所以切完等这一帧画完再要焦点。
+  void _focusField() {
+    if (!mounted) return;
+    if (!_voice) {
+      _focus.requestFocus();
+      return;
+    }
+    setState(() => _voice = false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_voice) _focus.requestFocus();
+    });
   }
 
   void _onTextChanged() => _refreshCanSubmit();
@@ -226,12 +217,9 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _armTimer?.cancel();
     _ticker?.cancel();
     widget.inbound?.removeListener(_drainInbound);
     _controller.removeListener(_onTextChanged);
-    _focus.removeListener(_onFocusChanged);
     _controller.dispose();
     _focus.dispose();
     unawaited(_recorder.dispose());
@@ -411,19 +399,15 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
 
   // ── 录音 ────────────────────────────────────────────────
 
-  /// 按住 200ms 才算要说话：真点一下（换焦点打字）不该让麦克风指示灯闪。
+  /// 按下就开麦。以前要按稳 200ms 才开录（那时同一颗药丸还兼着「轻点打字」），
+  /// 现在点的是专门的语音药丸 —— 再等就是白等，第一句还会被吃掉。
   void _onHoldStart() {
     if (_locked || !widget.enabled || _recording) return;
     _pressing = true;
-    _armTimer?.cancel();
-    _armTimer = Timer(_holdArmDelay, () {
-      if (_pressing) unawaited(_startRecording());
-    });
+    unawaited(_startRecording());
   }
 
   void _onHoldEnd() {
-    _armTimer?.cancel();
-    _armTimer = null;
     if (_cancelArmed) {
       _cancelArmed = false;
       _pressing = false;
@@ -433,7 +417,7 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
       unawaited(_recorder.cancel());
       return;
     }
-    // 没到 200ms 就松手：什么都没发生（轻点聚焦走 `_onTapField`）
+    // `_recorder.start()` 可能还在等权限：`stop()` 会自己收尾，这里不用管
     if (!_recording && !_recorder.starting) {
       _pressing = false;
       return;
@@ -448,9 +432,15 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
     setState(() => _cancelArmed = armed);
   }
 
-  void _onTapField() {
-    if (_locked) return;
-    _focus.requestFocus();
+  /// 切「打字 / 说话」。画的是**下一步**能点成什么，不是当前状态。
+  void _toggleMode() {
+    if (_voice) {
+      // 切回打字就是要打字：输入框这一帧才挂回去，键盘等下一帧
+      _focusField();
+      return;
+    }
+    _focus.unfocus();
+    setState(() => _voice = true);
   }
 
   Future<void> _startRecording() async {
@@ -623,8 +613,9 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
     } finally {
       if (mounted) setState(() => _sending = false);
     }
-    // 录完一条继续留着键盘 —— 连着记几笔是常态，每存一条就收一次很烦
-    if (mounted) _focus.requestFocus();
+    // 录完一条继续留着键盘 —— 连着记几笔是常态，每存一条就收一次很烦。
+    // 语音态里没有输入框，别顺手把键盘拉起来。
+    if (mounted && !_voice) _focus.requestFocus();
   }
 
   // ── UI ─────────────────────────────────────────────────
@@ -716,7 +707,7 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
     if (mounted) setState(() => _expanded = false);
   }
 
-  /// 输入框两侧共用的一颗药丸底（真输入框与「未聚焦时长得像输入框」那一层必须同形）。
+  /// 两颗药丸共用的底（真输入框与「按住 说话」必须同形，切换时不许跳一下）。
   Widget _pill({required Color color, required Widget child}) => Container(
     constraints: const BoxConstraints(minHeight: 38),
     decoration: BoxDecoration(
@@ -726,34 +717,87 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
     child: child,
   );
 
-  /// 没唤起键盘时显示的那层皮：轻点是打字，长按是说话。
-  ///
-  /// 已经打过的字要照原样显示在这里 —— 失焦不是「清空」，
-  /// 收起键盘后看不到自己写了什么会让人以为内容丢了。
-  Widget _inputFace(FindrColors c) {
-    final text = _controller.text.trim();
+  /// 打字态：一颗真的输入框。
+  Widget _textPill(FindrColors c) => _pill(
+    color: c.surfaceAlt,
+    child: TextField(
+      controller: _controller,
+      focusNode: _focus,
+      enabled: widget.enabled,
+      // 提交期间只读，不要 disabled：disabled 会丢焦点、
+      // 收键盘，保存后再 requestFocus 就会闪一下。
+      readOnly: _locked,
+      minLines: 1,
+      maxLines: 4,
+      textAlignVertical: TextAlignVertical.center,
+      textInputAction: TextInputAction.send,
+      // 默认行为会在 send 后 unfocus（收键盘），这里用空回调
+      // 覆盖掉；焦点保留，键盘就不会先关再开。
+      onEditingComplete: () {},
+      // 打字回车即存（需求六）
+      onSubmitted: (_) => unawaited(_submit()),
+      style: TextStyle(fontSize: 14, color: c.text),
+      decoration: InputDecoration(
+        isDense: true,
+        border: InputBorder.none,
+        // 提示走 `hint` 而不是 `hintText`：后者跟着 `textAlign` 走，
+        // 想要「提示居中、打出来的字靠左」只能自己摆一层。
+        hint: Align(
+          alignment: Alignment.center,
+          child: Text(
+            widget.enabled ? '记一笔…' : '数据库尚未就绪',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 12.5, color: c.textMuted),
+          ),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 9.5,
+        ),
+      ),
+    ),
+  );
+
+  /// 语音态：这颗药丸就是「按住 说话」本身，不给输入框留位置。
+  Widget _voicePill(FindrColors c) {
+    final face = _voiceFace(c);
+    return HoldInput(
+      enabled: widget.enabled && !_locked,
+      onHoldStart: _onHoldStart,
+      onHoldEnd: _onHoldEnd,
+      onCancelChanged: _onCancelChanged,
+      child: _pill(
+        color: _recording
+            ? Color.alphaBlend(c.danger.withValues(alpha: 0.08), c.surfaceAlt)
+            : c.surfaceAlt,
+        child: face,
+      ),
+    );
+  }
+
+  /// 语音态的脸：和检索页那颗同形 —— 左边一个麦克风，右边一行字。
+  Widget _voiceFace(FindrColors c) {
     final String label;
     final Color color;
-    if (!widget.enabled) {
-      label = '数据库尚未就绪';
-      color = c.textMuted;
-    } else if (_recording) {
+    if (_recording) {
       // 录音态就在这颗药丸里说，不另起一行：搜索页也是这么显示的
       final sec = (_recorder.elapsedMs / 1000).ceil();
       label = _cancelArmed ? '松开取消录入' : '● 录音中 ${sec}s · 上滑取消';
       color = c.danger;
-    } else if (text.isEmpty) {
-      label = '记一笔…（长按说话）';
-      color = c.textMuted;
     } else {
-      label = text;
-      color = c.textSecondary;
+      label = '按住 说话';
+      color = c.textMuted;
     }
     return Semantics(
       button: true,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9.5),
+        padding: const EdgeInsets.symmetric(
+          horizontal: Spacing.three + Spacing.half,
+          vertical: 9.5,
+        ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             Icon(
               _recording ? Icons.mic_rounded : Icons.mic_none_rounded,
@@ -761,15 +805,12 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
               color: _recording ? c.danger : c.textMuted,
             ),
             const SizedBox(width: Spacing.one + 2),
-            Expanded(
+            Flexible(
               child: Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: text.isEmpty || _recording ? 12.5 : 14,
-                  color: color,
-                ),
+                style: TextStyle(fontSize: 12.5, color: color),
               ),
             ),
           ],
@@ -838,64 +879,19 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
-                      // 中间：一个输入框。没唤起键盘时轻点是打字、长按是说话 ——
-                      // 两种输入共用这一颗药丸，没有模式切换。
-                      Expanded(
-                        child: HoldInput(
-                          focused: _focus.hasFocus,
-                          enabled: widget.enabled && !_locked,
-                          onTap: _onTapField,
-                          onHoldStart: _onHoldStart,
-                          onHoldEnd: _onHoldEnd,
-                          onCancelChanged: _onCancelChanged,
-                          // 录音时只换底色：这一层是不透明的，底下的真输入框已经藏起来了
-                          placeholder: _pill(
-                            color: _recording
-                                ? Color.alphaBlend(
-                                    c.danger.withValues(alpha: 0.08),
-                                    c.surfaceAlt,
-                                  )
-                                : c.surfaceAlt,
-                            child: _inputFace(c),
-                          ),
-                          child: _pill(
-                            color: c.surfaceAlt,
-                            child: TextField(
-                              controller: _controller,
-                              focusNode: _focus,
-                              enabled: widget.enabled,
-                              // 提交期间只读，不要 disabled：disabled 会丢焦点、
-                              // 收键盘，保存后再 requestFocus 就会闪一下。
-                              readOnly: _locked,
-                              minLines: 1,
-                              maxLines: 4,
-                              textAlignVertical: TextAlignVertical.center,
-                              textInputAction: TextInputAction.send,
-                              // 默认行为会在 send 后 unfocus（收键盘），这里用空回调
-                              // 覆盖掉；焦点保留，键盘就不会先关再开。
-                              onEditingComplete: () {},
-                              // 打字回车即存（需求六）
-                              onSubmitted: (_) => unawaited(_submit()),
-                              style: TextStyle(fontSize: 14, color: c.text),
-                              decoration: InputDecoration(
-                                isDense: true,
-                                border: InputBorder.none,
-                                hintText: widget.enabled
-                                    ? '记一笔…（回车即存）'
-                                    : '数据库尚未就绪',
-                                hintStyle: TextStyle(
-                                  fontSize: 12.5,
-                                  color: c.textMuted,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 9.5,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                      // 左1：切「打字 / 说话」。画的是**下一步**能点成什么，不是当前状态。
+                      DockIconButton(
+                        icon: _voice
+                            ? Icons.keyboard_rounded
+                            : Icons.mic_none_rounded,
+                        tooltip: _voice ? '切换到文字输入' : '切换到语音输入',
+                        onPressed: widget.enabled && !_locked && !_recording
+                            ? _toggleMode
+                            : null,
                       ),
+                      const SizedBox(width: Spacing.two),
+                      // 中间：一颗药丸，是输入框还是「按住 说话」看左边那颗
+                      Expanded(child: _voice ? _voicePill(c) : _textPill(c)),
                       const SizedBox(width: Spacing.two),
                       // 右2：＋ 展开素材（就地弹一层，不跳页 —— 需求六）
                       DockIconButton(

@@ -12,7 +12,6 @@ Widget host({
   required VoidCallback onHoldStart,
   required VoidCallback onHoldEnd,
   required ValueChanged<bool> onCancelChanged,
-  VoidCallback? onTap,
 }) => MaterialApp(
   home: Scaffold(
     body: Center(
@@ -20,13 +19,11 @@ Widget host({
         width: 280,
         height: 44,
         child: HoldInput(
-          focused: false,
-          onTap: onTap ?? () {},
           onHoldStart: onHoldStart,
           onHoldEnd: onHoldEnd,
           onCancelChanged: onCancelChanged,
-          placeholder: const Text('长按说话'),
-          child: const TextField(),
+          // 和真界面同形：字比药丸窄，两边都是不接手势的留白
+          child: const Center(child: Text('按住 说话')),
         ),
       ),
     ),
@@ -87,39 +84,45 @@ void main() {
     expect(seenAtEnd, isFalse, reason: '20px 离取消区还远，松手就是正常结束');
   });
 
-  testWidgets('轻点：照常聚焦', (tester) async {
-    var taps = 0;
+  testWidgets('按下就报 onHoldStart：不等任何阈值', (tester) async {
+    var starts = 0;
     await tester.pumpWidget(
       host(
-        onHoldStart: () {},
+        onHoldStart: () => starts++,
         onHoldEnd: () {},
         onCancelChanged: (_) {},
-        onTap: () => taps++,
-      ),
-    );
-
-    await tester.tap(find.byType(HoldInput));
-    await tester.pump();
-    expect(taps, 1);
-  });
-
-  testWidgets('按住够久再松手：不再补一次轻点', (tester) async {
-    var taps = 0;
-    await tester.pumpWidget(
-      host(
-        onHoldStart: () {},
-        onHoldEnd: () {},
-        onCancelChanged: (_) {},
-        onTap: () => taps++,
       ),
     );
 
     final gesture = await tester.startGesture(
       tester.getCenter(find.byType(HoldInput)),
     );
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(starts, 1, reason: '说话的第一句不该被「按稳判定」吃掉');
+
     await gesture.up();
     await tester.pump();
-    expect(taps, 0, reason: '补这一下会把键盘叫回来，正好盖住刚说完的那次录音');
+  });
+
+  testWidgets('按在字旁边的留白上也算按住', (tester) async {
+    var starts = 0;
+    await tester.pumpWidget(
+      host(
+        onHoldStart: () => starts++,
+        onHoldEnd: () {},
+        onCancelChanged: (_) {},
+      ),
+    );
+
+    // 药丸比那行字宽得多，手指常常落在字的外面
+    final rect = tester.getRect(find.byType(HoldInput));
+    final gesture = await tester.startGesture(
+      rect.centerLeft + const Offset(6, 0),
+    );
+    await tester.pump();
+    expect(starts, 1, reason: '留白不接手势，用户会以为「这颗按不动」');
+
+    await gesture.up();
+    await tester.pump();
   });
 }

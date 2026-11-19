@@ -1,47 +1,27 @@
-/// 「轻点 / 长按」两档手势的壳：没唤起键盘时轻点交给调用方，长按算作说话。
+/// 「按住说话」的壳：按下就报、上滑就取消、松手就结束。
 ///
-/// 键盘起来之后一切照旧 —— 长按就是选词，这里一个手势都不许抢。
-/// 所以这个壳只在**未聚焦**时接管指针：聚焦时它一个手势都不接。
-/// 键盘被返回键收起后焦点还在，那属于「输入态」还是「语音态」由调用方判定
-/// （见 `Composer` 里的 `didChangeMetrics`）。
-///
-/// 用裸指针事件而不是 `onLongPress`：`onLongPress` 要等 500ms 才回调，
-/// 那 500ms 正是用户开口的第一句。按下即报 [onHoldStart]，由调用方决定怎么「抢跑」。
-///
-/// 上滑取消用两档阈值（进 64 / 退 44）：单档会在边界上来回抖，
-/// 用户明明还按在取消区里，状态却一闪一闪。
+/// 这里**不判「轻点还是长按」**：只有语音态才用得上它，点一下本来也没有别的含义。
+/// 所以按下立刻回调，不等任何阈值 —— 说话的第一句不该被「按稳判定」吃掉。
+/// 太短的录音由 `shouldDiscardRecording`（`capture/recorder.dart`）在松手时判为误触丢掉。
 library;
 
-import 'dart:async';
+import 'package:flutter/widgets.dart';
 
-import 'package:flutter/material.dart';
-
+/// 按住说话的手势壳。
 class HoldInput extends StatefulWidget {
   const HoldInput({
     super.key,
-    required this.focused,
     required this.child,
-    required this.placeholder,
-    required this.onTap,
     required this.onHoldStart,
     required this.onHoldEnd,
     required this.onCancelChanged,
     this.enabled = true,
   });
 
-  /// 真实输入框现在有没有焦点。
-  final bool focused;
-
-  /// 聚焦后的真实输入框。
+  /// 药丸本身。画什么由调用方定（提示语 / 录音态 / 听到的那句）。
   final Widget child;
 
-  /// 未聚焦时长得像输入框的那一层（画什么由调用方定：提示语、已有文字、录音态）。
-  final Widget placeholder;
-
-  /// 轻点 → 聚焦。
-  final VoidCallback onTap;
-
-  /// 按下（未聚焦时）。**立即**回调，不等长按阈值。
+  /// 按下。**立即**回调，不等阈值。
   final VoidCallback onHoldStart;
 
   /// 松手 / 指针被系统抢走。
@@ -59,34 +39,19 @@ class HoldInput extends StatefulWidget {
 }
 
 class _HoldInputState extends State<HoldInput> {
+  /// 上滑进取消区要 64，退回来只用 44：同一个边界上抖一下不该来回报警。
   static const double _enterCancel = 64;
   static const double _exitCancel = 44;
-
-  /// 按住超过这么久就不再算「轻点」。调用方一律在 200ms 后才开麦，
-  /// 这条线跟它对齐：够得着开麦的那次按压，松手不该再补一次聚焦 ——
-  /// 补了的结果是录完音键盘自己弹起来（把录音态又盖回去了）。
-  static const Duration _tapMax = Duration(milliseconds: 200);
 
   double? _startY;
   bool _pressed = false;
   bool _cancelling = false;
-  bool _held = false;
-  Timer? _holdTimer;
-
-  @override
-  void dispose() {
-    _holdTimer?.cancel();
-    super.dispose();
-  }
 
   void _down(PointerDownEvent e) {
-    if (!widget.enabled || widget.focused) return;
+    if (!widget.enabled) return;
     _pressed = true;
-    _held = false;
     _startY = e.position.dy;
     _cancelling = false;
-    _holdTimer?.cancel();
-    _holdTimer = Timer(_tapMax, () => _held = true);
     widget.onHoldStart();
   }
 
@@ -104,44 +69,21 @@ class _HoldInputState extends State<HoldInput> {
     if (!_pressed) return;
     _pressed = false;
     _startY = null;
-    _holdTimer?.cancel();
-    _holdTimer = null;
     // 松手这里**不许**补一个 `onCancelChanged(false)`：调用方是在 [onHoldEnd] 里
     // 看自己那份取消态的，先清掉就等于把这次取消吞了 —— 划上去松手照样把录音存下来。
     _cancelling = false;
     widget.onHoldEnd();
   }
 
-  void _tap() {
-    if (_held) return;
-    widget.onTap();
-  }
-
   @override
-  Widget build(BuildContext context) {
-    // 说明：真实输入框**必须一直在树上**。它不在树上，`_focus.requestFocus()`
-    // 就没有任何可附着的焦点节点 —— 点一下没反应，键盘永远起不来（踩过）。
-    // 所以未聚焦时不是「不画它」，而是用不透明的一层把它盖住，并先一步吃掉指针。
-    final covered = !widget.focused;
-    return Listener(
-      onPointerDown: covered ? _down : null,
-      onPointerMove: covered ? _move : null,
-      onPointerUp: covered ? (_) => _up() : null,
-      onPointerCancel: covered ? (_) => _up() : null,
-      child: Stack(
-        children: <Widget>[
-          // 盖子是不透明的，底下这层得一起藏起来：两层同时画，文字就会在同一处叠着出现。
-          Opacity(opacity: covered ? 0 : 1, child: widget.child),
-          if (covered)
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: widget.enabled ? _tap : null,
-                child: widget.placeholder,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Listener(
+    // 药丸两边的留白也算按住了：手指常常落在字的外面，
+    // 那片空白不接手势的话，用户会以为「这颗按不动」。
+    behavior: HitTestBehavior.opaque,
+    onPointerDown: _down,
+    onPointerMove: _move,
+    onPointerUp: (_) => _up(),
+    onPointerCancel: (_) => _up(),
+    child: widget.child,
+  );
 }

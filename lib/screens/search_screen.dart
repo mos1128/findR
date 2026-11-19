@@ -12,6 +12,7 @@
 /// 3. **打字和说话是两种模式，不共用一颗按钮**：左边那颗切，中间那颗按，右边那颗搜 ——
 ///    和录入条从左到右是同一套手感。语音态才把长按交给 [HoldInput]，
 ///    打字态里一个手势都不抢（长按就是输入框自己的选词）。
+///    按住就开麦、松手就停，没有「先按稳 200ms」那段白等。
 /// 4. **分类筛选不在这页**：`searchCards` 没有分类参数，客户端再过滤一遍会被
 ///    「放宽条件」那套逻辑反复推翻，用户看到的是「筛了又没筛」。分类留在首页的记忆流上。
 library;
@@ -62,10 +63,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   /// 正在把录音转成文字。这期间不接受新的长按。
   bool _transcribing = false;
 
-  /// 开麦前的确认延迟：短按可能只是手滑，压 200ms 再开麦，
-  /// 免得系统的录音指示器闪一下又灭。
-  static const Duration _armDelay = Duration(milliseconds: 200);
-  Timer? _armTimer;
   Timer? _ticker;
 
   @override
@@ -81,7 +78,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
-    _armTimer?.cancel();
     _ticker?.cancel();
     _focus.dispose();
     _controller.dispose();
@@ -167,15 +163,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void _onHoldStart() {
     if (_recording || _transcribing) return;
     _pressing = true;
-    _armTimer?.cancel();
-    _armTimer = Timer(_armDelay, () {
-      if (_pressing) unawaited(_startRecording());
-    });
+    unawaited(_startRecording());
   }
 
   void _onHoldEnd() {
     _pressing = false;
-    _armTimer?.cancel();
     if (_cancelArmed) {
       _cancelArmed = false;
       unawaited(_cancelRecording());
@@ -467,8 +459,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
-                hintText: '问一句，比如「护照放哪了」',
-                hintStyle: TextStyle(fontSize: 12.5, color: c.textMuted),
+                // 提示走 `hint` 而不是 `hintText`：后者跟着 `textAlign` 走，
+                // 想要「提示居中、打出来的字靠左」只能自己摆一层。
+                hint: Align(
+                  alignment: Alignment.center,
+                  child: Text(
+                    '问一句，比如「护照放哪了」',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12.5, color: c.textMuted),
+                  ),
+                ),
                 contentPadding: const EdgeInsets.symmetric(vertical: 9.5),
               ),
             ),
@@ -501,20 +502,13 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   }
 
   /// 语音态：这颗药丸就是「按住 说话」本身，不给输入框留位置。
-  Widget _voicePill(FindrColors c) {
-    final face = _voiceFace(c);
-    return HoldInput(
-      focused: false,
-      enabled: !_transcribing,
-      // 轻点不做事：这里没有光标可放，要改字就点左边那颗
-      onTap: () {},
-      onHoldStart: _onHoldStart,
-      onHoldEnd: _onHoldEnd,
-      onCancelChanged: _onCancelChanged,
-      placeholder: face,
-      child: face,
-    );
-  }
+  Widget _voicePill(FindrColors c) => HoldInput(
+    enabled: !_transcribing,
+    onHoldStart: _onHoldStart,
+    onHoldEnd: _onHoldEnd,
+    onCancelChanged: _onCancelChanged,
+    child: _voiceFace(c),
+  );
 
   /// 语音态的药丸：和录入条那颗「说话」的脸同形 —— 左边一个麦克风，右边一行字。
   /// 说完留着听到的那句：用户要能核对「它到底听成了什么」。
@@ -559,10 +553,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           vertical: 9.5,
         ),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             Icon(icon, size: 15, color: _recording ? c.danger : c.textMuted),
             const SizedBox(width: Spacing.one + 2),
-            Expanded(
+            Flexible(
               child: Text(
                 label,
                 maxLines: 1,

@@ -10,6 +10,7 @@ library;
 
 import 'dart:io';
 
+import 'package:findr_app/capture/composer.dart';
 import 'package:findr_app/platform/app_paths.dart';
 import 'package:findr_app/platform/db.dart';
 import 'package:findr_app/platform/secure.dart';
@@ -144,28 +145,68 @@ void main() {
     // 「查」：搜索入口（点进去才是输入框与最近搜索）
     expect(find.text('搜索记忆'), findsOneWidget);
     // 「记」：录入条
-    expect(find.text('记一笔…（长按说话）'), findsOneWidget);
+    expect(find.text('记一笔…'), findsOneWidget);
     expect(find.text('存'), findsOneWidget);
     // 未配模型时的提示条**必须在文档流里**（曾经做成浮层盖住搜索框，真机反馈「找不到搜索入口」）
     expect(find.text('尚未配置模型'), findsOneWidget);
   });
 
-  testWidgets('键盘收起后回到「长按说话」，不用再点一次', (tester) async {
+  testWidgets('首页录入条：左边那颗切到语音，「按住 说话」和输入框两不并存', (tester) async {
     await pumpApp(tester);
-    const face = '记一笔…（长按说话）';
-    expect(find.text(face), findsOneWidget);
 
-    // 点一下唤起键盘：真输入框接管，语音那一层撤掉
-    await tester.tap(find.text(face));
-    addTearDown(tester.view.reset);
-    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-    await settle(tester);
-    expect(find.text(face), findsNothing);
+    final field = find.descendant(
+      of: find.byType(Composer),
+      matching: find.byType(TextField),
+    );
+    final voiceFace = find.descendant(
+      of: find.byType(Composer),
+      matching: find.text('按住 说话'),
+    );
+    // 进来是打字态：想说话先点左边那颗，不用猜「按住这颗会怎样」
+    expect(field, findsOneWidget);
+    expect(voiceFace, findsNothing);
 
-    // 返回键收起键盘：焦点必须一起放掉，否则长按再也进不了语音
-    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Composer),
+        matching: find.byIcon(Icons.mic_none_rounded),
+      ),
+    );
     await settle(tester);
-    expect(find.text(face), findsOneWidget);
+    expect(voiceFace, findsOneWidget);
+    expect(field, findsNothing, reason: '两种输入不共用一颗药丸');
+
+    // 切回打字：输入框回来，键盘自己起来
+    await tester.tap(
+      find.descendant(
+        of: find.byType(Composer),
+        matching: find.byIcon(Icons.keyboard_rounded),
+      ),
+    );
+    await settle(tester);
+    expect(voiceFace, findsNothing);
+    expect(tester.widget<TextField>(field).focusNode?.hasFocus, isTrue);
+  });
+
+  testWidgets('提示文本在药丸正中，打出来的字仍靠左', (tester) async {
+    await pumpApp(tester);
+
+    final field = find.descendant(
+      of: find.byType(Composer),
+      matching: find.byType(TextField),
+    );
+    final fieldRect = tester.getRect(field);
+    final hintRect = tester.getRect(find.text('记一笔…'));
+    expect(
+      (hintRect.center.dx - fieldRect.center.dx).abs(),
+      lessThan(1),
+      reason: '提示贴着左边缘时，这颗宽药丸看着像空着半边',
+    );
+    expect(
+      tester.widget<TextField>(field).textAlign,
+      isNot(TextAlign.center),
+      reason: '居中的只是提示：长句居中就没法读了',
+    );
   });
 
   testWidgets('进搜索页就是打字态：不用再点一下输入框', (tester) async {
