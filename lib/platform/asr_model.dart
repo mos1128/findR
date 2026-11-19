@@ -71,8 +71,9 @@ bool asrModelInstalled() => asrModelPaths() != null;
 
 /// 下载并校验整套模型。已装好时直接返回成功（不重下）。
 ///
-/// 主站是 HuggingFace；连不上才换镜像（`hf-mirror.com`），**404 不换** ——
-/// 那是「这个文件就没有」，换源也一样，只会让人多等一轮。
+/// 镜像在前、HuggingFace 在后：国内直连 `huggingface.co` 基本拿不到响应头，
+/// 排在前面就是每次下载先白等 20 秒（`updateResponseTimeout`）。镜像不被墙，
+/// 境外也能连通，只是稍慢。**404 不换源** —— 那是「这个文件就没有」。
 Future<DownloadOutcome> downloadAsrModel({
   UpdateDownloadProgress? onProgress,
   DownloadCancelToken? cancel,
@@ -90,8 +91,8 @@ Future<DownloadOutcome> downloadAsrModel({
     final base = done;
     DownloadOutcome? outcome;
     for (final host in const [
-      'https://huggingface.co',
       'https://hf-mirror.com',
+      'https://huggingface.co',
     ]) {
       outcome = await downloadToFile(
         url: '$host/$_repo/resolve/$_revision/${f.name}',
