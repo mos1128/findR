@@ -404,7 +404,38 @@ class _ComposerState extends State<Composer> {
   void _onHoldStart() {
     if (_locked || !widget.enabled || _recording) return;
     _pressing = true;
+    // 不等 `start()` 回来再变脸：开麦要走系统，几十毫秒起步，这段空窗里
+    // 药丸必须有反应 —— 手感和脸都在这一帧给出，用户才不会「举着等」。
+    hapticHold();
+    _startTicker();
+    setState(() {});
     unawaited(_startRecording());
+  }
+
+  /// 按下这一刻起就算「在位」：脸和秒数都看它。
+  bool get _live => _recording || _pressing;
+
+  /// 秒数与 1 分钟自停都靠这个节拍器，按下就起跑。
+  /// `_live` 一旦落下就自行收摊 —— 松手、启动失败、取消都只有这一条收尾路。
+  void _startTicker() {
+    if (_ticker != null) return;
+    _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!mounted) return;
+      if (!_live) {
+        _ticker?.cancel();
+        _ticker = null;
+        setState(() {});
+        return;
+      }
+      if (shouldAutoStopRecording(_recorder.elapsedMs)) {
+        _ticker?.cancel();
+        _ticker = null;
+        _toast('已达到 1 分钟上限，录音自动结束');
+        unawaited(_stopRecording());
+        return;
+      }
+      setState(() {});
+    });
   }
 
   void _onHoldEnd() {
@@ -457,20 +488,7 @@ class _ComposerState extends State<Composer> {
         return;
       }
       setState(() => _recording = true);
-      hapticHold();
-      // 自己起个节拍器显示秒数。`record` 不直接给时长，用开始时刻算最可靠
-      _ticker?.cancel();
-      _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
-        if (!mounted) return;
-        if (shouldAutoStopRecording(_recorder.elapsedMs)) {
-          _ticker?.cancel();
-          _ticker = null;
-          _toast('已达到 1 分钟上限，录音自动结束');
-          unawaited(_stopRecording());
-          return;
-        }
-        setState(() {});
-      });
+      // 节拍器在按下那一帧就起了，这里不再重置
     } on RecorderError catch (e) {
       _pressing = false;
       if (!mounted) return;
@@ -768,7 +786,7 @@ class _ComposerState extends State<Composer> {
       onHoldEnd: _onHoldEnd,
       onCancelChanged: _onCancelChanged,
       child: _pill(
-        color: _recording
+        color: _live
             ? Color.alphaBlend(c.danger.withValues(alpha: 0.08), c.surfaceAlt)
             : c.surfaceAlt,
         child: face,
@@ -780,7 +798,7 @@ class _ComposerState extends State<Composer> {
   Widget _voiceFace(FindrColors c) {
     final String label;
     final Color color;
-    if (_recording) {
+    if (_live) {
       // 录音态就在这颗药丸里说，不另起一行：搜索页也是这么显示的
       final sec = (_recorder.elapsedMs / 1000).ceil();
       label = _cancelArmed ? '松开取消录入' : '● 录音中 ${sec}s · 上滑取消';
@@ -800,9 +818,9 @@ class _ComposerState extends State<Composer> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             Icon(
-              _recording ? Icons.mic_rounded : Icons.mic_none_rounded,
+              _live ? Icons.mic_rounded : Icons.mic_none_rounded,
               size: 15,
-              color: _recording ? c.danger : c.textMuted,
+              color: _live ? c.danger : c.textMuted,
             ),
             const SizedBox(width: Spacing.one + 2),
             Flexible(

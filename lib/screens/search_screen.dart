@@ -163,7 +163,35 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void _onHoldStart() {
     if (_recording || _transcribing) return;
     _pressing = true;
+    // 不等 `start()` 回来再变脸：开麦要走系统，这段空窗里药丸必须有反应，
+    // 不然用户以为这颗按不动，会一直举着等。
+    hapticHold();
+    _startTicker();
+    setState(() {});
     unawaited(_startRecording());
+  }
+
+  /// 按下这一刻起就算「在位」：脸和秒数都看它。
+  bool get _live => _recording || _pressing;
+
+  /// 秒数与 1 分钟自停都靠这个节拍器，按下就起跑。
+  /// `_live` 一旦落下就自行收摊 —— 松手、没配识别、启动失败都只有这一条收尾路。
+  void _startTicker() {
+    if (_ticker != null) return;
+    _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (!mounted) return;
+      if (!_live) {
+        _ticker?.cancel();
+        _ticker = null;
+        setState(() {});
+        return;
+      }
+      if (shouldAutoStopRecording(_recorder.elapsedMs)) {
+        unawaited(_stopRecording());
+        return;
+      }
+      setState(() {});
+    });
   }
 
   void _onHoldEnd() {
@@ -229,16 +257,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         await _recorder.cancel();
         return;
       }
-      hapticHold();
       setState(() => _recording = true);
-      _ticker = Timer.periodic(const Duration(milliseconds: 200), (_) {
-        if (!mounted) return;
-        if (shouldAutoStopRecording(_recorder.elapsedMs)) {
-          unawaited(_stopRecording());
-        } else {
-          setState(() {});
-        }
-      });
+      // 节拍器在按下那一帧就起了，这里不再重置
     } on RecorderError catch (e) {
       _pressing = false;
       if (!mounted) return;
@@ -523,7 +543,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         label = '正在转成文字…';
         color = c.textMuted;
         icon = Icons.mic_none_rounded;
-      } else if (_recording) {
+      } else if (_live) {
         final sec = (_recorder.elapsedMs / 1000).ceil();
         label = _cancelArmed ? '松开取消搜索' : '● 录音中 ${sec}s · 上滑取消';
         color = c.danger;
@@ -540,11 +560,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       return Container(
         constraints: const BoxConstraints(minHeight: 38),
         decoration: BoxDecoration(
-          color: _recording
-              ? Color.alphaBlend(
-                  c.danger.withValues(alpha: 0.08),
-                  c.surfaceAlt,
-                )
+          color: _live
+              ? Color.alphaBlend(c.danger.withValues(alpha: 0.08), c.surfaceAlt)
               : c.surfaceAlt,
           borderRadius: BorderRadius.circular(Radii.pill),
         ),
@@ -555,7 +572,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            Icon(icon, size: 15, color: _recording ? c.danger : c.textMuted),
+            Icon(icon, size: 15, color: _live ? c.danger : c.textMuted),
             const SizedBox(width: Spacing.one + 2),
             Flexible(
               child: Text(
@@ -563,9 +580,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: heard.isEmpty || _recording || _transcribing
-                      ? 12.5
-                      : 14,
+                  fontSize: heard.isEmpty || _live || _transcribing ? 12.5 : 14,
                   color: color,
                 ),
               ),
