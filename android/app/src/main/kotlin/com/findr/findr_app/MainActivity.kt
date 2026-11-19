@@ -27,12 +27,15 @@ import java.io.File
 /// 还有一条 `findr/share` 通道：别的应用「分享到 Findr」时，把 `ACTION_SEND`
 /// 里的文字和图片交给 Dart（Dart 侧 `lib/platform/inbound_share.dart`）。
 ///
+/// 以及 `findr/audio` 通道：把录音解成裸 PCM 交给 Dart（见 [decodePcm]）。
+///
 /// ⚠️ 只做「拉起」不做「代替用户点」：**静默安装不存在**，这是 Android 的规矩，
 /// 文档里也这么写（别让任何人以为这是 OTA）。
 class MainActivity : FlutterActivity() {
     private val channelName = "findr/update"
     private val appChannelName = "findr/app"
     private val shareChannelName = "findr/share"
+    private val audioChannelName = "findr/audio"
 
     private var shareChannel: MethodChannel? = null
 
@@ -86,6 +89,12 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(engine.dartExecutor.binaryMessenger, audioChannelName).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "decodePcm" -> decodePcm(call.argument<String>("path"), result)
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(engine.dartExecutor.binaryMessenger, shareChannelName).apply {
             setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -102,6 +111,33 @@ class MainActivity : FlutterActivity() {
             }
             shareChannel = this
         }
+    }
+
+    /// 把录音解成裸 PCM（Dart 侧 `lib/platform/asr_audio.dart`）。
+    ///
+    /// 解码是同步的 MediaCodec 循环，十几秒录音要几十到上百毫秒 —— **不能占主线程**，
+    /// 所以丢到普通线程上跑；`result` 回到主线程再交（MethodChannel 只认主线程）。
+    private fun decodePcm(path: String?, result: MethodChannel.Result) {
+        if (path.isNullOrEmpty()) {
+            result.error("bad-args", "缺少录音路径", null)
+            return
+        }
+        Thread {
+            var payload: Map<String, Any>? = null
+            var failure: String? = null
+            try {
+                payload = PcmDecoder.decode(path)
+            } catch (e: Exception) {
+                failure = e.message ?: "音频解码失败"
+            }
+            runOnUiThread {
+                when {
+                    failure != null -> result.error("decode-failed", failure, null)
+                    payload == null -> result.error("no-audio-track", "这条录音里没有音频", null)
+                    else -> result.success(payload)
+                }
+            }
+        }.start()
     }
 
     /// 把一个 `ACTION_SEND` 变成「预填进首页录入条」。

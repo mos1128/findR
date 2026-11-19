@@ -305,27 +305,31 @@ const Duration updateResponseTimeout = Duration(seconds: 20);
 /// 流「卡死」的判定：这么久没有新字节就当中断（留着 `.part` 下次续传）。
 const Duration updateStallTimeout = Duration(seconds: 30);
 
-/// 把安装包下到 [apkFileFor] 的位置，成功时返回那份文件。
+/// 把 [url] 下到 [target]：断点续传，校验通过才改名。
 ///
-/// 断点续传：`.part` 存在且非空就给请求带 `Range`；服务器回 `206` 就接着写，
+/// 断点续传：`target.part` 存在且非空就给请求带 `Range`；服务器回 `206` 就接着写，
 /// 回 `200`（不支持 Range）就截断重来 —— **服务器给什么就是什么，不赌**。
 ///
+/// [validate] 是「怎样算下对了」：**校验通过才算完成**，于是「正式文件存在」本身就
+/// 等于「内容是完整的」，调用方不用再验一遍。校验不过的 `.part` 直接删掉 —— 留着它
+/// 每次续传都会被同一个错误拦住。
+///
 /// [client] 传了就用它（调用方负责关）；不传则内部新建一个用完即关。
-Future<DownloadOutcome> downloadApkToFile({
+Future<DownloadOutcome> downloadToFile({
   required String url,
-  required String tag,
+  required File target,
   http.Client? client,
   Duration responseTimeout = updateResponseTimeout,
   Duration stallTimeout = updateStallTimeout,
   UpdateDownloadProgress? onProgress,
   DownloadCancelToken? cancel,
+  Future<bool> Function(File part)? validate,
+  String invalidReason = '下载到的内容不完整',
 }) async {
   final own = client == null ? http.Client() : null;
   final c = client ?? own!;
-  final apk = apkFileFor(tag);
-  final part = apkPartFileFor(tag);
+  final part = File('${target.path}.part');
   try {
-    purgeOtherDownloads(tag);
     final resumeFrom = part.existsSync() ? part.lengthSync() : 0;
 
     final req = http.Request('GET', Uri.parse(url))
@@ -436,19 +440,44 @@ Future<DownloadOutcome> downloadApkToFile({
       // 少收了就留着 `.part` 等下次续传 —— 别把「传了一半」当成功
       return DownloadFailed('下载不完整（$written / $total 字节）');
     }
-    if (!isCompleteApk(part)) {
-      // 拿到的东西根本不是安装包（多半是个 HTML 错误页）—— 这份 `.part` 没有续传价值
+    if (validate != null && !await validate(part)) {
+      // 拿到的东西不对（多半是个 HTML 错误页，或者校验不过的半截文件）—— 没有续传价值
       if (part.existsSync()) part.deleteSync();
-      return const DownloadFailed('下载到的不是安装包（内容不完整）');
+      return DownloadFailed(invalidReason);
     }
 
-    if (apk.existsSync()) apk.deleteSync();
-    part.renameSync(apk.path);
-    return DownloadDone(apk, written);
+    if (target.existsSync()) target.deleteSync();
+    part.renameSync(target.path);
+    return DownloadDone(target, written);
   } catch (e) {
     // 网络层的任何异常（连接被重置、DNS、证书……）都收成一句人话，`.part` 留着续传
     return DownloadFailed('$e');
   } finally {
     own?.close();
   }
+}
+
+/// 把安装包下到 [apkFileFor] 的位置 —— 只是给 [downloadToFile] 定好落点与「怎样算安装包」。
+Future<DownloadOutcome> downloadApkToFile({
+  required String url,
+  required String tag,
+  http.Client? client,
+  Duration responseTimeout = updateResponseTimeout,
+  Duration stallTimeout = updateStallTimeout,
+  UpdateDownloadProgress? onProgress,
+  DownloadCancelToken? cancel,
+}) {
+  // 同目录里别的版本的包没用了，先清掉：手机存储经不起几份 APK
+  purgeOtherDownloads(tag);
+  return downloadToFile(
+    url: url,
+    target: apkFileFor(tag),
+    client: client,
+    responseTimeout: responseTimeout,
+    stallTimeout: stallTimeout,
+    onProgress: onProgress,
+    cancel: cancel,
+    validate: (part) async => isCompleteApk(part),
+    invalidReason: '下载到的不是安装包（内容不完整）',
+  );
 }

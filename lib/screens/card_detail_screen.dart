@@ -361,7 +361,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     final locations = listLocations(rt.driver);
     final ctx = BadgeContext(
       visionSupported: visionSupported(rt.llm),
-      asrConfigured: rt.asr != null,
+      asrConfigured: asrReady(rt.asr),
     );
     final badges = cardBadges(card);
     final images = card.images ?? const <String>[];

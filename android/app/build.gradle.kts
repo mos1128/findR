@@ -98,6 +98,18 @@ kotlin {
     }
 }
 
+// ── 正式包只带 arm64 ────────────────────────────────────────────────────────
+// sherpa-onnx 的 AAR 自带 v7a / x86_64 的 .so（合计约 52 MB），而发出去的包一直是
+// `flutter build apk --target-platform android-arm64` 出的 —— 那几份纯属白占体积，
+// 而应用内更新要整包下载。debug 包不动：模拟器还得能装。
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll(
+            listOf("lib/armeabi-v7a/**", "lib/x86/**", "lib/x86_64/**"),
+        )
+    }
+}
+
 flutter {
     source = "../.."
 }

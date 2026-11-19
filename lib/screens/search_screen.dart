@@ -824,7 +824,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final rt = ref.read(runtimeProvider).value;
     return BadgeContext(
       visionSupported: visionSupported(rt?.llm),
-      asrConfigured: rt?.asr != null,
+      asrConfigured: asrReady(rt?.asr),
     );
   }
 }

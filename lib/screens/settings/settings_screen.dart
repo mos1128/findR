@@ -405,7 +405,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
 
     final llmName = rt.llm == null ? '未配置' : '${rt.llm!.model}（${rt.llm!.providerType.wire}）';
-    final asrName = rt.asr?.model ?? '未配置';
+    // 本机那条路没有模型名，只有「下没下」这一个状态值得说 —— 它决定转写能不能跑
+    final asr = rt.asr;
+    final asrName = asr == null
+        ? '未配置'
+        : asr.engine == AsrEngine.local
+        ? (asrReady(asr) ? '本机 · 模型已下载' : '本机 · 模型尚未下载')
+        : (asr.model.isEmpty ? '未配置' : asr.model);
 
     // 首页齿轮上那个点的含义靠这一行补上：进了设置页，「检查更新」上也有同一个点。
     // 只用 `value`：静默检查还没回来时不打点，别让用户白跑一趟。

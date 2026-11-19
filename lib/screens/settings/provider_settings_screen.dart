@@ -14,14 +14,19 @@
 library;
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../platform/asr_model.dart';
+import '../../platform/local_asr.dart';
 import '../../platform/media.dart';
+import '../../platform/pcm.dart';
 import '../../platform/runtime.dart';
 import '../../platform/secure.dart';
+import '../../platform/update.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
 import '../../ui/runtime_fallback.dart';
@@ -91,6 +96,16 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
   bool _obscureKey = true;
   bool _presetsExpanded = false;
 
+  /// 语音识别走云端还是本机。两套参数同时留着，切回云端不必重打一遍。
+  AsrEngine _engine = AsrEngine.cloud;
+
+  /// 本机模型下载的进行态。
+  bool _downloading = false;
+  int _received = 0;
+  int? _total;
+  String? _downloadError;
+  DownloadCancelToken? _cancel;
+
   /// 刚点过的预设：芯片据此亮起，用户一动字段就灭 —— 亮着就等于「现在就是这个」。
   _Preset? _applied;
 
@@ -109,6 +124,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
   @override
   void dispose() {
     _filledTimer?.cancel();
+    _cancel?.cancel();
     _baseUrl.dispose();
     _model.dispose();
     _userAgent.dispose();
@@ -127,6 +143,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
       _baseUrl.text = rt.asr?.baseUrl ?? '';
       _model.text = rt.asr?.model ?? '';
       _apiKey.text = rt.asrKey ?? '';
+      _engine = rt.asr?.engine ?? AsrEngine.cloud;
     } else {
       final llm = rt.llm;
       _providerType = llm?.providerType ?? ProviderType.anthropic;
@@ -159,6 +176,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
       _baseUrl.text = rt.asr?.baseUrl ?? '';
       _model.text = rt.asr?.model ?? '';
       _apiKey.text = rt.asrKey ?? '';
+      _engine = rt.asr?.engine ?? AsrEngine.cloud;
     }
     _probeText = null;
     _presetsExpanded = false;
@@ -353,6 +371,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
   }
 
   AsrSettings _buildAsr() => AsrSettings(
+    engine: _engine,
     model: _model.text.trim(),
     baseUrl: _baseUrl.text.trim().isEmpty ? null : _baseUrl.text.trim(),
   );
@@ -419,6 +438,14 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
         await ref.read(runtimeProvider.notifier).refresh();
         if (!mounted) return;
         setState(() => _probeText = _probeSummary(caps));
+      } else if (_engine == AsrEngine.local) {
+        // 静音走一遍完整链路：能回来就说明模型载入成功（慢的就是这一步）
+        final text = await LocalAsr.instance.transcribe(Float32List(speechSampleRate));
+        if (!mounted) return;
+        setState(
+          () => _probeText =
+              '● 本机模型：正常 — 已载入${text.isEmpty ? '' : '，返回：$text'}',
+        );
       } else {
         final cfg = _buildAsr();
         final adapter = makeAsrAdapter(cfg, const DeviceMediaIo());
@@ -440,6 +467,157 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 本机模型面板：状态 + 一个按钮。228 MB 不塞进安装包，只能应用内下。
+  Widget _buildLocalModel(FindrColors c) {
+    final installed = asrModelInstalled();
+    final total = _total ?? asrModelTotalBytes;
+    final pct = total == 0 ? 0.0 : (_received / total).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SectionTitle('本机模型'),
+        const SizedBox(height: Spacing.two),
+        Row(
+          children: <Widget>[
+            Icon(
+              installed ? Icons.check_circle_outline_rounded : Icons.download_outlined,
+              size: 16,
+              color: installed ? c.success : c.textMuted,
+            ),
+            const SizedBox(width: Spacing.one),
+            Expanded(
+              child: Text(
+                installed ? '已下载，占 ${_fmtBytes(total)}' : '尚未下载，${_fmtBytes(total)}',
+                style: TextStyle(fontSize: 13, color: c.textSecondary),
+              ),
+            ),
+          ],
+        ),
+        if (_downloading) ...<Widget>[
+          const SizedBox(height: Spacing.three),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(Radii.xs),
+            child: LinearProgressIndicator(
+              value: pct,
+              minHeight: 6,
+              backgroundColor: c.surfaceAlt,
+              color: c.record,
+            ),
+          ),
+          const SizedBox(height: Spacing.two),
+          Text(
+            '${(pct * 100).round()}%  ${_fmtBytes(_received)} / ${_fmtBytes(total)}',
+            style: TextStyle(fontSize: 11.5, color: c.textSecondary),
+          ),
+        ],
+        if (_downloadError != null) ...<Widget>[
+          const SizedBox(height: Spacing.three),
+          Notice(text: _downloadError!, tone: NoticeTone.danger),
+        ],
+        const SizedBox(height: Spacing.three),
+        if (_downloading)
+          FindrButton(
+            title: '取消下载',
+            variant: FindrButtonVariant.secondary,
+            onPressed: () => _cancel?.cancel(),
+          )
+        else if (installed)
+          FindrButton(
+            title: '删除模型',
+            variant: FindrButtonVariant.secondary,
+            onPressed: _removeModel,
+          )
+        else
+          FindrButton(title: '下载模型', onPressed: _downloadModel),
+      ],
+    );
+  }
+
+  Future<void> _downloadModel() async {
+    final cancel = DownloadCancelToken();
+    setState(() {
+      _downloading = true;
+      _received = 0;
+      _total = asrModelTotalBytes;
+      _downloadError = null;
+      _cancel = cancel;
+    });
+    // 每 1% 才刷一次界面：228 MB 的回调有几百次，逐次 setState 会明显掉帧
+    var lastPct = -1;
+    try {
+      final outcome = await downloadAsrModel(
+        cancel: cancel,
+        onProgress: (received, total) {
+          final pct = total == null || total == 0 ? 0 : received * 100 ~/ total;
+          if (!mounted || pct == lastPct) return;
+          lastPct = pct;
+          setState(() {
+            _received = received;
+            _total = total ?? asrModelTotalBytes;
+          });
+        },
+      );
+      if (!mounted) return;
+      if (outcome is DownloadDone) {
+        // 快照里带着「模型在不在」，装好了要让它重读一次
+        await ref.read(runtimeProvider.notifier).refresh();
+        if (mounted) setState(() => _downloading = false);
+      } else if (outcome is DownloadFailed) {
+        setState(() {
+          _downloading = false;
+          _downloadError = outcome.reason;
+        });
+      } else {
+        setState(() => _downloading = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _downloading = false;
+          _downloadError = '模型下载失败：${plainError(e)}';
+        });
+      }
+    } finally {
+      _cancel = null;
+    }
+  }
+
+  Future<void> _removeModel() async {
+    final c = FindrColors.of(context);
+    final mb = _fmtBytes(asrModelTotalBytes);
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('删除本机模型？', style: TextStyle(fontSize: 16, color: c.text)),
+        content: Text(
+          '本机转写随即不可用，重新下载需要 $mb。',
+          style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('取消', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('删除', style: TextStyle(color: c.danger)),
+          ),
+        ],
+      ),
+    );
+    if (yes != true) return;
+    removeAsrModel();
+    await ref.read(runtimeProvider.notifier).refresh();
+    if (mounted) setState(() => _downloadError = null);
+  }
+
+  String _fmtBytes(int n) {
+    if (n < 1024) return '$n B';
+    if (n < 1024 * 1024) return '${(n / 1024).toStringAsFixed(1)} KB';
+    return '${(n / 1024 / 1024).toStringAsFixed(1)} MB';
   }
 
   @override
@@ -493,99 +671,122 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                SectionTitle(isLlm ? '常用服务商' : '常用语音识别服务'),
-                const SizedBox(height: Spacing.two),
-                _buildPresetRail(isLlm ? _llmPresets : _asrPresets, c),
-                _buildFilledHint(c),
-                const SizedBox(height: Spacing.three),
-                if (isLlm) ...<Widget>[
-                  const SectionTitle('协议格式'),
+                if (!isLlm) ...<Widget>[
+                  const SectionTitle('识别方式'),
                   const SizedBox(height: Spacing.two),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: <Widget>[
-                        FindrChip(
-                          label: 'Anthropic',
-                          active: _providerType == ProviderType.anthropic,
-                          onPressed: () => setState(() => _providerType = ProviderType.anthropic),
-                        ),
-                        const SizedBox(width: Spacing.two),
-                        FindrChip(
-                          label: 'OpenAI chat',
-                          active: _providerType == ProviderType.openaiCompat,
-                          onPressed: () =>
-                              setState(() => _providerType = ProviderType.openaiCompat),
-                        ),
-                        const SizedBox(width: Spacing.two),
-                        FindrChip(
-                          label: 'OpenAI response',
-                          active: _providerType == ProviderType.openaiResponses,
-                          onPressed: () =>
-                              setState(() => _providerType = ProviderType.openaiResponses),
-                        ),
-                      ],
-                    ),
+                  Row(
+                    children: <Widget>[
+                      FindrChip(
+                        label: '云端',
+                        active: _engine == AsrEngine.cloud,
+                        onPressed: () => setState(() => _engine = AsrEngine.cloud),
+                      ),
+                      const SizedBox(width: Spacing.two),
+                      FindrChip(
+                        label: '本机',
+                        active: _engine == AsrEngine.local,
+                        onPressed: () => setState(() => _engine = AsrEngine.local),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: Spacing.three),
                 ],
-                FindrField(
-                  label: '服务地址 (Base URL)',
-                  controller: _baseUrl,
-                  keyboardType: TextInputType.url,
-                  placeholder: isLlm
-                      ? (_providerType == ProviderType.anthropic
-                          ? 'https://api.anthropic.com'
-                          : 'https://api.openai.com')
-                      : 'https://api.openai.com',
-                  hint: '可填局域网地址',
-                  onChanged: (_) => _dropPreset(),
-                ),
-                const SizedBox(height: Spacing.four),
-                FindrField(
-                  label: '模型名称',
-                  controller: _model,
-                  placeholder: isLlm
-                      ? (_providerType == ProviderType.anthropic
-                          ? 'claude-sonnet-5-5'
-                          : 'gpt-6.1-sol')
-                      : 'gpt-transcribe',
-                  onChanged: (_) => _dropPreset(),
-                ),
-                const SizedBox(height: Spacing.four),
-                FindrField(
-                  label: 'API Key',
-                  controller: _apiKey,
-                  obscure: _obscureKey,
-                  placeholder: 'sk-...',
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                      size: 20,
-                      color: c.textMuted,
+                if (isLlm || _engine == AsrEngine.cloud) ...<Widget>[
+                  SectionTitle(isLlm ? '常用服务商' : '常用语音识别服务'),
+                  const SizedBox(height: Spacing.two),
+                  _buildPresetRail(isLlm ? _llmPresets : _asrPresets, c),
+                  _buildFilledHint(c),
+                  const SizedBox(height: Spacing.three),
+                  if (isLlm) ...<Widget>[
+                    const SectionTitle('协议格式'),
+                    const SizedBox(height: Spacing.two),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: <Widget>[
+                          FindrChip(
+                            label: 'Anthropic',
+                            active: _providerType == ProviderType.anthropic,
+                            onPressed: () => setState(() => _providerType = ProviderType.anthropic),
+                          ),
+                          const SizedBox(width: Spacing.two),
+                          FindrChip(
+                            label: 'OpenAI chat',
+                            active: _providerType == ProviderType.openaiCompat,
+                            onPressed: () =>
+                                setState(() => _providerType = ProviderType.openaiCompat),
+                          ),
+                          const SizedBox(width: Spacing.two),
+                          FindrChip(
+                            label: 'OpenAI response',
+                            active: _providerType == ProviderType.openaiResponses,
+                            onPressed: () =>
+                                setState(() => _providerType = ProviderType.openaiResponses),
+                          ),
+                        ],
+                      ),
                     ),
-                    tooltip: _obscureKey ? '显示明文' : '隐藏明文',
-                    onPressed: () => setState(() => _obscureKey = !_obscureKey),
+                    const SizedBox(height: Spacing.three),
+                  ],
+                  FindrField(
+                    label: '服务地址 (Base URL)',
+                    controller: _baseUrl,
+                    keyboardType: TextInputType.url,
+                    placeholder: isLlm
+                        ? (_providerType == ProviderType.anthropic
+                            ? 'https://api.anthropic.com'
+                            : 'https://api.openai.com')
+                        : 'https://api.openai.com',
+                    hint: '可填局域网地址',
+                    onChanged: (_) => _dropPreset(),
                   ),
-                ),
-                if (isLlm) ...<Widget>[
                   const SizedBox(height: Spacing.four),
                   FindrField(
-                    label: 'User-Agent',
-                    controller: _userAgent,
-                    placeholder: 'Findr/1.0',
+                    label: '模型名称',
+                    controller: _model,
+                    placeholder: isLlm
+                        ? (_providerType == ProviderType.anthropic
+                            ? 'claude-sonnet-5-5'
+                            : 'gpt-6.1-sol')
+                        : 'gpt-transcribe',
+                    onChanged: (_) => _dropPreset(),
                   ),
-                ],
+                  const SizedBox(height: Spacing.four),
+                  FindrField(
+                    label: 'API Key',
+                    controller: _apiKey,
+                    obscure: _obscureKey,
+                    placeholder: 'sk-...',
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        size: 20,
+                        color: c.textMuted,
+                      ),
+                      tooltip: _obscureKey ? '显示明文' : '隐藏明文',
+                      onPressed: () => setState(() => _obscureKey = !_obscureKey),
+                    ),
+                  ),
+                  if (isLlm) ...<Widget>[
+                    const SizedBox(height: Spacing.four),
+                    FindrField(
+                      label: 'User-Agent',
+                      controller: _userAgent,
+                      placeholder: 'Findr/1.0',
+                    ),
+                  ],
+                ] else
+                  _buildLocalModel(c),
               ],
             ),
           ),
           Panel(
-            title: '服务连通性与能力检测',
+            title: isLlm || _engine == AsrEngine.cloud ? '服务连通性与能力检测' : '模型自检',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 FindrButton(
-                  title: '开始检测连接',
+                  title: isLlm || _engine == AsrEngine.cloud ? '开始检测连接' : '检测本机模型',
                   variant: FindrButtonVariant.secondary,
                   loading: _busy,
                   onPressed: () => _probe(),

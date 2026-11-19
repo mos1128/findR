@@ -154,15 +154,47 @@ final class LlmSettings {
   }
 }
 
-/// 语音转写的配置。协议**只有** openai-compat 一个（Anthropic 协议没有音频输入）。
+/// 语音转写在哪台机器上跑。
+///
+/// [cloud] 走 OpenAI 兼容的 `/audio/transcriptions`，要地址、要 Key；
+/// [local] 用本机模型，不联网、不要 Key。
+enum AsrEngine {
+  cloud('cloud'),
+  local('local');
+
+  const AsrEngine(this.wire);
+
+  /// 落设置的字面值 —— **这就是格式，改不得**。
+  final String wire;
+
+  /// 认不出来就当云端：老数据里没有这个键，语义正好是「以前只有云端」。
+  static AsrEngine fromWireOr(Object? value, AsrEngine fallback) {
+    for (final engine in values) {
+      if (engine.wire == value) return engine;
+    }
+    return fallback;
+  }
+}
+
+/// 语音转写的配置。
+///
+/// 云端那条路的协议**只有** openai-compat 一个（Anthropic 协议没有音频输入）；
+/// [engine] 决定这组设置是「发给云端」还是「本机跑」。
+/// **两套参数同时留着**：本机切回云端时不必让人把地址和模型名再填一遍。
 final class AsrSettings {
-  const AsrSettings({required this.model, this.baseUrl});
+  const AsrSettings({required this.model, this.baseUrl, this.engine = AsrEngine.cloud});
 
   final String? baseUrl;
   final String model;
+  final AsrEngine engine;
+
+  /// 只有云端那条路需要地址与 Key；缺任何一项都算没配好。
+  bool get ready =>
+      engine == AsrEngine.local || (model.isNotEmpty && baseUrl != null && baseUrl!.isNotEmpty);
 
   Map<String, Object?> toJson() => {
     'providerType': ProviderType.openaiCompat.wire,
+    'engine': engine.wire,
     if (baseUrl != null) 'baseUrl': baseUrl,
     'model': model,
   };
@@ -173,6 +205,7 @@ final class AsrSettings {
     return AsrSettings(
       model: map['model'] is String ? map['model'] as String : '',
       baseUrl: map['baseUrl'] is String ? map['baseUrl'] as String : null,
+      engine: AsrEngine.fromWireOr(map['engine'], AsrEngine.cloud),
     );
   }
 }

@@ -16,8 +16,10 @@ import 'package:findr_core/findr_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app_paths.dart';
+import 'asr_model.dart';
 import 'backup.dart';
 import 'db.dart';
+import 'local_asr.dart';
 import 'media.dart';
 import 'secure.dart';
 
@@ -148,17 +150,34 @@ final class DepsUnavailable extends BuiltDeps {
   final String reason;
 }
 
+/// 语音转写到底能不能干活。
+///
+/// 云端看「地址 + 模型名填了没」，本机看「模型下下来了没」。
+/// **本机选了但模型没下，就等于没配** —— 否则角标会写「待转写」而其实永远转不了，
+/// 那是骗人（`asrConfigured` 只决定文案，所以这里必须说实话）。
+bool asrReady(AsrSettings? asr) {
+  if (asr == null) return false;
+  if (asr.engine == AsrEngine.local) return asrModelInstalled();
+  return asr.ready;
+}
+
+/// 一套 ASR 设置 → 真正干活的那个适配器。
+AsrProviderAdapter asrAdapterOf(AsrSettings asr) =>
+    asr.engine == AsrEngine.local
+    ? const LocalAsrAdapter()
+    : makeAsrAdapter(asr, const DeviceMediaIo());
+
 BuiltDeps buildAdvanceDeps(RuntimeState rt) {
   final llm = rt.llm;
   if (!llmConfigured(llm)) return const DepsUnavailable('尚未配置主模型');
-  final asr = rt.asr;
+  final asr = asrReady(rt.asr) ? rt.asr : null;
   return DepsReady(
     AdvanceDeps(
       db: rt.driver,
       llm: makeLlmAdapter(llm!),
       cfg: toProviderConfig(llm, rt.llmKey),
       media: const DeviceMediaIo(),
-      asr: asr == null ? null : makeAsrAdapter(asr, const DeviceMediaIo()),
+      asr: asr == null ? null : asrAdapterOf(asr),
       asrCfg: asr == null ? null : toAsrProviderConfig(asr, rt.asrKey),
       visionSupported: visionSupported(llm),
       maxAnalyzeImages: rt.capture.maxAnalyzeImages,
@@ -224,8 +243,13 @@ Future<AnswerResult> runAnswer(
 Future<String> transcribeOnce(RuntimeState rt, String path) async {
   final asr = rt.asr;
   if (asr == null) throw StateError('尚未配置语音识别');
+  if (!asrReady(asr)) {
+    throw StateError(
+      asr.engine == AsrEngine.local ? '本机模型尚未下载' : '尚未配置语音识别',
+    );
+  }
   final bytes = await File(path).readAsBytes();
-  final result = await makeAsrAdapter(asr, const DeviceMediaIo()).transcribe(
+  final result = await asrAdapterOf(asr).transcribe(
     TranscribeRequest(
       audio: AudioBase64Ref(base64: base64Encode(bytes), mime: 'audio/m4a'),
       filename: 'audio.m4a',

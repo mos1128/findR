@@ -338,8 +338,42 @@ void main() {
       );
       expect(const AsrSettings(model: 'whisper-1').toJson(), {
         'providerType': 'openai-compat',
+        'engine': 'cloud',
         'model': 'whisper-1',
       });
+    });
+
+    test('本机转写：不写 baseUrl 也仍然算配好', () {
+      const value = AsrSettings(engine: AsrEngine.local, model: '');
+      expect(value.toJson(), {
+        'providerType': 'openai-compat',
+        'engine': 'local',
+        'model': '',
+      });
+      expect(value.ready, isTrue);
+      // 云端那半边缺地址就是没配好 —— 不能空着地址去请求
+      expect(const AsrSettings(model: 'whisper-1').ready, isFalse);
+    });
+
+    test('引擎往返；老数据没有 engine 键时按云端读', () {
+      final local = AsrSettings.fromJson(jsonDecode(jsonEncode(
+        const AsrSettings(engine: AsrEngine.local, model: 'whisper-1').toJson(),
+      )))!;
+      expect(local.engine, AsrEngine.local);
+
+      final legacy = AsrSettings.fromJson(<String, Object?>{
+        'providerType': 'openai-compat',
+        'baseUrl': 'http://host',
+        'model': 'whisper-1',
+      })!;
+      expect(legacy.engine, AsrEngine.cloud);
+      expect(legacy.model, 'whisper-1');
+
+      // 认不出来的字面值也不许把设置读丢
+      expect(
+        AsrSettings.fromJson(<String, Object?>{'model': 'm', 'engine': '云'})!.engine,
+        AsrEngine.cloud,
+      );
     });
   });
 }
