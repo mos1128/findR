@@ -736,7 +736,9 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
       label = '数据库尚未就绪';
       color = c.textMuted;
     } else if (_recording) {
-      label = _cancelArmed ? '松开取消' : '松开结束';
+      // 录音态就在这颗药丸里说，不另起一行：搜索页也是这么显示的
+      final sec = (_recorder.elapsedMs / 1000).ceil();
+      label = _cancelArmed ? '松开即取消这段录音' : '● 录音中 ${sec}s · 上滑取消';
       color = c.danger;
     } else if (text.isEmpty) {
       label = '记一笔…（长按说话）';
@@ -828,15 +830,6 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
                         setState(() => _audio = null);
                         _refreshCanSubmit();
                       },
-                    ),
-                    const SizedBox(height: Spacing.two),
-                  ],
-                  if (_recording) ...<Widget>[
-                    _Progress(
-                      text: _cancelArmed
-                          ? '松开就取消这段录音'
-                          : '● 录音中 ${(_recorder.elapsedMs / 1000).round()}s · 上滑取消',
-                      color: c.danger,
                     ),
                     const SizedBox(height: Spacing.two),
                   ],
@@ -1443,38 +1436,6 @@ class _SaveOptionsSheetState extends State<_SaveOptionsSheet> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _Progress extends StatelessWidget {
-  const _Progress({required this.text, this.color});
-
-  final String text;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = FindrColors.of(context);
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Row(
-        children: <Widget>[
-          SizedBox(
-            width: 13,
-            height: 13,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: color ?? c.record,
-            ),
-          ),
-          const SizedBox(width: Spacing.two),
-          Text(
-            text,
-            style: TextStyle(fontSize: 11.5, color: color ?? c.textSecondary),
-          ),
-        ],
       ),
     );
   }

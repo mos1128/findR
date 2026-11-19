@@ -32,7 +32,7 @@ cd packages/findr_core && dart test          # 只测 core（快）
 bash release.sh                              # 发版
 ```
 
-**基线不许破**：core 314 条 + app 156 条，静态分析干净。
+**基线不许破**：core 314 条 + app 158 条，静态分析干净。
 
 ## 关键约束
 
@@ -109,7 +109,7 @@ bash release.sh
 # → 等 CI 出包（十几分钟）→ 本机建 Gitee 发行版 → 传附件 → 按字节数校验 → 清旧版
 ```
 
-**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 156 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
+**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 158 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
 
 **本机自动**（`release.sh` 的最后一步，`scripts/gitee-attach.sh`）：等 GitHub 出包 → 下载 → 在 Gitee 建发行版（名字与正文整份抄 GitHub 那条）→ 传附件 → HEAD 比字节数 → 删旧版（保留最新 10 个 + 清掉没有附件的空壳）。
 
@@ -190,7 +190,8 @@ bash scripts/gitee-attach.sh vX.Y.Z
 10. GitHub 更新 + 断网测试 → 续传走通、浏览器下载兜底
 11. 别的应用「分享到 Findr」：先**冷启动**分享一张图（App 没在后台），再**热启动**分享一段文字 →
     两种情况都要预填进录入条；图片保存后能打开（说明 `content://` 拷进 cache 成功）
-12. 长按录音往上滑松手 → 丢弃这段录音，不弹「保存中」；短按输入框 → 键盘起来
+12. 长按录音往上滑松手 → 这段录音**真的**丢掉：录入条不留附件、搜索页不进「正在转成文字」；
+    短按输入框 → 键盘起来
 13. 键盘起来后按返回键收起键盘 → **不点输入框**直接长按 → 应该开始录音（搜索页同理）
 14. 录入条与搜索框在「未聚焦 / 录音中」时只显示一层文字（曾经两层叠着画，字压字）
 

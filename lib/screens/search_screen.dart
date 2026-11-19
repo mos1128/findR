@@ -469,7 +469,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     if (_transcribing) return '正在转成文字…';
     if (_recording) {
       final sec = (_recorder.elapsedMs / 1000).ceil();
-      return _cancelArmed ? '松开就取消' : '● 录音中 ${sec}s · 上滑取消';
+      return _cancelArmed ? '松开即取消这段录音' : '● 录音中 ${sec}s · 上滑取消';
     }
     final typed = _controller.text.trim();
     if (typed.isNotEmpty) return typed;

@@ -46,6 +46,8 @@ class HoldInput extends StatefulWidget {
   final VoidCallback onHoldEnd;
 
   /// 手指进了取消区（true）或退回正常区（false）。
+  ///
+  /// 松手时不会再补一个 `false` —— 最终判定在 [onHoldEnd] 里读。
   final ValueChanged<bool> onCancelChanged;
 
   final bool enabled;
@@ -84,9 +86,9 @@ class _HoldInputState extends State<HoldInput> {
     if (!_pressed) return;
     _pressed = false;
     _startY = null;
-    final cancelled = _cancelling;
+    // 松手这里**不许**补一个 `onCancelChanged(false)`：调用方是在 [onHoldEnd] 里
+    // 看自己那份取消态的，先清掉就等于把这次取消吞了 —— 划上去松手照样把录音存下来。
     _cancelling = false;
-    if (cancelled) widget.onCancelChanged(false);
     widget.onHoldEnd();
   }
 
