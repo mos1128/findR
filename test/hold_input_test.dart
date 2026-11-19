@@ -12,6 +12,7 @@ Widget host({
   required VoidCallback onHoldStart,
   required VoidCallback onHoldEnd,
   required ValueChanged<bool> onCancelChanged,
+  VoidCallback? onTap,
 }) => MaterialApp(
   home: Scaffold(
     body: Center(
@@ -20,7 +21,7 @@ Widget host({
         height: 44,
         child: HoldInput(
           focused: false,
-          onTap: () {},
+          onTap: onTap ?? () {},
           onHoldStart: onHoldStart,
           onHoldEnd: onHoldEnd,
           onCancelChanged: onCancelChanged,
@@ -84,5 +85,41 @@ void main() {
     await gesture.up();
     await tester.pump();
     expect(seenAtEnd, isFalse, reason: '20px 离取消区还远，松手就是正常结束');
+  });
+
+  testWidgets('轻点：照常聚焦', (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      host(
+        onHoldStart: () {},
+        onHoldEnd: () {},
+        onCancelChanged: (_) {},
+        onTap: () => taps++,
+      ),
+    );
+
+    await tester.tap(find.byType(HoldInput));
+    await tester.pump();
+    expect(taps, 1);
+  });
+
+  testWidgets('按住够久再松手：不再补一次轻点', (tester) async {
+    var taps = 0;
+    await tester.pumpWidget(
+      host(
+        onHoldStart: () {},
+        onHoldEnd: () {},
+        onCancelChanged: (_) {},
+        onTap: () => taps++,
+      ),
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(HoldInput)),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await gesture.up();
+    await tester.pump();
+    expect(taps, 0, reason: '补这一下会把键盘叫回来，正好盖住刚说完的那次录音');
   });
 }

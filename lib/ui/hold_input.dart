@@ -12,6 +12,8 @@
 /// 用户明明还按在取消区里，状态却一闪一闪。
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 class HoldInput extends StatefulWidget {
@@ -60,15 +62,31 @@ class _HoldInputState extends State<HoldInput> {
   static const double _enterCancel = 64;
   static const double _exitCancel = 44;
 
+  /// 按住超过这么久就不再算「轻点」。调用方一律在 200ms 后才开麦，
+  /// 这条线跟它对齐：够得着开麦的那次按压，松手不该再补一次聚焦 ——
+  /// 补了的结果是录完音键盘自己弹起来（把录音态又盖回去了）。
+  static const Duration _tapMax = Duration(milliseconds: 200);
+
   double? _startY;
   bool _pressed = false;
   bool _cancelling = false;
+  bool _held = false;
+  Timer? _holdTimer;
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
+  }
 
   void _down(PointerDownEvent e) {
     if (!widget.enabled || widget.focused) return;
     _pressed = true;
+    _held = false;
     _startY = e.position.dy;
     _cancelling = false;
+    _holdTimer?.cancel();
+    _holdTimer = Timer(_tapMax, () => _held = true);
     widget.onHoldStart();
   }
 
@@ -86,10 +104,17 @@ class _HoldInputState extends State<HoldInput> {
     if (!_pressed) return;
     _pressed = false;
     _startY = null;
+    _holdTimer?.cancel();
+    _holdTimer = null;
     // 松手这里**不许**补一个 `onCancelChanged(false)`：调用方是在 [onHoldEnd] 里
     // 看自己那份取消态的，先清掉就等于把这次取消吞了 —— 划上去松手照样把录音存下来。
     _cancelling = false;
     widget.onHoldEnd();
+  }
+
+  void _tap() {
+    if (_held) return;
+    widget.onTap();
   }
 
   @override
@@ -111,7 +136,7 @@ class _HoldInputState extends State<HoldInput> {
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: widget.enabled ? widget.onTap : null,
+                onTap: widget.enabled ? _tap : null,
                 child: widget.placeholder,
               ),
             ),

@@ -167,6 +167,23 @@ void main() {
     expect(find.text(face), findsOneWidget);
   });
 
+  testWidgets('进搜索页就是打字态：不用再点一下输入框', (tester) async {
+    await pumpApp(tester);
+    await openSearch(tester);
+
+    final field = tester.widget<TextField>(
+      find.descendant(
+        of: find.byType(SearchScreen),
+        matching: find.byType(TextField),
+      ),
+    );
+    expect(
+      field.focusNode?.hasFocus,
+      isTrue,
+      reason: '从首页点进来那一下已经表达了「要打字」，再点一次是白给的力气',
+    );
+  });
+
   testWidgets('搜索页同样：键盘收起后还能长按说话', (tester) async {
     await pumpApp(tester);
     await openSearch(tester);
@@ -174,13 +191,11 @@ void main() {
       of: find.byType(SearchScreen),
       matching: find.text('搜索记忆…（长按说话）'),
     );
-    expect(face, findsOneWidget);
+    expect(face, findsNothing, reason: '进来就抱着键盘，语音态要等键盘收掉');
 
-    await tester.tap(face);
     addTearDown(tester.view.reset);
     tester.view.viewInsets = const FakeViewPadding(bottom: 300);
     await settle(tester);
-    expect(face, findsNothing);
 
     tester.view.viewInsets = FakeViewPadding.zero;
     await settle(tester);

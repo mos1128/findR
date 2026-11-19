@@ -738,7 +738,7 @@ class _ComposerState extends State<Composer> with WidgetsBindingObserver {
     } else if (_recording) {
       // 录音态就在这颗药丸里说，不另起一行：搜索页也是这么显示的
       final sec = (_recorder.elapsedMs / 1000).ceil();
-      label = _cancelArmed ? '松开即取消这段录音' : '● 录音中 ${sec}s · 上滑取消';
+      label = _cancelArmed ? '松开取消录入' : '● 录音中 ${sec}s · 上滑取消';
       color = c.danger;
     } else if (text.isEmpty) {
       label = '记一笔…（长按说话）';

@@ -1,15 +1,17 @@
 /// 搜索页。
 ///
-/// 从首页顶部的搜索框点进来（点一下就是「要打字」）。**单独一页是为了给最近搜索留位置**：
+/// 从首页顶部的搜索框点进来。**单独一页是为了给最近搜索留位置**：
 /// 首页那一屏已经被「查」「记」两条链路占满，再插一行历史就会把记忆流挤下去。
 ///
-/// 三条口径：
+/// 四条口径：
 ///
 /// 1. **检索状态仍然在 `memoryStreamProvider` 里**（首页也在用同一份），
 ///    所以退出这页时要把检索清掉，否则回到首页会看到「记忆流里混着上一次的检索结果」。
-/// 2. **长按搜索框 = 语音搜索**：不唤起键盘时短按是聚焦、长按是说话；
-///    唤起键盘后长按就是输入框自己的选择文本，不再由我们接管（见 [HoldInput]）。
-/// 3. **分类筛选不在这页**：`searchCards` 没有分类参数，客户端再过滤一遍会被
+/// 2. **输入框在底部**，和录入条同一个位置：搜索也要说话，而举着手机去够屏幕顶是反手的。
+///    进来就聚焦（那一下点击已经表达了「要打字」），不用再点一次输入框。
+/// 3. **说话有两个入口**：抱着键盘时按右边的麦克风，收起键盘后长按药丸本身；
+///    唤起键盘时药丸长按就是输入框自己的选词，这里一个手势都不许抢（见 [HoldInput]）。
+/// 4. **分类筛选不在这页**：`searchCards` 没有分类参数，客户端再过滤一遍会被
 ///    「放宽条件」那套逻辑反复推翻，用户看到的是「筛了又没筛」。分类留在首页的记忆流上。
 library;
 
@@ -335,6 +337,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             children: <Widget>[
               _header(c),
               Expanded(child: _body(c, s, stream)),
+              _dock(c),
             ],
           ),
         ),
@@ -351,9 +354,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
               Spacing.two,
-              Spacing.three,
+              Spacing.two,
               Spacing.four,
-              Spacing.three,
+              Spacing.two,
             ),
             child: Row(
               children: <Widget>[
@@ -376,7 +379,10 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   ),
                 ),
                 const SizedBox(width: Spacing.one),
-                Expanded(child: _field(c)),
+                Text(
+                  '搜索',
+                  style: TextStyle(fontSize: 14, color: c.textSecondary),
+                ),
               ],
             ),
           ),
@@ -385,9 +391,84 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
+  /// 底部这颗药丸，和录入条同宽同位：搜索也要说话，手不该伸到屏幕顶上去。
+  Widget _dock(FindrColors c) {
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: c.shadow.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: maxContentWidth),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Spacing.three,
+                Spacing.two + 2,
+                Spacing.three,
+                Spacing.two + 2,
+              ),
+              child: Row(
+                children: <Widget>[
+                  Expanded(child: _field(c)),
+                  const SizedBox(width: Spacing.two),
+                  _micButton(c),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 抱着键盘时唯一的说话入口。按下先收键盘：录音态要回到药丸里说，
+  /// 而键盘还在时那一层是藏着的。
+  void _onMicDown() {
+    _focus.unfocus();
+    _onHoldStart();
+  }
+
+  Widget _micButton(FindrColors c) => HoldInput(
+    // 这块自己不承载输入框，永远处在「手势态」，所以永远接管指针。
+    focused: false,
+    enabled: !_transcribing,
+    onTap: _onTapField,
+    onHoldStart: _onMicDown,
+    onHoldEnd: _onHoldEnd,
+    onCancelChanged: _onCancelChanged,
+    placeholder: _micFace(c),
+    child: _micFace(c),
+  );
+
+  Widget _micFace(FindrColors c) => Container(
+    width: 38,
+    height: 38,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: _recording
+          ? Color.alphaBlend(c.danger.withValues(alpha: 0.1), c.surfaceAlt)
+          : c.surfaceAlt,
+      borderRadius: BorderRadius.circular(Radii.pill),
+    ),
+    child: Icon(
+      _recording ? Icons.mic_rounded : Icons.mic_none_rounded,
+      size: 20,
+      color: _recording ? c.danger : c.textSecondary,
+    ),
+  );
+
   Widget _field(FindrColors c) {
     return Container(
-      height: 42,
+      constraints: const BoxConstraints(minHeight: 38),
       decoration: BoxDecoration(
         color: c.surfaceSunken,
         borderRadius: BorderRadius.circular(Radii.pill),
@@ -424,6 +505,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
               child: TextField(
                 controller: _controller,
                 focusNode: _focus,
+                // 从首页点进来那一下就是「要打字」：省掉再点一次输入框
+                autofocus: true,
                 textInputAction: TextInputAction.search,
                 onSubmitted: (v) => unawaited(_run(v)),
                 style: TextStyle(fontSize: 14.5, color: c.text),
@@ -432,7 +515,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
                   border: InputBorder.none,
                   hintText: '问一句，比如「护照放哪了」',
                   hintStyle: TextStyle(fontSize: 14.5, color: c.textMuted),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 9),
                 ),
               ),
             ),
@@ -464,12 +547,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  /// 未聚焦时的框内文字。**必须自己带「怎么用」**：这是这个页面唯一的长按入口。
+  /// 未聚焦时的框内文字。**必须自己带「怎么用」**：这是收起键盘后唯一的长按入口。
   String _faceText() {
     if (_transcribing) return '正在转成文字…';
     if (_recording) {
       final sec = (_recorder.elapsedMs / 1000).ceil();
-      return _cancelArmed ? '松开即取消这段录音' : '● 录音中 ${sec}s · 上滑取消';
+      return _cancelArmed ? '松开取消搜索' : '● 录音中 ${sec}s · 上滑取消';
     }
     final typed = _controller.text.trim();
     if (typed.isNotEmpty) return typed;
