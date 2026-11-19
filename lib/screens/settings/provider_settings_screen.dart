@@ -439,13 +439,11 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
         if (!mounted) return;
         setState(() => _probeText = _probeSummary(caps));
       } else if (_engine == AsrEngine.local) {
-        // 静音走一遍完整链路：能回来就说明模型载入成功（慢的就是这一步）
-        final text = await LocalAsr.instance.transcribe(Float32List(speechSampleRate));
+        // 静音走一遍完整链路：能回来就说明模型载入成功（慢的就是这一步）。
+        // 返回值不显示 —— 静音里没有人声，模型只会吐一个随机的字，看着像识别错了。
+        await LocalAsr.instance.transcribe(Float32List(speechSampleRate));
         if (!mounted) return;
-        setState(
-          () => _probeText =
-              '● 本机模型：正常 — 已载入${text.isEmpty ? '' : '，返回：$text'}',
-        );
+        setState(() => _probeText = '● 本机模型：正常 — 已载入');
       } else {
         final cfg = _buildAsr();
         final adapter = makeAsrAdapter(cfg, const DeviceMediaIo());
