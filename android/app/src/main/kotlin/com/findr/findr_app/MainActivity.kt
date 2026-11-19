@@ -3,6 +3,7 @@ package com.findr.findr_app
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
@@ -23,11 +24,32 @@ import java.io.File
 /// **打开本应用的系统设置页** —— 权限被「不再询问」永久拒绝后，系统不再弹权限框，
 /// 只有这页能把开关打开，界面得有个能点的入口。
 ///
+/// 还有一条 `findr/share` 通道：别的应用「分享到 Findr」时，把 `ACTION_SEND`
+/// 里的文字和图片交给 Dart（Dart 侧 `lib/platform/inbound_share.dart`）。
+///
 /// ⚠️ 只做「拉起」不做「代替用户点」：**静默安装不存在**，这是 Android 的规矩，
 /// 文档里也这么写（别让任何人以为这是 OTA）。
 class MainActivity : FlutterActivity() {
     private val channelName = "findr/update"
     private val appChannelName = "findr/app"
+    private val shareChannelName = "findr/share"
+
+    private var shareChannel: MethodChannel? = null
+
+    /// 冷启动时分享 intent 比 Dart 的 handler 先到 —— 先扣在这儿，等 `ready` 再递。
+    private var pendingShare: Map<String, Any?>? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // configureFlutterEngine 在 super.onCreate 里已经跑过，通道此时可用
+        handleShareIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
+    }
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
@@ -64,6 +86,66 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(engine.dartExecutor.binaryMessenger, shareChannelName).apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    // Dart 挂好 handler 之后回一句；扣着的分享在这里补发
+                    "ready" -> {
+                        pendingShare?.let {
+                            invokeMethod("share", it)
+                            pendingShare = null
+                        }
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+            shareChannel = this
+        }
+    }
+
+    /// 把一个 `ACTION_SEND` 变成「预填进首页录入条」。
+    ///
+    /// 只处理单张图 + 一段文字（微信 / 浏览器 / 相册的常规分享）。多图走
+    /// `ACTION_SEND_MULTIPLE`，那是另一条 action，先不接 —— 接了也只是把
+    /// 多张图一次性塞进录入条，用户还得自己删。
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_SEND) return
+        // 同一个 Intent 实例会跟着 Activity 活很久（重建、返回前台），
+        // 处理过就清掉 action，避免重复预填。
+        intent.action = null
+
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
+        val path = if (intent.type?.startsWith("image/") == true) {
+            val uri = @Suppress("DEPRECATION") intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+            uri?.let { copyToCache(it) }
+        } else {
+            null
+        }
+        if (path == null && text.isNullOrEmpty()) return
+
+        val payload = mapOf<String, Any?>(
+            "text" to text,
+            "paths" to if (path == null) emptyList<String>() else listOf(path),
+        )
+        val channel = shareChannel
+        if (channel == null) pendingShare = payload else channel.invokeMethod("share", payload)
+    }
+
+    /// 分享进来的图片是别的应用的 `content://`，读权限只在这一个 Intent 的生命周期里有效 ——
+    /// 必须现在就把字节拷进本应用 cache，否则保存时打开就是 SecurityException。
+    private fun copyToCache(uri: Uri): String? = try {
+        val dir = File(cacheDir, "share").apply { mkdirs() }
+        val type = contentResolver.getType(uri) ?: "image/jpeg"
+        val ext = type.substringAfter('/', "jpeg").let { if (it == "jpeg") "jpg" else it }
+        val file = File(dir, "share_${System.currentTimeMillis()}.$ext")
+        contentResolver.openInputStream(uri)?.use { input ->
+            file.outputStream().use { out -> input.copyTo(out) }
+        }
+        if (file.length() > 0) file.absolutePath else null
+    } catch (_: Exception) {
+        // 源头应用已经撤权 / 文件已被删：这张图就没了，文字部分照常预填
+        null
     }
 
     /// 返回 `"started"` / `"need_permission"` / `"failed"`（映射见 `platform/update_install.dart`）。

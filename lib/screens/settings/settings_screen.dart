@@ -21,6 +21,7 @@ import '../../selfcheck/self_check_screen.dart';
 import '../../state/update_check.dart';
 import '../../theme/tokens.dart';
 import '../../ui/kit.dart';
+import 'archived_screen.dart';
 import 'backup_screen.dart';
 import 'categories_screen.dart';
 import 'locations_screen.dart';
@@ -413,6 +414,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     // 加速设置是本机偏好，直接读写 settings 表（不经过运行时快照，改完立即可用）
     final accelEnabled = readUpdateAccelEnabled(rt.driver);
+
+    // 归档卡片在记忆流里看不到，数量只在「数据与维护」这一行露出来
+    final archived = countCards(
+      rt.driver,
+      const ListCardsOptions(statuses: <CardStatus>[CardStatus.archived]),
+    );
     if (!_accelInited) {
       _accelCtrl.text = readUpdateAccelPrefix(rt.driver);
       _accelInited = true;
@@ -540,6 +547,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   title: '数据备份与恢复',
                   subtitle: '导出或导入档案包 (.findrpack)',
                   onTap: () => _push(const BackupScreen()),
+                  right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
+                ),
+                FindrDivider(),
+                ListRow(
+                  title: '已归档',
+                  // 归档卡片在别处一律不可见（记忆流与检索都过滤 archived），
+                  // 所以这一行必须自己把数量报出来，否则用户不知道里面有没有东西。
+                  subtitle: archived == 0 ? '没有归档的卡片' : '$archived 张，可恢复或彻底删除',
+                  onTap: () async {
+                    await _push(const ArchivedScreen());
+                    if (mounted) setState(() {});
+                  },
                   right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
                 FindrDivider(),

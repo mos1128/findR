@@ -15,6 +15,7 @@ import 'package:findr_app/platform/db.dart';
 import 'package:findr_app/platform/secure.dart';
 import 'package:findr_app/platform/runtime.dart';
 import 'package:findr_app/screens/memory_stream_screen.dart';
+import 'package:findr_app/screens/search_screen.dart';
 import 'package:findr_app/state/update_check.dart';
 import 'package:findr_app/theme/tokens.dart';
 import 'package:findr_core/findr_core.dart';
@@ -61,6 +62,25 @@ Future<void> pumpApp(WidgetTester tester) async {
 Future<void> disposeApp(WidgetTester tester) async {
   await tester.pumpWidget(const SizedBox.shrink());
   await settle(tester, frames: 2);
+}
+
+/// 从首页顶部的搜索入口进搜索页。
+Future<void> openSearch(WidgetTester tester) async {
+  await tester.tap(find.text('搜索记忆'));
+  await settle(tester);
+}
+
+/// 在搜索页里输入并回车。首页的录入框还在树里（被路由盖住），所以只找搜索页里的那一个。
+Future<void> searchFor(WidgetTester tester, String query) async {
+  await tester.enterText(
+    find.descendant(
+      of: find.byType(SearchScreen),
+      matching: find.byType(TextField),
+    ),
+    query,
+  );
+  await tester.testTextInput.receiveAction(TextInputAction.search);
+  await settle(tester);
 }
 
 /// 直接往库里塞一张卡（跳过界面，用来构造检索与筛选场景）。
@@ -119,10 +139,10 @@ void main() {
     await pumpApp(tester);
 
     expect(find.text('还没有记忆'), findsOneWidget);
-    // 「查」：搜索框
-    expect(find.text('问一句，比如「护照放哪了」'), findsOneWidget);
+    // 「查」：搜索入口（点进去才是输入框与最近搜索）
+    expect(find.text('搜索记忆'), findsOneWidget);
     // 「记」：录入条
-    expect(find.text('记一笔…（回车即存）'), findsOneWidget);
+    expect(find.text('记一笔…（轻点输入，长按说话）'), findsOneWidget);
     expect(find.text('存'), findsOneWidget);
     // 未配模型时的提示条**必须在文档流里**（曾经做成浮层盖住搜索框，真机反馈「找不到搜索入口」）
     expect(find.text('尚未配置模型'), findsOneWidget);
@@ -131,8 +151,8 @@ void main() {
   testWidgets('打字录入 → 先落盘，卡片立刻出现在流里（不依赖模型）', (tester) async {
     await pumpApp(tester);
 
-    // 末一个输入框是底部录入条（第一个是顶部搜索框）
-    await tester.enterText(find.byType(TextField).last, '护照放在主卧抽屉');
+    // 首页只有底部录入条这一个输入框
+    await tester.enterText(find.byType(TextField), '护照放在主卧抽屉');
     await settle(tester, frames: 3);
     await tester.tap(find.text('存'));
     await settle(tester);
@@ -153,7 +173,7 @@ void main() {
   testWidgets('空白内容不落盘（存按钮在没内容时是禁用的）', (tester) async {
     await pumpApp(tester);
 
-    await tester.enterText(find.byType(TextField).last, '   ');
+    await tester.enterText(find.byType(TextField), '   ');
     await settle(tester, frames: 3);
     await tester.tap(find.text('存'));
     await settle(tester);
@@ -166,10 +186,9 @@ void main() {
   testWidgets('未配模型时检索照样能用（字面兜底），并把「走的是哪条路」说清楚', (tester) async {
     seedCard('护照放在主卧抽屉里');
     await pumpApp(tester);
+    await openSearch(tester);
 
-    await tester.enterText(find.byType(TextField).first, '主卧抽屉');
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await settle(tester);
+    await searchFor(tester, '主卧抽屉');
 
     expect(find.textContaining('检索结果'), findsOneWidget);
     expect(
@@ -179,36 +198,51 @@ void main() {
     );
     // 未配模型时不给「AI 总结」入口 —— 点了必然失败
     expect(find.text('AI 总结'), findsNothing);
-    expect(find.text('回到记忆流'), findsOneWidget);
   });
 
   testWidgets('搜不到时给的是「没找到相关记忆」，并提示换关键词而不是「还没有记忆」', (tester) async {
     seedCard('护照放在主卧抽屉里');
     await pumpApp(tester);
+    await openSearch(tester);
 
-    await tester.enterText(find.byType(TextField).first, '完全不存在的词条xyz');
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await settle(tester);
+    await searchFor(tester, '完全不存在的词条xyz');
 
     expect(find.text('没找到相关记忆'), findsOneWidget);
     expect(find.text('还没有记忆'), findsNothing);
     expect(find.textContaining('或用空格分开'), findsOneWidget);
   });
 
-  testWidgets('回到记忆流：结果态与答案一起清掉', (tester) async {
+  testWidgets('返回记忆流：结果态清掉，记忆流还在', (tester) async {
     seedCard('护照放在主卧抽屉里');
     await pumpApp(tester);
+    await openSearch(tester);
 
-    await tester.enterText(find.byType(TextField).first, '主卧抽屉');
-    await tester.testTextInput.receiveAction(TextInputAction.search);
-    await settle(tester);
+    await searchFor(tester, '主卧抽屉');
     expect(find.textContaining('检索结果'), findsOneWidget);
 
-    await tester.tap(find.text('回到记忆流'));
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await settle(tester);
     expect(find.textContaining('检索结果'), findsNothing);
     // 记忆流本身还在（那张卡）
     expect(find.textContaining('护照放在主卧抽屉里'), findsWidgets);
+  });
+
+  testWidgets('搜索过的词会进「最近搜索」，点一下即重搜', (tester) async {
+    seedCard('护照放在主卧抽屉里');
+    await pumpApp(tester);
+
+    await openSearch(tester);
+    await searchFor(tester, '主卧抽屉');
+
+    // 回首页再进来：这一页是重建的，最近搜索必须从本机设置里读回来
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await settle(tester);
+    await openSearch(tester);
+    expect(find.text('最近搜索'), findsOneWidget);
+
+    await tester.tap(find.text('主卧抽屉'));
+    await settle(tester);
+    expect(find.textContaining('检索结果'), findsOneWidget);
   });
 
   testWidgets('分类 Chip 只筛记忆流；点两次同一条即取消筛选', (tester) async {

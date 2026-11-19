@@ -14,25 +14,27 @@
 ///    读的就是同一个 controller，新旧值永远相等，`setState` 一次都不触发。
 ///    （这个 bug 被 `test/memory_stream_test.dart` 抓过。）
 /// 2. 图片选中后逐张读取并在后台压缩，处理期间附件条显示占位，避免整批原图常驻内存。
-/// 3. **录音按键用裸指针事件**（`Listener`），不是 `onLongPress`。
-///    语义等价于「按下即录、松开即结束」：
+/// 3. **录音从输入框本身长按触发**（没唤起键盘时），不再有「先切语音模式再按住」那颗按钮：
+///    轻点是打字、长按是说话，两者共用同一条坞。长按的抬手事件由 [HoldInput] 立刻报上来，
 ///    太短由 [shouldDiscardRecording] 判为误触丢掉，**不弹窗、不生成空卡**。
+///    开录前留 200ms 的按稳判定 —— 真点一下不该让系统麦克风指示灯闪。
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart' show XFile;
 
-import '../platform/app_paths.dart';
-import '../platform/app_settings.dart';
+import '../platform/inbound_share.dart';
 import '../theme/tokens.dart';
+import '../ui/haptics.dart';
+import '../ui/hold_input.dart';
 import '../ui/kit.dart';
 import 'image_compress.dart';
 import 'photo_picker.dart';
 import 'recorder.dart';
+import 'record_alert.dart';
 import 'submit.dart';
 import 'text_file.dart';
 
@@ -83,6 +85,10 @@ class Composer extends StatefulWidget {
 
     /// 设置里的默认值（`effectiveVision(capture, capable)` 的结果）。
     this.visionDefault = true,
+
+    /// 别处「分享到 Findr」进来的内容（`platform/inbound_share.dart`）。
+    /// 有值时预填进录入条，取走即清空 —— 见 `_drainInbound`。
+    this.inbound,
   });
 
   /// 返回 `true` 表示已经落盘成功，此时 Composer 才清空输入。
@@ -93,6 +99,7 @@ class Composer extends StatefulWidget {
   final Widget? notice;
   final bool visionCapable;
   final bool visionDefault;
+  final ValueNotifier<InboundShare?>? inbound;
 
   @override
   State<Composer> createState() => _ComposerState();
@@ -119,6 +126,15 @@ class _ComposerState extends State<Composer> {
   /// 靠它区分「用户松手了」与「权限弹窗还没回来」。
   bool _pressing = false;
 
+  /// 手指是否已滑进「取消」区（松手即丢弃这段录音）。
+  bool _cancelArmed = false;
+
+  /// 按稳判定：手指按住超过这个时长才真的开录。
+  static const Duration _holdArmDelay = Duration(milliseconds: 200);
+  Timer? _armTimer;
+
+  /// 上滑取消的阈值在 [HoldInput] 里，这里只管「到了就丢掉」。
+
   /// `_stopRecording` 的重入闸：自动到点与用户松手可能同时触发。
   bool _stopping = false;
   Timer? _ticker;
@@ -127,56 +143,54 @@ class _ComposerState extends State<Composer> {
   Future<void> _compressChain = Future<void>.value();
   bool _fallbackToastShown = false;
 
-  static bool _cachedVoiceMode = false;
-  static bool _modeLoaded = false;
-  bool _voiceMode = false;
-
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onTextChanged);
-    _voiceMode = _cachedVoiceMode;
-    if (!_modeLoaded) {
-      unawaited(_loadModePref());
+    _focus.addListener(_onFocusChanged);
+    widget.inbound?.addListener(_drainInbound);
+    // 冷启动分享时，Notifier 可能在这一帧之前就已经有值了
+    _drainInbound();
+  }
+
+  @override
+  void didUpdateWidget(covariant Composer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.inbound != widget.inbound) {
+      oldWidget.inbound?.removeListener(_drainInbound);
+      widget.inbound?.addListener(_drainInbound);
+      _drainInbound();
     }
   }
 
-  Future<void> _loadModePref() async {
-    _modeLoaded = true;
-    try {
-      if (!AppPaths.ready) return;
-      final file = File('${AppPaths.documents.path}/composer_mode.txt');
-      if (await file.exists()) {
-        final val = (await file.readAsString()).trim();
-        final isVoice = val == 'voice';
-        _cachedVoiceMode = isVoice;
-        if (mounted && _voiceMode != isVoice) {
-          setState(() => _voiceMode = isVoice);
-        }
-      }
-    } catch (_) {}
+  /// 把一个「分享到 Findr」预填进录入条。
+  ///
+  /// 图片走 [_addPhotos]（去重、压缩、超限提示全复用），文字只做追加：
+  /// 用户可能正打到一半，直接覆盖会把已经写的东西弄丢。
+  void _drainInbound() {
+    final notifier = widget.inbound;
+    final share = notifier?.value;
+    if (share == null || !mounted) return;
+    notifier!.value = null;
+    final text = share.text?.trim() ?? '';
+    if (text.isNotEmpty) {
+      final old = _controller.text;
+      _controller.text = old.trim().isEmpty ? text : '${old.trimRight()}\n$text';
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+    if (share.paths.isNotEmpty) {
+      unawaited(_addPhotos(share.paths.map(XFile.new).toList()));
+    }
+    // 分享过来通常还缺一句「这是什么」，直接把光标摆进输入框
+    _focus.requestFocus();
+    setState(() {});
   }
 
-  void _toggleInputMode() {
-    final next = !_voiceMode;
-    if (next) {
-      _focus.unfocus();
-    } else {
-      _focus.requestFocus();
-    }
-    setState(() => _voiceMode = next);
-    _cachedVoiceMode = next;
-    try {
-      if (AppPaths.ready) {
-        final file = File('${AppPaths.documents.path}/composer_mode.txt');
-        // 写失败的 Future 必须自己接住 —— 光包 try/catch 挡不住异步异常。
-        unawaited(
-          file
-              .writeAsString(next ? 'voice' : 'text')
-              .catchError((Object _) => file),
-        );
-      }
-    } catch (_) {}
+  /// 焦点一变就要换脸：聚焦显示真输入框，失焦显示「轻点输入 / 长按说话」那一层。
+  void _onFocusChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onTextChanged() => _refreshCanSubmit();
@@ -195,8 +209,11 @@ class _ComposerState extends State<Composer> {
 
   @override
   void dispose() {
+    _armTimer?.cancel();
     _ticker?.cancel();
+    widget.inbound?.removeListener(_drainInbound);
     _controller.removeListener(_onTextChanged);
+    _focus.removeListener(_onFocusChanged);
     _controller.dispose();
     _focus.dispose();
     unawaited(_recorder.dispose());
@@ -312,7 +329,11 @@ class _ComposerState extends State<Composer> {
       case CompressFailed(:final reason):
         // 退原图，但用真实后缀落盘。假装成 .webp 会让图片永久打不开、
         // 还会把错误 MIME 送给视觉模型。
-        photo.setFallback(bytes: source, reason: reason, ext: originalImageExt(source));
+        photo.setFallback(
+          bytes: source,
+          reason: reason,
+          ext: originalImageExt(source),
+        );
         if (!_fallbackToastShown) {
           _fallbackToastShown = true;
           _toast('部分图片无法压缩，已按原图保存');
@@ -372,10 +393,50 @@ class _ComposerState extends State<Composer> {
 
   // ── 录音 ────────────────────────────────────────────────
 
+  /// 按住 200ms 才算要说话：真点一下（换焦点打字）不该让麦克风指示灯闪。
+  void _onHoldStart() {
+    if (_locked || !widget.enabled || _recording) return;
+    _pressing = true;
+    _armTimer?.cancel();
+    _armTimer = Timer(_holdArmDelay, () {
+      if (_pressing) unawaited(_startRecording());
+    });
+  }
+
+  void _onHoldEnd() {
+    _armTimer?.cancel();
+    _armTimer = null;
+    if (_cancelArmed) {
+      _cancelArmed = false;
+      _pressing = false;
+      _ticker?.cancel();
+      _ticker = null;
+      if (mounted) setState(() => _recording = false);
+      unawaited(_recorder.cancel());
+      return;
+    }
+    // 没到 200ms 就松手：什么都没发生（轻点聚焦走 `_onTapField`）
+    if (!_recording && !_recorder.starting) {
+      _pressing = false;
+      return;
+    }
+    unawaited(_stopRecording());
+  }
+
+  void _onCancelChanged(bool armed) {
+    if (!_recording && !_recorder.starting) return;
+    if (armed == _cancelArmed) return;
+    hapticWarn();
+    setState(() => _cancelArmed = armed);
+  }
+
+  void _onTapField() {
+    if (_locked) return;
+    _focus.requestFocus();
+  }
+
   Future<void> _startRecording() async {
-    if (_locked || _recording || !widget.enabled) return;
-    // 在 await 之前就记住「按着」：权限弹窗会触发 onPointerCancel，
-    // 松手事件可能比 start() 先回来。
+    if (_locked || _recording || !widget.enabled || !_pressing) return;
     _pressing = true;
     setState(() => _expanded = false);
     try {
@@ -388,6 +449,7 @@ class _ComposerState extends State<Composer> {
         return;
       }
       setState(() => _recording = true);
+      hapticHold();
       // 自己起个节拍器显示秒数。`record` 不直接给时长，用开始时刻算最可靠
       _ticker?.cancel();
       _ticker = Timer.periodic(const Duration(milliseconds: 250), (_) {
@@ -404,32 +466,7 @@ class _ComposerState extends State<Composer> {
     } on RecorderError catch (e) {
       _pressing = false;
       if (!mounted) return;
-      if (!e.permission) {
-        await _alert('无法录音', e.message);
-        return;
-      }
-      // 没授权：权限框只在「还没拒绝过」时弹，永久拒绝后只能去设置页开，给个入口
-      final c = FindrColors.of(context);
-      await _alert(
-        '无法录音',
-        e.message,
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('取消', style: TextStyle(color: c.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              unawaited(openAppSettings());
-            },
-            child: Text(
-              '去设置',
-              style: TextStyle(color: c.record, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      );
+      await showRecordAlert(context, e);
     } catch (e) {
       _pressing = false;
       if (mounted) await _alert('无法录音', '$e');
@@ -449,7 +486,10 @@ class _ComposerState extends State<Composer> {
       if (!mounted) return;
       setState(() {
         _recording = false;
-        if (audio != null) _audio = audio;
+        if (audio != null) {
+          _audio = audio;
+          hapticSuccess();
+        }
       });
       _refreshCanSubmit();
     } finally {
@@ -558,14 +598,15 @@ class _ComposerState extends State<Composer> {
         _expanded = false;
       });
       _refreshCanSubmit();
+      hapticSuccess();
     } catch (e) {
       if (mounted) _toast('保存失败：$e');
       return;
     } finally {
       if (mounted) setState(() => _sending = false);
     }
-    // 录完一条继续留着键盘 —— 连着记几笔是常态，每存一条就收一次很烦（语音模式下不弹出键盘）
-    if (mounted && !_voiceMode) _focus.requestFocus();
+    // 录完一条继续留着键盘 —— 连着记几笔是常态，每存一条就收一次很烦
+    if (mounted) _focus.requestFocus();
   }
 
   // ── UI ─────────────────────────────────────────────────
@@ -657,6 +698,66 @@ class _ComposerState extends State<Composer> {
     if (mounted) setState(() => _expanded = false);
   }
 
+  /// 输入框两侧共用的一颗药丸底（真输入框与「未聚焦时长得像输入框」那一层必须同形）。
+  Widget _pill({required Color color, required Widget child}) => Container(
+    constraints: const BoxConstraints(minHeight: 38),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(Radii.pill),
+    ),
+    child: child,
+  );
+
+  /// 没唤起键盘时显示的那层皮：轻点是打字，长按是说话。
+  ///
+  /// 已经打过的字要照原样显示在这里 —— 失焦不是「清空」，
+  /// 收起键盘后看不到自己写了什么会让人以为内容丢了。
+  Widget _inputFace(FindrColors c) {
+    final text = _controller.text.trim();
+    final String label;
+    final Color color;
+    if (!widget.enabled) {
+      label = '数据库尚未就绪';
+      color = c.textMuted;
+    } else if (_recording) {
+      label = _cancelArmed ? '松开取消' : '松开结束';
+      color = c.danger;
+    } else if (text.isEmpty) {
+      label = '记一笔…（轻点输入，长按说话）';
+      color = c.textMuted;
+    } else {
+      label = text;
+      color = c.textSecondary;
+    }
+    return Semantics(
+      button: true,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9.5),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              _recording ? Icons.mic_rounded : Icons.mic_none_rounded,
+              size: 15,
+              color: _recording ? c.danger : c.textMuted,
+            ),
+            const SizedBox(width: Spacing.one + 2),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: text.isEmpty || _recording ? 12.5 : 14,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
@@ -716,8 +817,9 @@ class _ComposerState extends State<Composer> {
                   ],
                   if (_recording) ...<Widget>[
                     _Progress(
-                      text:
-                          '● 录音中 ${(_recorder.elapsedMs / 1000).round()}s · 松开结束',
+                      text: _cancelArmed
+                          ? '松开就取消这段录音'
+                          : '● 录音中 ${(_recorder.elapsedMs / 1000).round()}s · 上滑取消',
                       color: c.danger,
                     ),
                     const SizedBox(height: Spacing.two),
@@ -725,71 +827,59 @@ class _ComposerState extends State<Composer> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: <Widget>[
-                      // 左1：微信式输入模式切换（话筒 / 键盘）
-                      _IconBox(
-                        icon: _voiceMode
-                            ? Icons.keyboard_alt_outlined
-                            : Icons.mic_none_rounded,
-                        active: _voiceMode,
-                        tooltip: _voiceMode ? '切换文字输入' : '切换语音输入',
-                        onPressed: widget.enabled && !_locked
-                            ? _toggleInputMode
-                            : null,
-                      ),
-                      const SizedBox(width: Spacing.two),
-                      // 中间：文字输入框（垂直居中）或「按住 说话」药丸条
+                      // 中间：一个输入框。没唤起键盘时轻点是打字、长按是说话 ——
+                      // 两种输入共用这一颗药丸，没有模式切换。
                       Expanded(
-                        child: !_voiceMode
-                            ? Container(
-                                constraints: const BoxConstraints(
-                                  minHeight: 38,
+                        child: HoldInput(
+                          focused: _focus.hasFocus,
+                          enabled: widget.enabled && !_locked,
+                          onTap: _onTapField,
+                          onHoldStart: _onHoldStart,
+                          onHoldEnd: _onHoldEnd,
+                          onCancelChanged: _onCancelChanged,
+                          placeholder: _pill(
+                            color: _recording
+                                ? c.danger.withValues(alpha: 0.08)
+                                : c.surfaceAlt,
+                            child: _inputFace(c),
+                          ),
+                          child: _pill(
+                            color: c.surfaceAlt,
+                            child: TextField(
+                              controller: _controller,
+                              focusNode: _focus,
+                              enabled: widget.enabled,
+                              // 提交期间只读，不要 disabled：disabled 会丢焦点、
+                              // 收键盘，保存后再 requestFocus 就会闪一下。
+                              readOnly: _locked,
+                              minLines: 1,
+                              maxLines: 4,
+                              textAlignVertical: TextAlignVertical.center,
+                              textInputAction: TextInputAction.send,
+                              // 默认行为会在 send 后 unfocus（收键盘），这里用空回调
+                              // 覆盖掉；焦点保留，键盘就不会先关再开。
+                              onEditingComplete: () {},
+                              // 打字回车即存（需求六）
+                              onSubmitted: (_) => unawaited(_submit()),
+                              style: TextStyle(fontSize: 14, color: c.text),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                border: InputBorder.none,
+                                hintText: widget.enabled
+                                    ? '记一笔…（回车即存）'
+                                    : '数据库尚未就绪',
+                                hintStyle: TextStyle(
+                                  fontSize: 12.5,
+                                  color: c.textMuted,
                                 ),
-                                decoration: BoxDecoration(
-                                  color: c.surfaceAlt,
-                                  borderRadius: BorderRadius.circular(
-                                    Radii.pill,
-                                  ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 9.5,
                                 ),
-                                child: TextField(
-                                  controller: _controller,
-                                  focusNode: _focus,
-                                  enabled: widget.enabled,
-                                  // 提交期间只读，不要 disabled：disabled 会丢焦点、
-                                  // 收键盘，保存后再 requestFocus 就会闪一下。
-                                  readOnly: _locked,
-                                  minLines: 1,
-                                  maxLines: 4,
-                                  textAlignVertical: TextAlignVertical.center,
-                                  textInputAction: TextInputAction.send,
-                                  // 默认行为会在 send 后 unfocus（收键盘），这里用空回调
-                                  // 覆盖掉；焦点保留，键盘就不会先关再开。
-                                  onEditingComplete: () {},
-                                  // 打字回车即存（需求六）
-                                  onSubmitted: (_) => unawaited(_submit()),
-                                  style: TextStyle(fontSize: 14, color: c.text),
-                                  decoration: InputDecoration(
-                                    isDense: true,
-                                    border: InputBorder.none,
-                                    hintText: widget.enabled
-                                        ? '记一笔…（回车即存）'
-                                        : '数据库尚未就绪',
-                                    hintStyle: TextStyle(
-                                      fontSize: 12.5,
-                                      color: c.textMuted,
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 9.5,
-                                    ),
-                                  ),
-                                ),
-                              )
-                            : _HoldToSpeakBar(
-                                recording: _recording,
-                                enabled: widget.enabled && !_locked,
-                                onDown: _startRecording,
-                                onUp: _stopRecording,
                               ),
+                            ),
+                          ),
+                        ),
                       ),
                       const SizedBox(width: Spacing.two),
                       // 右2：＋ 展开素材
@@ -922,7 +1012,10 @@ class _AttachStrip extends StatelessWidget {
                         height: 24,
                         child: Padding(
                           padding: const EdgeInsets.all(5),
-                          child: CircularProgressIndicator(strokeWidth: 1.5, color: c.textMuted),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: c.textMuted,
+                          ),
                         ),
                       )
                     : Image.memory(
@@ -933,8 +1026,11 @@ class _AttachStrip extends StatelessWidget {
                         height: 24,
                         fit: BoxFit.cover,
                         gaplessPlayback: true,
-                        errorBuilder: (_, _, _) =>
-                            Icon(Icons.image_outlined, size: 24, color: c.textMuted),
+                        errorBuilder: (_, _, _) => Icon(
+                          Icons.image_outlined,
+                          size: 24,
+                          color: c.textMuted,
+                        ),
                       ),
               ),
               label: p.isFallback
@@ -1459,76 +1555,6 @@ class _SaveButton extends StatelessWidget {
                     ),
                   ),
                 ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 微信式「按住 说话」药丸条。
-///
-/// 用裸指针事件（Listener）：按下即开始录、松开即结束。太短的由 recorder 判为误触丢掉。
-class _HoldToSpeakBar extends StatelessWidget {
-  const _HoldToSpeakBar({
-    required this.recording,
-    required this.enabled,
-    required this.onDown,
-    required this.onUp,
-  });
-
-  final bool recording;
-  final bool enabled;
-  final Future<void> Function() onDown;
-  final Future<void> Function() onUp;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = FindrColors.of(context);
-    return Listener(
-      onPointerDown: (_) {
-        if (enabled) unawaited(onDown());
-      },
-      onPointerUp: (_) => unawaited(onUp()),
-      onPointerCancel: (_) => unawaited(onUp()),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        height: 38,
-        decoration: BoxDecoration(
-          color: recording ? c.danger : c.surfaceAlt,
-          borderRadius: BorderRadius.circular(Radii.pill),
-          boxShadow: recording
-              ? <BoxShadow>[
-                  BoxShadow(
-                    color: c.danger.withValues(alpha: 0.35),
-                    blurRadius: 10,
-                    spreadRadius: 1,
-                  ),
-                ]
-              : null,
-        ),
-        alignment: Alignment.center,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Icon(
-              recording ? Icons.mic_rounded : Icons.mic_none_rounded,
-              size: 18,
-              color: recording
-                  ? Colors.white
-                  : (enabled ? c.textSecondary : c.textMuted),
-            ),
-            const SizedBox(width: Spacing.one),
-            Text(
-              recording ? '松开 结束' : '按住 说话',
-              style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-                color: recording
-                    ? Colors.white
-                    : (enabled ? c.textSecondary : c.textMuted),
-              ),
-            ),
-          ],
         ),
       ),
     );

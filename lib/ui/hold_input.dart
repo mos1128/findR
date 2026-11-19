@@ -1,0 +1,117 @@
+/// 「没唤起键盘时轻点聚焦、长按说话」的手势壳。
+///
+/// 键盘起来之后一切照旧 —— 长按就是选词，这里一个手势都不许抢。
+/// 所以这个壳只在**未聚焦**时接管指针：聚焦时它一个手势都不接。
+///
+/// 用裸指针事件而不是 `onLongPress`：`onLongPress` 要等 500ms 才回调，
+/// 那 500ms 正是用户开口的第一句。按下即报 [onHoldStart]，由调用方决定怎么「抢跑」。
+///
+/// 上滑取消用两档阈值（进 64 / 退 44）：单档会在边界上来回抖，
+/// 用户明明还按在取消区里，状态却一闪一闪。
+library;
+
+import 'package:flutter/material.dart';
+
+class HoldInput extends StatefulWidget {
+  const HoldInput({
+    super.key,
+    required this.focused,
+    required this.child,
+    required this.placeholder,
+    required this.onTap,
+    required this.onHoldStart,
+    required this.onHoldEnd,
+    required this.onCancelChanged,
+    this.enabled = true,
+  });
+
+  /// 真实输入框现在有没有焦点。
+  final bool focused;
+
+  /// 聚焦后的真实输入框。
+  final Widget child;
+
+  /// 未聚焦时长得像输入框的那一层（画什么由调用方定：提示语、已有文字、录音态）。
+  final Widget placeholder;
+
+  /// 轻点 → 聚焦。
+  final VoidCallback onTap;
+
+  /// 按下（未聚焦时）。**立即**回调，不等长按阈值。
+  final VoidCallback onHoldStart;
+
+  /// 松手 / 指针被系统抢走。
+  final VoidCallback onHoldEnd;
+
+  /// 手指进了取消区（true）或退回正常区（false）。
+  final ValueChanged<bool> onCancelChanged;
+
+  final bool enabled;
+
+  @override
+  State<HoldInput> createState() => _HoldInputState();
+}
+
+class _HoldInputState extends State<HoldInput> {
+  static const double _enterCancel = 64;
+  static const double _exitCancel = 44;
+
+  double? _startY;
+  bool _pressed = false;
+  bool _cancelling = false;
+
+  void _down(PointerDownEvent e) {
+    if (!widget.enabled || widget.focused) return;
+    _pressed = true;
+    _startY = e.position.dy;
+    _cancelling = false;
+    widget.onHoldStart();
+  }
+
+  void _move(PointerMoveEvent e) {
+    final startY = _startY;
+    if (!_pressed || startY == null) return;
+    final up = startY - e.position.dy;
+    final next = _cancelling ? up > _exitCancel : up > _enterCancel;
+    if (next == _cancelling) return;
+    _cancelling = next;
+    widget.onCancelChanged(next);
+  }
+
+  void _up() {
+    if (!_pressed) return;
+    _pressed = false;
+    _startY = null;
+    final cancelled = _cancelling;
+    _cancelling = false;
+    if (cancelled) widget.onCancelChanged(false);
+    widget.onHoldEnd();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 说明：真实输入框**必须一直在树上**。它不在树上，`_focus.requestFocus()`
+    // 就没有任何可附着的焦点节点 —— 点一下没反应，键盘永远起不来（踩过）。
+    // 所以未聚焦时不是「不画它」，而是用不透明的一层把它盖住，并先一步吃掉指针。
+    final covered = !widget.focused;
+    return Listener(
+      onPointerDown: covered ? _down : null,
+      onPointerMove: covered ? _move : null,
+      onPointerUp: covered ? (_) => _up() : null,
+      onPointerCancel: covered ? (_) => _up() : null,
+      child: Stack(
+        children: <Widget>[
+          widget.child,
+          if (covered)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.enabled ? widget.onTap : null,
+                child: widget.placeholder,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

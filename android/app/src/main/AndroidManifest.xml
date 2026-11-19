@@ -52,6 +52,17 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- 「分享到 Findr」：别的应用（微信 / 浏览器 / 相册）通过 ACTION_SEND
+                 把一段文字或一张图丢过来，Dart 侧预填进首页录入条
+                 （`lib/platform/inbound_share.dart` + MainActivity.handleShareIntent）。
+                 launchMode 已经是 singleTop，热启动走 onNewIntent，冷启动扣在
+                 pendingShare 里等 Dart 的 `ready`。 -->
+            <intent-filter android:label="Findr">
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

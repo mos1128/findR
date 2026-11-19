@@ -10,6 +10,7 @@ import 'dart:io';
 
 import 'package:findr_app/capture/composer.dart';
 import 'package:findr_app/platform/app_paths.dart';
+import 'package:findr_app/platform/inbound_share.dart';
 import 'package:findr_app/theme/tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -33,12 +34,13 @@ Future<void> _selectPhotos(WidgetTester tester, List<String> paths) async {
 
 Future<void> _pump(
   WidgetTester tester,
-  Future<bool> Function(ComposerPayload) onSubmit,
-) async {
+  Future<bool> Function(ComposerPayload) onSubmit, {
+  ValueNotifier<InboundShare?>? inbound,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: buildFindrTheme(Brightness.light),
-      home: Scaffold(body: Composer(onSubmit: onSubmit)),
+      home: Scaffold(body: Composer(onSubmit: onSubmit, inbound: inbound)),
     ),
   );
   await tester.pump();
@@ -164,5 +166,20 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('护照在主卧抽屉'), findsNothing);
+  });
+
+  testWidgets('分享进来：接在已打的内容后面，取走即清空', (tester) async {
+    final inbound = ValueNotifier<InboundShare?>(null);
+    addTearDown(inbound.dispose);
+    await _pump(tester, (_) async => false, inbound: inbound);
+
+    await tester.enterText(find.byType(TextField), '装修报价');
+    await tester.pump();
+
+    inbound.value = const InboundShare(text: 'https://example.com/a');
+    await tester.pump();
+
+    expect(find.text('装修报价\nhttps://example.com/a'), findsOneWidget, reason: '不能覆盖用户已经打的字');
+    expect(inbound.value, isNull, reason: '取走必须清空，否则每次重建都会再追加一遍');
   });
 }

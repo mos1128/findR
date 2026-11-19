@@ -32,7 +32,7 @@ cd packages/findr_core && dart test          # 只测 core（快）
 bash release.sh                              # 发版
 ```
 
-**基线不许破**：core 314 条 + app 149 条，静态分析干净。
+**基线不许破**：core 314 条 + app 154 条，静态分析干净。
 
 ## 关键约束
 
@@ -76,6 +76,22 @@ magic "FINDR" (5 字节) + 版本 u16 (=1) + 标准 ZIP
 
 意图路由：定位题（护照在哪）走 L1+L2；推理题（出国该带啥）走 L3。
 
+### 分享进来（ACTION_SEND）
+
+`MainActivity` 挂着 `findr/share` 通道（Dart 侧 `lib/platform/inbound_share.dart`），
+把别处分享的文字/图片预填进首页录入条。两个只在真机上才会暴露的点：
+
+- **冷启动握手**：分享 intent 比 Dart 的 `setMethodCallHandler` 先到，Kotlin 先把它扣在
+  `pendingShare` 里，等 Dart 调 `ready` 再递。少了这一步，从桌面图标冷启动的分享会被静默丢掉。
+- **`content://` 当场拷**：源应用给的读权限只活在这一个 intent 的生命周期里，必须立刻把字节
+  拷进 `cacheDir/share`，否则保存卡片时打开就是 `SecurityException`。
+
+### 归档的语义
+
+归档 = `status = 'archived'`：`listCards` 默认不返回它，检索在 SQL 里硬过滤 `active`。
+所以**任何新读卡路径都要想清楚要不要归档的那些**；用户侧的出口只有
+设置 → 数据与维护 → 已归档（`lib/screens/settings/archived_screen.dart`，恢复 / 彻底删除）。
+
 ### 图标与启动图
 - 改图只改 `tool/gen_icons.dart` 顶部常量，然后 `dart run tool/gen_icons.dart` 一次重出全部尺寸，别手改位图
 - **品牌色三处同步**：脚本 `kPaper0` / `kPaper1`、`drawable/ic_launcher_background.xml` 的渐变两端、`values/colors.xml` 的 `brand_paper`（启动屏用它，取渐变起点色）
@@ -93,7 +109,7 @@ bash release.sh
 # → 等 CI 出包（十几分钟）→ 本机建 Gitee 发行版 → 传附件 → 按字节数校验 → 清旧版
 ```
 
-**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 149 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
+**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 154 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
 
 **本机自动**（`release.sh` 的最后一步，`scripts/gitee-attach.sh`）：等 GitHub 出包 → 下载 → 在 Gitee 建发行版（名字与正文整份抄 GitHub 那条）→ 传附件 → HEAD 比字节数 → 删旧版（保留最新 10 个 + 清掉没有附件的空壳）。
 
@@ -159,7 +175,7 @@ bash scripts/gitee-attach.sh vX.Y.Z
 
 **versionCode 自动推算**：`1.0.0` → 10000、`1.0.1` → 10001（`主×10000+次×100+修`）。
 
-## 真机验收（11 条）
+## 真机验收（13 条）
 
 0. 自检两组全绿
 1. 配置主 LLM → 探测通过
@@ -172,6 +188,9 @@ bash scripts/gitee-attach.sh vX.Y.Z
 8. 检查更新 → 给版本或「已是最新」（断网给「无法获取更新信息」+前往下载页）
 9. Gitee 更新 → 下载中切走/息屏 → 继续下 → 下完自动弹安装界面
 10. GitHub 更新 + 断网测试 → 续传走通、浏览器下载兜底
+11. 别的应用「分享到 Findr」：先**冷启动**分享一张图（App 没在后台），再**热启动**分享一段文字 →
+    两种情况都要预填进录入条；图片保存后能打开（说明 `content://` 拷进 cache 成功）
+12. 长按录音往上滑松手 → 丢弃这段录音，不弹「保存中」；短按输入框 → 键盘起来
 
 ## 十二条铁律
 

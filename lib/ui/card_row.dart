@@ -38,9 +38,16 @@ String cardTitleOf(MemoryCard card) {
 String _clip(String s, int n) => s.length <= n ? s : s.substring(0, n);
 
 /// 副标题：专注展示卡片的内容描述或原文，不堆砌来源和分类。
-String cardSubtitleOf(MemoryCard card, [String? categoryName, String? categoryEmoji]) {
+String cardSubtitleOf(
+  MemoryCard card, [
+  String? categoryName,
+  String? categoryEmoji,
+]) {
   final desc = card.desc;
-  if (desc != null && desc.isNotEmpty && card.entity != null && card.entity!.isNotEmpty) {
+  if (desc != null &&
+      desc.isNotEmpty &&
+      card.entity != null &&
+      card.entity!.isNotEmpty) {
     return desc;
   }
   final transcript = card.transcript;
@@ -48,7 +55,9 @@ String cardSubtitleOf(MemoryCard card, [String? categoryName, String? categoryEm
       transcript.isNotEmpty &&
       (card.entity != null || (desc != null && desc.isNotEmpty))) {
     final title = cardTitleOf(card);
-    if (transcript != title && !title.startsWith(transcript) && !transcript.startsWith(title)) {
+    if (transcript != title &&
+        !title.startsWith(transcript) &&
+        !transcript.startsWith(title)) {
       return transcript;
     }
   }
@@ -64,6 +73,45 @@ BadgeTone toneOfBadge(CardBadge badge) => switch (badge) {
   CardBadge.retrying => BadgeTone.organize,
 };
 
+/// 卡片右上角的时间：今天/昨天带时分，今年只给月日，跨年补年份。
+///
+/// 时间列是 UTC 的 ISO 串，这里**必须先转本地时区**，否则中国用户会看到早 8 小时的「昨天」。
+String cardTimeLabel(String iso) {
+  final d = DateTime.tryParse(iso)?.toLocal();
+  if (d == null) return '';
+  final now = DateTime.now();
+  final diffDays = DateTime(
+    now.year,
+    now.month,
+    now.day,
+  ).difference(DateTime(d.year, d.month, d.day)).inDays;
+  if (diffDays == 0) {
+    final hh = d.hour.toString().padLeft(2, '0');
+    final mm = d.minute.toString().padLeft(2, '0');
+    return '今天 $hh:$mm';
+  }
+  if (diffDays == 1) return '昨天';
+  if (d.year == now.year) return '${d.month}月${d.day}日';
+  return '${d.year}年${d.month}月${d.day}日';
+}
+
+/// 建议型结果里每张卡的入选理由（advise 专有）。
+///
+/// **必须给理由**：这类结果不是字面命中，是模型挑出来的 —— 不给理由用户无从判断该不该信。
+/// 「看情况」那一档尤其要带前缀，否则它和「必需」在列表里长得一模一样。
+String? adviceNoteOf(AdviceResult? a, String cardId) {
+  if (a == null) return null;
+  for (final p in a.picks) {
+    if (p.id == cardId) return p.why.isEmpty ? null : p.why;
+  }
+  for (final m in a.maybe) {
+    if (m.id == cardId) {
+      return '看情况：${m.why.isEmpty ? '视具体情况而定' : m.why}';
+    }
+  }
+  return null;
+}
+
 /// 记忆流里的一行。
 class CardRow extends StatelessWidget {
   const CardRow({
@@ -76,6 +124,8 @@ class CardRow extends StatelessWidget {
     this.note,
     this.onTap,
     this.onLongPress,
+    this.trailing,
+    this.leading,
   });
 
   final MemoryCard card;
@@ -97,10 +147,17 @@ class CardRow extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
+  /// 行尾的附加操作（归档列表的「恢复」就是这一个）。
+  final Widget? trailing;
+
+  /// 行首的附加状态（管理模式的选择圈就是这一个）。
+  final Widget? leading;
+
   @override
   Widget build(BuildContext context) {
     final c = FindrColors.of(context);
     final badges = cardBadges(card);
+    final time = cardTimeLabel(card.createdAt);
     final images = card.images;
     final hasImages = images != null && images.isNotEmpty;
     final cover = hasImages ? images.first : null;
@@ -135,160 +192,214 @@ class CardRow extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(Spacing.four),
             child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            cardTitleOf(card),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.2,
-                              color: c.text,
-                              height: 1.3,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (leading != null) ...<Widget>[
+                  leading!,
+                  const SizedBox(width: Spacing.three),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              cardTitleOf(card),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.2,
+                                color: c.text,
+                                height: 1.3,
+                              ),
                             ),
                           ),
-                        ),
-                        if (card.status == CardStatus.archived) ...<Widget>[
-                          const SizedBox(width: Spacing.two),
-                          const FindrBadge(label: '已归档'),
-                        ],
-                      ],
-                    ),
-                    if (subtitle.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Spacing.two),
-                      Text(
-                        subtitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 13, height: 1.45, color: c.textSecondary),
-                      ),
-                    ],
-                    if (hasCategory || hasPath || badges.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Spacing.two),
-                      Wrap(
-                        spacing: Spacing.two,
-                        runSpacing: Spacing.one,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: <Widget>[
-                          if (hasCategory)
-                            FindrBadge(label: catName),
-                          if (hasPath)
-                            Container(
-                              constraints: const BoxConstraints(maxWidth: 200),
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                              decoration: BoxDecoration(
-                                color: c.record.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(Radii.xs + 2),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: <Widget>[
-                                  Icon(Icons.place_rounded, size: 12, color: c.record),
-                                  const SizedBox(width: 3),
-                                  Flexible(
-                                    child: Text(
-                                      path,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: c.record,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          for (final b in badges)
-                            FindrBadge(label: badgeLabel(b, ctx), tone: toneOfBadge(b)),
-                        ],
-                      ),
-                    ],
-                    if (card.ask != null && card.ask!.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Spacing.two),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: c.badgeConfirmBg,
-                          borderRadius: BorderRadius.circular(Radii.sm),
-                        ),
-                        child: Row(
-                          children: <Widget>[
-                            Icon(Icons.help_outline_rounded, size: 14, color: c.badgeConfirm),
-                            const SizedBox(width: Spacing.one),
-                            Expanded(
+                          if (time.isNotEmpty) ...<Widget>[
+                            const SizedBox(width: Spacing.two),
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
                               child: Text(
-                                '想确认：${card.ask}',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
+                                time,
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  height: 1.35,
-                                  color: c.badgeConfirm,
+                                  fontSize: 11,
+                                  color: c.textMuted,
                                 ),
                               ),
                             ),
                           ],
-                        ),
+                          if (card.status == CardStatus.archived) ...<Widget>[
+                            const SizedBox(width: Spacing.two),
+                            const FindrBadge(label: '已归档'),
+                          ],
+                        ],
                       ),
-                    ],
-                    // 建议结果的入选理由 —— 放最后，不抢标题与副标题的位置
-                    if (note != null && note!.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: Spacing.two),
-                      Text(
-                        note!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, height: 1.35, color: c.record),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (hasImages) ...<Widget>[
-                const SizedBox(width: Spacing.three),
-                Stack(
-                  children: <Widget>[
-                    MediaThumb(relPath: cover, size: 72),
-                    if (images.length > 1)
-                      Positioned(
-                        right: 4,
-                        bottom: 4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.7),
-                            borderRadius: BorderRadius.circular(Radii.pill),
+                      if (subtitle.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: Spacing.two),
+                        Text(
+                          subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 1.45,
+                            color: c.textSecondary,
                           ),
-                          child: Text(
-                            '${images.length}张',
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
+                        ),
+                      ],
+                      if (hasCategory ||
+                          hasPath ||
+                          badges.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: Spacing.two),
+                        Wrap(
+                          spacing: Spacing.two,
+                          runSpacing: Spacing.one,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: <Widget>[
+                            if (hasCategory) FindrBadge(label: catName),
+                            if (hasPath)
+                              Container(
+                                constraints: const BoxConstraints(
+                                  maxWidth: 200,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2.5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: c.record.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(
+                                    Radii.xs + 2,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: <Widget>[
+                                    Icon(
+                                      Icons.place_rounded,
+                                      size: 12,
+                                      color: c.record,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Flexible(
+                                      child: Text(
+                                        path,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: c.record,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            for (final b in badges)
+                              FindrBadge(
+                                label: badgeLabel(b, ctx),
+                                tone: toneOfBadge(b),
+                              ),
+                          ],
+                        ),
+                      ],
+                      if (card.ask != null && card.ask!.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: Spacing.two),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: c.badgeConfirmBg,
+                            borderRadius: BorderRadius.circular(Radii.sm),
+                          ),
+                          child: Row(
+                            children: <Widget>[
+                              Icon(
+                                Icons.help_outline_rounded,
+                                size: 14,
+                                color: c.badgeConfirm,
+                              ),
+                              const SizedBox(width: Spacing.one),
+                              Expanded(
+                                child: Text(
+                                  '想确认：${card.ask}',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    height: 1.35,
+                                    color: c.badgeConfirm,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      // 建议结果的入选理由 —— 放最后，不抢标题与副标题的位置
+                      if (note != null && note!.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: Spacing.two),
+                        Text(
+                          note!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.35,
+                            color: c.record,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                if (hasImages) ...<Widget>[
+                  const SizedBox(width: Spacing.three),
+                  Stack(
+                    children: <Widget>[
+                      MediaThumb(relPath: cover, size: 72),
+                      if (images.length > 1)
+                        Positioned(
+                          right: 4,
+                          bottom: 4,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.7),
+                              borderRadius: BorderRadius.circular(Radii.pill),
+                            ),
+                            child: Text(
+                              '${images.length}张',
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
+                if (trailing != null) ...<Widget>[
+                  const SizedBox(width: Spacing.two),
+                  trailing!,
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }

@@ -1,8 +1,9 @@
 /// 卡片详情。
 ///
 /// **首屏 = 用户自己录进来的原始素材：原文 → 录音 → 照片。**
-/// **顺序是硬约束**：先素材，后编辑，最后才是归档/删除。
-/// 反过来的话，用户点进来第一眼看不到「我记了什么」，只看到一堆分类/状态选择器（真机反馈）。
+/// **顺序是硬约束**：先素材，后编辑 —— 反过来的话，用户点进来第一眼看不到
+/// 「我记了什么」，只看到一堆分类/状态选择器（真机反馈）。
+/// 归档与删除**不在这一页**：它们从首页的长按 / 多选进，这一页只管信息本身。
 ///
 /// 录音在这里**能听**（不是只显示一个文件路径）—— 见 `ui/audio_player.dart`。
 library;
@@ -16,7 +17,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../platform/app_paths.dart';
-import '../platform/media.dart';
 import '../platform/runtime.dart';
 import '../theme/tokens.dart';
 import '../ui/audio_player.dart';
@@ -63,6 +63,9 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
   final _entity = TextEditingController();
   final _tags = TextEditingController();
 
+  /// 回答模型追问用。它不属于任何字段，答完就清空。
+  final _askAnswer = TextEditingController();
+
   @override
   void dispose() {
     _saveTimer?.cancel();
@@ -70,6 +73,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     _desc.dispose();
     _entity.dispose();
     _tags.dispose();
+    _askAnswer.dispose();
     super.dispose();
   }
 
@@ -224,48 +228,27 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     }
   }
 
-  Future<void> _delete() async {
-    final c = FindrColors.of(context);
-    final yes = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text('删除这张卡片？', style: TextStyle(fontSize: 16, color: c.text)),
-        content: Text(
-          '图片和录音会一起删掉，不可恢复。',
-          style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: Text('取消', style: TextStyle(color: c.textSecondary)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: Text('删除', style: TextStyle(color: c.danger)),
-          ),
-        ],
-      ),
-    );
-    if (yes != true) return;
+  /// 回答模型的追问：答案**并进原文**，追问随之消失。
+  ///
+  /// 不单独存字段是有意的 —— 追问本来就是「这段原文缺一句话」，
+  /// 存成两个字段之后检索、复制、导出都要各处理一遍，而用户想读的永远是一段完整的话。
+  Future<void> _answerAsk() async {
     final rt = ref.read(runtimeProvider).value;
     if (rt == null) return;
-    _saveTimer?.cancel();
-    _dirtyText = false;
-    // 先删行，再清卡片目录与录音：附件不进 DB（详情页按目录扫描），所以整目录删一次就够，
-    // 不必再按 images 逐文件删。删失败或进程半路被杀，最多留下孤儿文件，
-    // 下次启动的媒体回收会处理。
+    final answer = _askAnswer.text.trim();
+    if (answer.isEmpty) return;
     final card = getCard(rt.driver, widget.cardId);
-    deleteCard(rt.driver, widget.cardId);
-    if (card != null) {
-      try {
-        removeCardFiles(card);
-      } catch (_) {
-        // 删不掉就交给孤儿媒体回收
-      }
-    }
+    if (card == null) return;
+    final base = card.transcript?.trim() ?? '';
+    setTranscript(
+      rt.driver,
+      widget.cardId,
+      base.isEmpty ? answer : '$base\n$answer',
+      DateTime.now(),
+    );
+    _askAnswer.clear();
     _markChanged();
-    if (mounted) Navigator.of(context).pop();
+    _reload();
   }
 
   Future<void> _pickLocation(List<LocationNode> all) async {
@@ -464,16 +447,54 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                       color: c.badgeConfirmBg,
                       borderRadius: BorderRadius.circular(Radii.md),
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        Icon(Icons.lightbulb_outline_rounded, size: 16, color: c.badgeConfirm),
-                        const SizedBox(width: Spacing.two),
-                        Expanded(
-                          child: Text(
-                            '待确认细节：${card.ask}',
-                            style: TextStyle(fontSize: 12.5, height: 1.4, color: c.badgeConfirm),
-                          ),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Icon(Icons.lightbulb_outline_rounded, size: 16, color: c.badgeConfirm),
+                            const SizedBox(width: Spacing.two),
+                            Expanded(
+                              child: Text(
+                                '待确认细节：${card.ask}',
+                                style: TextStyle(fontSize: 12.5, height: 1.4, color: c.badgeConfirm),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: Spacing.two),
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: TextField(
+                                controller: _askAnswer,
+                                style: TextStyle(fontSize: 13.5, color: c.text),
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) => unawaited(_answerAsk()),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  hintText: '答一句，并进原文',
+                                  hintStyle: TextStyle(fontSize: 12.5, color: c.textMuted),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(Radii.md),
+                                    borderSide: BorderSide(color: c.border),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: Spacing.three,
+                                    vertical: Spacing.two,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: Spacing.two),
+                            FindrButton(
+                              title: '答',
+                              compact: true,
+                              expand: false,
+                              onPressed: _busy ? null : () => unawaited(_answerAsk()),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -1019,39 +1040,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
             ),
           ),
 
-          // ── 其他操作 ─────────────────────────────────────
-          Panel(
-            title: '其他操作',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                FindrButton(
-                  title: card.status == CardStatus.archived ? '恢复到记忆流' : '归档（移出检索）',
-                  variant: FindrButtonVariant.secondary,
-                  onPressed: () {
-                    final rt2 = ref.read(runtimeProvider).value;
-                    if (rt2 == null) return;
-                    setCardStatus(
-                      rt2.driver,
-                      card.id,
-                      card.status == CardStatus.archived
-                          ? CardStatus.active
-                          : CardStatus.archived,
-                      DateTime.now(),
-                    );
-                    _markChanged();
-                    _reload();
-                  },
-                ),
-                const SizedBox(height: Spacing.two),
-                FindrButton(
-                  title: '删除卡片',
-                  variant: FindrButtonVariant.danger,
-                  onPressed: _delete,
-                ),
-              ],
-            ),
-          ),
         ],
       ),
       ),

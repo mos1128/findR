@@ -9,6 +9,8 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:findr_core/findr_core.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -65,19 +67,20 @@ final class RuntimeState {
 
   /// 只覆盖版本号与构建号。**刻意只开这一个口子**：别让它长成通用的 `copyWith`，
   /// 那样每加一个字段就要多一处「哪些能改」的判断，而这些字段本来都是设置页的职责。
-  RuntimeState withVersion(String? value, {String? buildNumber}) => RuntimeState(
-    driver: driver,
-    dbPath: dbPath,
-    llm: llm,
-    asr: asr,
-    capture: capture,
-    search: search,
-    appearance: appearance,
-    llmKey: llmKey,
-    asrKey: asrKey,
-    version: value,
-    buildNumber: buildNumber,
-  );
+  RuntimeState withVersion(String? value, {String? buildNumber}) =>
+      RuntimeState(
+        driver: driver,
+        dbPath: dbPath,
+        llm: llm,
+        asr: asr,
+        capture: capture,
+        search: search,
+        appearance: appearance,
+        llmKey: llmKey,
+        asrKey: asrKey,
+        version: value,
+        buildNumber: buildNumber,
+      );
 }
 
 /// 读一遍设置 + Key。库连接由调用方给（**整个会话只该开一次**）。
@@ -198,7 +201,11 @@ Future<SearchResult> runSearch(RuntimeState rt, String query) {
 
 /// L2 答案组织。按需求 5.3 只在「本地无结果」或「用户手动触发」时调用 ——
 /// 每次搜索都跑会白花一次模型调用，而 L1 的卡片列表本身往往就够用了。
-Future<AnswerResult> runAnswer(RuntimeState rt, String query, List<MemoryCard> cards) {
+Future<AnswerResult> runAnswer(
+  RuntimeState rt,
+  String query,
+  List<MemoryCard> cards,
+) {
   final built = buildAdvanceDeps(rt);
   if (built is! DepsReady) {
     throw StateError((built as DepsUnavailable).reason);
@@ -210,12 +217,33 @@ Future<AnswerResult> runAnswer(RuntimeState rt, String query, List<MemoryCard> c
   );
 }
 
+/// 一次性的「录音 → 文字」。给搜索页的语音输入用，**不落卡片**。
+///
+/// `path` 是临时录音的绝对路径。不能走 `AudioFileRef`：那条路会经
+/// `DeviceMediaIo` / `AppPaths.abs` 拼成相对媒体目录的路径，绝对路径会被拼坏。
+Future<String> transcribeOnce(RuntimeState rt, String path) async {
+  final asr = rt.asr;
+  if (asr == null) throw StateError('尚未配置语音识别');
+  final bytes = await File(path).readAsBytes();
+  final result = await makeAsrAdapter(asr, const DeviceMediaIo()).transcribe(
+    TranscribeRequest(
+      audio: AudioBase64Ref(base64: base64Encode(bytes), mime: 'audio/m4a'),
+      filename: 'audio.m4a',
+      lang: 'zh',
+    ),
+    toAsrProviderConfig(asr, rt.asrKey),
+  );
+  return result.text.trim();
+}
+
 // ─────────────────────────────────────────────────────────────
 // Riverpod 绑定
 // ─────────────────────────────────────────────────────────────
 
 /// Key 存哪。测试里换成 [MemoryApiKeyStore]。
-final apiKeyStoreProvider = Provider<ApiKeyStore>((ref) => const SecureApiKeyStore());
+final apiKeyStoreProvider = Provider<ApiKeyStore>(
+  (ref) => const SecureApiKeyStore(),
+);
 
 /// 库连接：**整个 App 生命周期只开一次**（反复开关库文件会明显增加启动延迟）。
 ///
@@ -228,7 +256,9 @@ final dbProvider = Provider<Sqlite3Driver>((ref) {
 });
 
 /// 运行时快照。`refresh()` 用于「设置页保存之后重读一遍」。
-final runtimeProvider = AsyncNotifierProvider<RuntimeNotifier, RuntimeState>(RuntimeNotifier.new);
+final runtimeProvider = AsyncNotifierProvider<RuntimeNotifier, RuntimeState>(
+  RuntimeNotifier.new,
+);
 
 final class RuntimeNotifier extends AsyncNotifier<RuntimeState> {
   @override
