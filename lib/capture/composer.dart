@@ -105,7 +105,7 @@ class Composer extends StatefulWidget {
   State<Composer> createState() => _ComposerState();
 }
 
-class _ComposerState extends State<Composer> {
+class _ComposerState extends State<Composer> with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   final _recorder = LongPressRecorder();
@@ -121,6 +121,9 @@ class _ComposerState extends State<Composer> {
 
   bool _expanded = false;
   bool _recording = false;
+
+  /// 键盘上一次的状态。见 [didChangeMetrics]。
+  bool _keyboardUp = false;
 
   /// 指针是否仍按着。权限弹窗会夺走触摸流并触发 `onPointerCancel`，
   /// 靠它区分「用户松手了」与「权限弹窗还没回来」。
@@ -146,11 +149,23 @@ class _ComposerState extends State<Composer> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onTextChanged);
     _focus.addListener(_onFocusChanged);
     widget.inbound?.addListener(_drainInbound);
     // 冷启动分享时，Notifier 可能在这一帧之前就已经有值了
     _drainInbound();
+  }
+
+  /// 键盘被返回键收起后焦点还在，输入框会一直停在「输入态」：长按再也进不了语音。
+  /// 所以键盘「由起到落」的那一刻就主动放掉焦点，回到「轻点打字、长按说话」。
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final up = View.of(context).viewInsets.bottom > 0;
+    if (up == _keyboardUp) return;
+    _keyboardUp = up;
+    if (!up && _focus.hasFocus) _focus.unfocus();
   }
 
   @override
@@ -209,6 +224,7 @@ class _ComposerState extends State<Composer> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _armTimer?.cancel();
     _ticker?.cancel();
     widget.inbound?.removeListener(_drainInbound);
@@ -723,7 +739,7 @@ class _ComposerState extends State<Composer> {
       label = _cancelArmed ? '松开取消' : '松开结束';
       color = c.danger;
     } else if (text.isEmpty) {
-      label = '记一笔…（轻点输入，长按说话）';
+      label = '记一笔…（长按说话）';
       color = c.textMuted;
     } else {
       label = text;
@@ -837,9 +853,13 @@ class _ComposerState extends State<Composer> {
                           onHoldStart: _onHoldStart,
                           onHoldEnd: _onHoldEnd,
                           onCancelChanged: _onCancelChanged,
+                          // 录音时只换底色：这一层是不透明的，底下的真输入框已经藏起来了
                           placeholder: _pill(
                             color: _recording
-                                ? c.danger.withValues(alpha: 0.08)
+                                ? Color.alphaBlend(
+                                    c.danger.withValues(alpha: 0.08),
+                                    c.surfaceAlt,
+                                  )
                                 : c.surfaceAlt,
                             child: _inputFace(c),
                           ),

@@ -32,7 +32,7 @@ cd packages/findr_core && dart test          # 只测 core（快）
 bash release.sh                              # 发版
 ```
 
-**基线不许破**：core 314 条 + app 154 条，静态分析干净。
+**基线不许破**：core 314 条 + app 156 条，静态分析干净。
 
 ## 关键约束
 
@@ -109,7 +109,7 @@ bash release.sh
 # → 等 CI 出包（十几分钟）→ 本机建 Gitee 发行版 → 传附件 → 按字节数校验 → 清旧版
 ```
 
-**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 154 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
+**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 156 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
 
 **本机自动**（`release.sh` 的最后一步，`scripts/gitee-attach.sh`）：等 GitHub 出包 → 下载 → 在 Gitee 建发行版（名字与正文整份抄 GitHub 那条）→ 传附件 → HEAD 比字节数 → 删旧版（保留最新 10 个 + 清掉没有附件的空壳）。
 
@@ -175,7 +175,7 @@ bash scripts/gitee-attach.sh vX.Y.Z
 
 **versionCode 自动推算**：`1.0.0` → 10000、`1.0.1` → 10001（`主×10000+次×100+修`）。
 
-## 真机验收（13 条）
+## 真机验收（15 条）
 
 0. 自检两组全绿
 1. 配置主 LLM → 探测通过
@@ -191,6 +191,8 @@ bash scripts/gitee-attach.sh vX.Y.Z
 11. 别的应用「分享到 Findr」：先**冷启动**分享一张图（App 没在后台），再**热启动**分享一段文字 →
     两种情况都要预填进录入条；图片保存后能打开（说明 `content://` 拷进 cache 成功）
 12. 长按录音往上滑松手 → 丢弃这段录音，不弹「保存中」；短按输入框 → 键盘起来
+13. 键盘起来后按返回键收起键盘 → **不点输入框**直接长按 → 应该开始录音（搜索页同理）
+14. 录入条与搜索框在「未聚焦 / 录音中」时只显示一层文字（曾经两层叠着画，字压字）
 
 ## 十二条铁律
 

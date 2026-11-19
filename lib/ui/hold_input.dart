@@ -2,6 +2,8 @@
 ///
 /// 键盘起来之后一切照旧 —— 长按就是选词，这里一个手势都不许抢。
 /// 所以这个壳只在**未聚焦**时接管指针：聚焦时它一个手势都不接。
+/// 键盘被返回键收起后焦点还在，那属于「输入态」还是「语音态」由调用方判定
+/// （见 `Composer` / `SearchScreen` 里的 `didChangeMetrics`）。
 ///
 /// 用裸指针事件而不是 `onLongPress`：`onLongPress` 要等 500ms 才回调，
 /// 那 500ms 正是用户开口的第一句。按下即报 [onHoldStart]，由调用方决定怎么「抢跑」。
@@ -101,7 +103,8 @@ class _HoldInputState extends State<HoldInput> {
       onPointerCancel: covered ? (_) => _up() : null,
       child: Stack(
         children: <Widget>[
-          widget.child,
+          // 盖子是不透明的，底下这层得一起藏起来：两层同时画，文字就会在同一处叠着出现。
+          Opacity(opacity: covered ? 0 : 1, child: widget.child),
           if (covered)
             Positioned.fill(
               child: GestureDetector(

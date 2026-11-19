@@ -251,7 +251,6 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
               ),
               ListRow(
                 title: '归档',
-                subtitle: '移出记忆流与检索，可在「设置 → 数据与维护 → 已归档」找回',
                 leading: Icon(
                   Icons.inventory_2_outlined,
                   size: 20,
@@ -261,7 +260,6 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
               ),
               ListRow(
                 title: '多选',
-                subtitle: '批量归档或删除',
                 leading: Icon(
                   Icons.checklist_rounded,
                   size: 20,
@@ -271,7 +269,6 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
               ),
               ListRow(
                 title: '删除',
-                subtitle: '图片和录音会一起删掉',
                 leading: Icon(
                   Icons.delete_outline_rounded,
                   size: 20,

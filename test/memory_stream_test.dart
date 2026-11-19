@@ -103,7 +103,8 @@ void seedCard(String transcript, {String? categoryId, String? id}) {
 }
 
 void main() {
-  setUp(() async {    _root = await Directory.systemTemp.createTemp('findr_ui_');
+  setUp(() async {
+    _root = await Directory.systemTemp.createTemp('findr_ui_');
     AppPaths.initWith(_root);
   });
 
@@ -142,10 +143,48 @@ void main() {
     // 「查」：搜索入口（点进去才是输入框与最近搜索）
     expect(find.text('搜索记忆'), findsOneWidget);
     // 「记」：录入条
-    expect(find.text('记一笔…（轻点输入，长按说话）'), findsOneWidget);
+    expect(find.text('记一笔…（长按说话）'), findsOneWidget);
     expect(find.text('存'), findsOneWidget);
     // 未配模型时的提示条**必须在文档流里**（曾经做成浮层盖住搜索框，真机反馈「找不到搜索入口」）
     expect(find.text('尚未配置模型'), findsOneWidget);
+  });
+
+  testWidgets('键盘收起后回到「长按说话」，不用再点一次', (tester) async {
+    await pumpApp(tester);
+    const face = '记一笔…（长按说话）';
+    expect(find.text(face), findsOneWidget);
+
+    // 点一下唤起键盘：真输入框接管，语音那一层撤掉
+    await tester.tap(find.text(face));
+    addTearDown(tester.view.reset);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await settle(tester);
+    expect(find.text(face), findsNothing);
+
+    // 返回键收起键盘：焦点必须一起放掉，否则长按再也进不了语音
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await settle(tester);
+    expect(find.text(face), findsOneWidget);
+  });
+
+  testWidgets('搜索页同样：键盘收起后还能长按说话', (tester) async {
+    await pumpApp(tester);
+    await openSearch(tester);
+    final face = find.descendant(
+      of: find.byType(SearchScreen),
+      matching: find.text('搜索记忆…（长按说话）'),
+    );
+    expect(face, findsOneWidget);
+
+    await tester.tap(face);
+    addTearDown(tester.view.reset);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await settle(tester);
+    expect(face, findsNothing);
+
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await settle(tester);
+    expect(face, findsOneWidget);
   });
 
   testWidgets('打字录入 → 先落盘，卡片立刻出现在流里（不依赖模型）', (tester) async {
@@ -276,7 +315,10 @@ void main() {
 
     // 12 张卡在手机高度上一定超出视口 ⇒ 必须存在可滚动区域
     expect(find.byType(Scrollable), findsWidgets);
-    await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -300));
+    await tester.drag(
+      find.byType(CustomScrollView).first,
+      const Offset(0, -300),
+    );
     await settle(tester, frames: 4);
     // 划完之后不该抛异常，并且更靠后的卡片已经构建出来
     expect(tester.takeException(), isNull);

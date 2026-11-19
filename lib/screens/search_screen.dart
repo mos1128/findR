@@ -41,7 +41,8 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends ConsumerState<SearchScreen> {
+class _SearchScreenState extends ConsumerState<SearchScreen>
+    with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _focus = FocusNode();
   final _recorder = LongPressRecorder();
@@ -50,6 +51,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   bool _recording = false;
   bool _cancelArmed = false;
   bool _pressing = false;
+
+  /// 键盘上一次的状态。见 [didChangeMetrics]。
+  bool _keyboardUp = false;
 
   /// 正在把录音转成文字。这期间不接受新的长按。
   bool _transcribing = false;
@@ -62,6 +66,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _focus.addListener(_onFocusChanged);
     _loadRecent();
     // 进这页就先清掉上一次的检索：否则「最近搜索」旁边会躺着上一轮的结果。
@@ -73,6 +78,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _armTimer?.cancel();
     _ticker?.cancel();
     _focus.removeListener(_onFocusChanged);
@@ -84,6 +90,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   void _onFocusChanged() {
     if (mounted) setState(() {});
+  }
+
+  /// 键盘被返回键收起后焦点还在，输入框会一直停在「输入态」：长按再也进不了语音。
+  /// 所以键盘「由起到落」的那一刻就主动放掉焦点，回到「轻点打字、长按说话」。
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final up = View.of(context).viewInsets.bottom > 0;
+    if (up == _keyboardUp) return;
+    _keyboardUp = up;
+    if (!up && _focus.hasFocus) _focus.unfocus();
   }
 
   /// 最近搜索只存在本机（`deviceLocalSettingKeys`），换机不跟着备份走。
@@ -456,7 +473,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
     final typed = _controller.text.trim();
     if (typed.isNotEmpty) return typed;
-    return '搜索记忆…（轻点输入，长按说话）';
+    return '搜索记忆…（长按说话）';
   }
 
   Widget _body(
