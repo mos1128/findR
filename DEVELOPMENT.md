@@ -118,10 +118,12 @@ bash release.sh
 | 蹭什么 | 镜像预装的 | 我们钉在哪 |
 |---|---|---|
 | JDK 17 | 8 / 11 / 17 / 21 / 25，17 是默认 | `flutter.yml` 的 `setup-java`（走 toolcache，0.4 秒） |
-| Android NDK 30.0 | 27.3（默认）/ 29.0 / 30.0 | `android/app/build.gradle.kts` 的 `ndkVersion` **+** `flutter.yml` 里那条断言，两处必须一致 |
+| Android NDK 30.0 | 27.3（默认）/ 29.0 / 30.0 | `:app` 的 `ndkVersion` **+** `flutter.yml` 里那条断言，两处必须一致（只管 `:app`，`:jni` 用不上，见下） |
 | Gradle 依赖 | 没有（镜像只有 Gradle 9.9.1 本体，放在 `/usr/local`，wrapper 不认那份） | 自己缓存：`cache-warm.yml` 写、`flutter.yml` 只读 |
 
-> 为什么 NDK 要迁就镜像、而不是让 Flutter 用它自己那一版：`flutter.ndkVersion` 现在指 28.2.13676358，**镜像里没有** —— 每次构建现场下 ~700MB，v1.0.26 正是在解压它时红的。改成镜像里已有的版本，下载量直接归零。真正编 C 的是 `ANDROID_NDK_HOME` 指的 27.3（Flutter 找编译器时环境变量优先），这个值只决定 AGP 用哪份 NDK（strip 符号表之类），C 产物不变。
+> 为什么 NDK 要迁就镜像、而不是让 Flutter 用它自己那一版：`flutter.ndkVersion` 现在指 28.2.13676358，**镜像里没有**。但要说清楚**这个 pin 只覆盖 `:app`**（strip 用的那份）：真正编 C 的是 `:jni` 插件的 `externalNativeBuild`，它自己写的是 `ndkVersion flutter.ndkVersion`，而 AGP 9.1 起**不认** `ANDROID_NDK_HOME`（jar 里原文：`support was removed after deprecation period`）—— 所以**每版构建仍会现场下一次 ~700MB 的 r28c**，v1.0.26 正是在解压它时红的（`Error on ZipFile unknown archive`）。
+>
+> 试过在 CI 里 `apply(from: "ci-ndk.gradle")`，用一段脚本把 17 个 Android 工程的 `ndkVersion` 统一改成镜像那版（2026-11-20 实测可行：17 个工程全部切到 30.0、下载归零），判定**不值得采纳**：代价是 `:jni` 的编译器从此跟着镜像版本漂移，CI（r30）与本机（r28.2）编出的那一个 `.so` 版本不一致，而收益只是省一次 1~2 分钟的下载。现状是**接受这次下载**，它挂了就 re-run。
 
 **🚨 镜像里的版本变了怎么办**（这是全流程里唯一需要我们跟着镜像动的地方）：
 

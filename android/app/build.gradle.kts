@@ -24,13 +24,12 @@ val keystoreProps = Properties().apply {
 android {
     namespace = "com.findr.findr_app"
     compileSdk = flutter.compileSdkVersion
-    // ⚠️ 刻意不用 `flutter.ndkVersion`（3.47.5 给的是 28.2.13676358）：runner 镜像里没有这一版，
-    //    每次构建都要现场用 sdkmanager 下 ~700MB 的 r28c，v1.0.26 就是在解压它时红的
-    //    （`Error on ZipFile unknown archive`）。
-    //    镜像预装 27.3（默认）/ 29.0 / 30.0，这里取最新的 30.0 —— 零下载。
-    //    真正编 C 代码的是 `ANDROID_NDK_HOME` 指的那份 27.3（Flutter 找编译器时环境变量优先），
-    //    这个值只决定 AGP 用哪一份 NDK（strip 符号表之类），C 产物不受影响；
-    //    Flutter 的校验也只在「工程 NDK 低于插件要求」时报错，往高配不报。
+    // 这一行只管 `:app` 自己（打包时给 Flutter 的 .so 剥符号表）。镜像里没有 Flutter 默认的
+    // 28.2.13676358，钉成镜像自带的最新那版，免得为了 strip 去下 700MB。
+    // ⚠️ 它省不掉 `:jni` 那次下载：`jni` 插件的 build.gradle 里写的是 `ndkVersion flutter.ndkVersion`
+    //    （28.2），而 AGP 9.1 起**不认** `ANDROID_NDK_HOME` —— 所以每版构建仍会现场下一次 ~700MB 的
+    //    r28c，v1.0.26 就是在解压它时红的（`Error on ZipFile unknown archive`）。真要对齐得改全部
+    //    17 个 Android 工程，评估后判定不值得，理由见 DEVELOPMENT.md「CI 跑在什么环境上」。
     // 🚨 这个版本号**跟着 ubuntu-24.04 镜像走，不跟 Flutter 走**：镜像每周重建、NDK 列表会轮换。
     //    改镜像标签或升级 runner 镜像后，先看 CI 日志里 `Check preinstalled Android SDK` 打印的
     //    `ndk` 目录，再同步改这一行和 `.github/workflows/flutter.yml` 里那条断言（两处必须一致）。
