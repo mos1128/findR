@@ -117,6 +117,14 @@ jobs:
           fi
           echo "--- platforms ---"; ls "$sdk/platforms" || true
           echo "--- build-tools ---"; ls "$sdk/build-tools" || true
+          echo "--- ndk ---"; ls "$sdk/ndk" || true
+          # 🚨 这里钉的版本必须与 `android/app/build.gradle.kts` 的 `ndkVersion` 一致。
+          #    镜像每周重建、NDK 会轮换 —— 哪天这份不见了，就在这里当场红，比让 AGP 在
+          #    「下载 NDK」上耗几分钟再炸（v1.0.26）好定位。改法见 DEVELOPMENT.md「CI 跑在什么环境上」。
+          if [ ! -f "$sdk/ndk/30.0.16248370/source.properties" ]; then
+            echo "::error::镜像里没有 NDK 30.0.16248370。看上面 ndk 目录现在有哪几个，改 android/app/build.gradle.kts 里那一行（本断言也要一起改）。"
+            exit 1
+          fi
 
       # ⚠️ 刻意不开 `cache: true`：缓存作用域跟着 ref 走，而这个作业**只在 tag 上跑**，
       #    每个 tag 是一个独立作用域 —— 缓存写进去之后没有任何别的运行能读到它（只有同一
@@ -126,6 +134,24 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.5'
+
+      # ── Gradle 缓存：只读 ────────────────────────────────────────────────────
+      # 缓存按 ref 隔离，而且**只有默认分支写进去的，tag 运行才读得到**（tag 自己写的只有
+      # 同一个 tag 重跑能读，却照样占配额 —— 2026-11-20 就是被 6 个 tag × 1.6GB 撑爆的）。
+      # 所以这里用 `actions/cache/restore`，只取不存；内容由 .github/workflows/cache-warm.yml
+      # 在 main 上焐热。缓存里有 Gradle 发行包（wrapper/dists）和全部 Maven 构件（caches），
+      # 命中之后构建不再去 repo.maven.apache.org 要东西 —— v1.0.31（门户没同步 2.2.21）、
+      # v1.0.33（429 Too Many Requests）那两类失败就是这样被绕开的。
+      # ⚠️ key 里的 `v1-` 是格式版本：缓存内容变了（增删 path）要升成 `v2-`，
+      #    因为同名 key 一旦存在就**不能再覆盖**。这个 key 在 cache-warm.yml 里还有一份，两处必须一字不差。
+      - name: 还原 Gradle 缓存（只读）
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper/dists
+          key: gradle-${{ runner.os }}-v1-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-v1-
 
       - name: 核对工具链版本
         run: |
@@ -195,7 +221,27 @@ jobs:
           # （RN 那边是 -PreactNativeArchitectures，名字不同、作用一样）。
           # 注意产物名是 `app-release.apk` —— **带 ABI 后缀的 `app-<abi>-release.apk`
           # 只在 `--split-per-abi` 下才有**，别去赌名字（第一次就是栽在这上面）。
-          flutter build apk --release --target-platform android-arm64
+          #
+          # 重试兜底：历史上有三次发版红在这里，都是 Gradle **配置期**的网络抖动
+          # （v1.0.31 插件门户还没同步 kotlin-gradle-plugins-bom 2.2.21；v1.0.33
+          #  repo.maven.apache.org 返回 429），几十秒内就暴露、三十秒后重来基本能过。
+          # 真问题（代码 / 依赖冲突 / 签名 / NDK）三次都过不去，照样红。
+          for i in 1 2 3; do
+            echo "::group::构建尝试 $i/3"
+            if flutter build apk --release --target-platform android-arm64; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            # 清掉上一轮残留的临时目录（NDK/AAR 下载落在这里，半截的包会让下一轮也失败）。
+            rm -rf "$ANDROID_HOME/.temp" "$HOME/.gradle/.tmp" || true
+            if [ "$i" -lt 3 ]; then
+              echo "30 秒后重试…"
+              sleep 30
+            fi
+          done
+          echo "::error::构建连续 3 次失败，看上面三段日志"
+          exit 1
 
       # 🚨 这一道是**签名**的兜底断言：证书一旦没还原成功，Gradle 会退回 debug 证书且
       #    不报错（只在日志里警告一句），包里就又是一个「用户装不上的版本」。

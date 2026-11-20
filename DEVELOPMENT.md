@@ -111,6 +111,35 @@ bash release.sh
 
 **CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 339 条 + app 179 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
 
+**CI 跑在什么环境上**：GitHub 托管的 `ubuntu-24.04` runner。每次都是**全新虚拟机、跑完即销毁** —— 能跨次留下来的只有 Actions 缓存。镜像由 GitHub **每周重建**，`ubuntu-24.04` 这个标签一直指向最新一版，所以它预装的版本会慢慢往前漂（换 Ubuntu 大版本才会新增 `ubuntu-26.04` 这类标签，不会悄悄升级）。
+
+为了少下几百 MB、少花几分钟，我们**刻意从镜像里蹭**三样东西：
+
+| 蹭什么 | 镜像预装的 | 我们钉在哪 |
+|---|---|---|
+| JDK 17 | 8 / 11 / 17 / 21 / 25，17 是默认 | `flutter.yml` 的 `setup-java`（走 toolcache，0.4 秒） |
+| Android NDK 30.0 | 27.3（默认）/ 29.0 / 30.0 | `android/app/build.gradle.kts` 的 `ndkVersion` **+** `flutter.yml` 里那条断言，两处必须一致 |
+| Gradle 依赖 | 没有（镜像只有 Gradle 9.9.1 本体，放在 `/usr/local`，wrapper 不认那份） | 自己缓存：`cache-warm.yml` 写、`flutter.yml` 只读 |
+
+> 为什么 NDK 要迁就镜像、而不是让 Flutter 用它自己那一版：`flutter.ndkVersion` 现在指 28.2.13676358，**镜像里没有** —— 每次构建现场下 ~700MB，v1.0.26 正是在解压它时红的。改成镜像里已有的版本，下载量直接归零。真正编 C 的是 `ANDROID_NDK_HOME` 指的 27.3（Flutter 找编译器时环境变量优先），这个值只决定 AGP 用哪份 NDK（strip 符号表之类），C 产物不变。
+
+**🚨 镜像里的版本变了怎么办**（这是全流程里唯一需要我们跟着镜像动的地方）：
+
+1. 先看实际清单：构建作业里 `Check preinstalled Android SDK` 那一步会打印 `platforms` / `build-tools` / **`ndk`**，日志里直接读得到。
+2. NDK 对不上时，这一步会**当场红**并写明改哪两个地方 —— 这就是它的全部意义：让「镜像换版本」在几分钟内以一句话的形式暴露，而不是等 AGP 下载超时或解压失败。
+3. 改动固定两处、必须一致：
+   - `android/app/build.gradle.kts` 的 `ndkVersion = "…"`
+   - `.github/workflows/flutter.yml` 里 `[ ! -f "$sdk/ndk/…/source.properties" ]` 那条断言
+4. 顺手核对 Flutter 版本：`3.47.5` 钉在 `flutter.yml` 和 `cache-warm.yml` 两处（升级 Flutter 要同步改，别只改一个）。
+5. **不要为了让镜像满足而把 `ndkVersion` 降到比某个插件还低** —— Flutter 会报 `requires Android NDK …`，那是真问题，该升不该降。
+
+**缓存规矩**：`~/.gradle/caches`（全部 Maven 构件）+ `~/.gradle/wrapper/dists`（Gradle 发行包），1GB 以内。
+
+- **只有 main 能写**（`cache-warm.yml`，push 到 main 且动了 `android/**` / `pubspec.lock` 时跑，外加每周一一次续命）。tag 写的缓存没有任何别的运行读得到，纯占配额 —— 2026-11-20 被 6 个 tag × 1.6GB 撑爆过一次。
+- apk 作业用 `actions/cache/restore`，**只取不存**。
+- key 里带 `v1-` 前缀；同名 key 一旦存在就**不能再覆盖**，所以要改缓存内容（增删 path）就升 `v2-`，两个文件一起改。
+- 首次预热之前、或缓存过期后，tag 构建会 cache miss —— 只是回到原来的下载量，不会因此变红。
+
 **本机自动**（`release.sh` 的最后一步，`scripts/gitee-attach.sh`）：等 GitHub 出包 → 下载 → 在 Gitee 建发行版（名字与正文整份抄 GitHub 那条）→ 传附件 → HEAD 比字节数 → 删旧版（保留最新 10 个 + 清掉没有附件的空壳）。
 
 **为什么这么分工**：runner 在境外，往 gitee.com 传 21MB 实测 1.9~20 KB/s（18~90 分钟，常以 `curl: (56)` 断在半路）；从国内宽带传只要 4.9 秒（4.7 MB/s）。代价是这期间**别关终端**。
