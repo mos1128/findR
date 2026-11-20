@@ -118,11 +118,13 @@ jobs:
           echo "--- platforms ---"; ls "$sdk/platforms" || true
           echo "--- build-tools ---"; ls "$sdk/build-tools" || true
           echo "--- ndk ---"; ls "$sdk/ndk" || true
-          # 🚨 这里钉的版本必须与 `android/app/build.gradle.kts` 的 `ndkVersion` 一致。
+          # 🚨 断言的就是构建真正在用的那一版（android/gradle.properties → android/build.gradle.kts 强制）。
           #    镜像每周重建、NDK 会轮换 —— 哪天这份不见了，就在这里当场红，比让 AGP 在
           #    「下载 NDK」上耗几分钟再炸（v1.0.26）好定位。改法见 DEVELOPMENT.md「CI 跑在什么环境上」。
-          if [ ! -f "$sdk/ndk/30.0.16248370/source.properties" ]; then
-            echo "::error::镜像里没有 NDK 30.0.16248370。看上面 ndk 目录现在有哪几个，改 android/app/build.gradle.kts 里那一行（本断言也要一起改）。"
+          ndk="$(sed -n 's/^findr\.ndkVersion=//p' android/gradle.properties)"
+          [ -n "$ndk" ] || { echo "::error::android/gradle.properties 里没有 findr.ndkVersion"; exit 1; }
+          if [ ! -f "$sdk/ndk/$ndk/source.properties" ]; then
+            echo "::error::镜像里没有 NDK $ndk（构建会现场下一份 ~700MB 的，且有解压失败的风险）。看上面 ndk 目录现在有哪几个，改 android/gradle.properties 的 findr.ndkVersion。"
             exit 1
           fi
 
@@ -134,24 +136,6 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.5'
-
-      # ── Gradle 缓存：只读 ────────────────────────────────────────────────────
-      # 缓存按 ref 隔离，而且**只有默认分支写进去的，tag 运行才读得到**（tag 自己写的只有
-      # 同一个 tag 重跑能读，却照样占配额 —— 2026-11-20 就是被 6 个 tag × 1.6GB 撑爆的）。
-      # 所以这里用 `actions/cache/restore`，只取不存；内容由 .github/workflows/cache-warm.yml
-      # 在 main 上焐热。缓存里有 Gradle 发行包（wrapper/dists）和全部 Maven 构件（caches），
-      # 命中之后构建不再去 repo.maven.apache.org 要东西 —— v1.0.31（门户没同步 2.2.21）、
-      # v1.0.33（429 Too Many Requests）那两类失败就是这样被绕开的。
-      # ⚠️ key 里的 `v1-` 是格式版本：缓存内容变了（增删 path）要升成 `v2-`，
-      #    因为同名 key 一旦存在就**不能再覆盖**。这个 key 在 cache-warm.yml 里还有一份，两处必须一字不差。
-      - name: 还原 Gradle 缓存（只读）
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper/dists
-          key: gradle-${{ runner.os }}-v1-${{ hashFiles('android/**/*.gradle*', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
-          restore-keys: gradle-${{ runner.os }}-v1-
 
       - name: 核对工具链版本
         run: |

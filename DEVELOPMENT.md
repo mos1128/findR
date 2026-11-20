@@ -111,36 +111,27 @@ bash release.sh
 
 **CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 339 条 + app 179 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
 
-**CI 跑在什么环境上**：GitHub 托管的 `ubuntu-24.04` runner。每次都是**全新虚拟机、跑完即销毁** —— 能跨次留下来的只有 Actions 缓存。镜像由 GitHub **每周重建**，`ubuntu-24.04` 这个标签一直指向最新一版，所以它预装的版本会慢慢往前漂（换 Ubuntu 大版本才会新增 `ubuntu-26.04` 这类标签，不会悄悄升级）。
+**CI 跑在什么环境上**：GitHub 托管的 `ubuntu-24.04` runner。每次都是**全新虚拟机、跑完即销毁** —— 什么都不会留到下一次（不用 Actions 缓存，理由见下）。镜像由 GitHub **每周重建**，`ubuntu-24.04` 这个标签一直指向最新一版，所以它预装的版本会慢慢往前漂（换 Ubuntu 大版本才会新增 `ubuntu-26.04` 这类标签，不会悄悄升级）。
 
-为了少下几百 MB、少花几分钟，我们**刻意从镜像里蹭**三样东西：
+为了少下几百 MB、少花几分钟，我们**刻意从镜像里蹭**两样东西：
 
 | 蹭什么 | 镜像预装的 | 我们钉在哪 |
 |---|---|---|
 | JDK 17 | 8 / 11 / 17 / 21 / 25，17 是默认 | `flutter.yml` 的 `setup-java`（走 toolcache，0.4 秒） |
-| Android NDK 30.0 | 27.3（默认）/ 29.0 / 30.0 | `:app` 的 `ndkVersion` **+** `flutter.yml` 里那条断言，两处必须一致（只管 `:app`，`:jni` 用不上，见下） |
-| Gradle 依赖 | 没有（镜像只有 Gradle 9.9.1 本体，放在 `/usr/local`，wrapper 不认那份） | 自己缓存：`cache-warm.yml` 写、`flutter.yml` 只读 |
+| Android NDK 30.0 | 27.3（默认）/ 29.0 / 30.0 | `android/gradle.properties` 的 `findr.ndkVersion`，**所有** Android 工程都用它 |
 
-> 为什么 NDK 要迁就镜像、而不是让 Flutter 用它自己那一版：`flutter.ndkVersion` 现在指 28.2.13676358，**镜像里没有**。但要说清楚**这个 pin 只覆盖 `:app`**（strip 用的那份）：真正编 C 的是 `:jni` 插件的 `externalNativeBuild`，它自己写的是 `ndkVersion flutter.ndkVersion`，而 AGP 9.1 起**不认** `ANDROID_NDK_HOME`（jar 里原文：`support was removed after deprecation period`）—— 所以**每版构建仍会现场下一次 ~700MB 的 r28c**，v1.0.26 正是在解压它时红的（`Error on ZipFile unknown archive`）。
->
-> 试过在 CI 里 `apply(from: "ci-ndk.gradle")`，用一段脚本把 17 个 Android 工程的 `ndkVersion` 统一改成镜像那版（2026-11-20 实测可行：17 个工程全部切到 30.0、下载归零），判定**不值得采纳**：代价是 `:jni` 的编译器从此跟着镜像版本漂移，CI（r30）与本机（r28.2）编出的那一个 `.so` 版本不一致，而收益只是省一次 1~2 分钟的下载。现状是**接受这次下载**，它挂了就 re-run。
+Gradle 依赖和 Flutter SDK 则每版现下、随虚拟机一起销毁：实测那 2GB 的 Gradle 缓存只省 95 秒，而预热作业要 345 秒、还占 10GB 配额里的 2GB —— 2026-11-20 判定不划算，整套缓存（`cache-warm.yml` + `actions/cache/restore`）已删除。
+
+> **NDK 为什么从根上统一**：`jni` 这类插件在自己的 build.gradle 里写死了 `ndkVersion flutter.ndkVersion`（Flutter 3.47.5 = 28.2.13676358），**镜像里没有这一版**；AGP 9.1 起也不认 `ANDROID_NDK_HOME`（jar 里原文：`support was removed after deprecation period`）。不覆盖就得每次构建现下 ~700MB 的 r28c，v1.0.26 正是在解压它时红的（`Error on ZipFile unknown archive`）。
+> 所以 `android/build.gradle.kts` 在 `projectsEvaluated` 里把 `findr.ndkVersion` 强制到**每一个**带 `android` 扩展的工程之上（盖掉插件自己写的值）。结果是本机、CI、所有插件共用同一份 NDK：本机装 30.0 就不再需要 28.2，CI 直接用镜像自带的那份 —— NDK 下载为零，产物也完全一致。（CMake 镜像里也没有，每次现下几十 MB，没管。）
 
 **🚨 镜像里的版本变了怎么办**（这是全流程里唯一需要我们跟着镜像动的地方）：
 
 1. 先看实际清单：构建作业里 `Check preinstalled Android SDK` 那一步会打印 `platforms` / `build-tools` / **`ndk`**，日志里直接读得到。
-2. NDK 对不上时，这一步会**当场红**并写明改哪两个地方 —— 这就是它的全部意义：让「镜像换版本」在几分钟内以一句话的形式暴露，而不是等 AGP 下载超时或解压失败。
-3. 改动固定两处、必须一致：
-   - `android/app/build.gradle.kts` 的 `ndkVersion = "…"`
-   - `.github/workflows/flutter.yml` 里 `[ ! -f "$sdk/ndk/…/source.properties" ]` 那条断言
-4. 顺手核对 Flutter 版本：`3.47.5` 钉在 `flutter.yml` 和 `cache-warm.yml` 两处（升级 Flutter 要同步改，别只改一个）。
-5. **不要为了让镜像满足而把 `ndkVersion` 降到比某个插件还低** —— Flutter 会报 `requires Android NDK …`，那是真问题，该升不该降。
-
-**缓存规矩**：`~/.gradle/caches`（全部 Maven 构件）+ `~/.gradle/wrapper/dists`（Gradle 发行包），1GB 以内。
-
-- **只有 main 能写**（`cache-warm.yml`，push 到 main 且动了 `android/**` / `pubspec.lock` 时跑，外加每周一一次续命）。tag 写的缓存没有任何别的运行读得到，纯占配额 —— 2026-11-20 被 6 个 tag × 1.6GB 撑爆过一次。
-- apk 作业用 `actions/cache/restore`，**只取不存**。
-- key 里带 `v1-` 前缀；同名 key 一旦存在就**不能再覆盖**，所以要改缓存内容（增删 path）就升 `v2-`，两个文件一起改。
-- 首次预热之前、或缓存过期后，tag 构建会 cache miss —— 只是回到原来的下载量，不会因此变红。
+2. NDK 对不上时，这一步会**当场红**并写明改哪里 —— 它的全部意义就是让「镜像换版本」在几分钟内以一句话暴露，而不是等 AGP 下载超时或解压失败。
+3. 改一处就够：`android/gradle.properties` 的 `findr.ndkVersion`（断言直接读这一行，两处不会再漂）。
+4. 顺手核对 Flutter 版本：`3.47.5` 钉在 `flutter.yml` 里。
+5. **不要为了迁就镜像把 `findr.ndkVersion` 降到比某个插件还低** —— Flutter 会报 `requires Android NDK …`，那是真问题，该升不该降。
 
 **本机自动**（`release.sh` 的最后一步，`scripts/gitee-attach.sh`）：等 GitHub 出包 → 下载 → 在 Gitee 建发行版（名字与正文整份抄 GitHub 那条）→ 传附件 → HEAD 比字节数 → 删旧版（保留最新 10 个 + 清掉没有附件的空壳）。
 
