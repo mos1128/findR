@@ -16,6 +16,7 @@ import '../db/repository.dart';
 import '../parse/model_json.dart';
 import '../parse/outputs.dart';
 import '../parse/schema.dart';
+import '../prompts/overrides.dart';
 import '../prompts/render.dart';
 import '../providers/media.dart';
 import '../providers/types.dart';
@@ -231,7 +232,9 @@ Future<UnderstandingResult> runUnderstanding(
   final system = buildP1System(
     categories: formatCategoriesForPrompt(listCategories(deps.db)),
     locations: formatLocationsForPrompt(listLocations(deps.db)),
+    known: formatKnownItemsForPrompt(listKnownItems(deps.db, text ?? '')),
     textOnly: textOnly,
+    body: readPromptBody(deps.db, PromptId.p1),
   );
   Future<ChatResponse> call(String extra) => deps.llm.chat(
     ChatRequest(system: system + extra, parts: parts, temperature: 0.1),

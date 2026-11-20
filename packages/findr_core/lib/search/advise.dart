@@ -62,10 +62,13 @@ final class AdviceResult {
 }
 
 final class AdviceDeps {
-  const AdviceDeps({required this.llm, required this.cfg});
+  const AdviceDeps({required this.llm, required this.cfg, this.promptBody});
 
   final LlmProviderAdapter llm;
   final ProviderConfig cfg;
+
+  /// 用户在设置里改过的 P4 正文；null 用内置默认。
+  final String? promptBody;
 }
 
 /// 把「情景 + 整个记忆库的清单」交给主模型逐条判相关性。
@@ -78,7 +81,7 @@ Future<AdviceResult> adviseFromInventory(
   try {
     final res = await deps.llm.chat(
       ChatRequest(
-        system: buildP4System(),
+        system: buildP4System(body: deps.promptBody),
         parts: <Part>[
           TextPart(buildP4Input(query, scenario, inventory.total, inventory.text)),
         ],

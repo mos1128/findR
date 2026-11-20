@@ -9,9 +9,26 @@ import 'package:test/test.dart';
 
 import '../helpers.dart';
 
-const BadgeContext ctx = BadgeContext(visionSupported: true, asrConfigured: true);
-const BadgeContext noAsr = BadgeContext(visionSupported: true, asrConfigured: false);
-const BadgeContext noVision = BadgeContext(visionSupported: false, asrConfigured: true);
+const BadgeContext ctx = BadgeContext(
+  visionSupported: true,
+  asrConfigured: true,
+  modelConfigured: true,
+);
+const BadgeContext noAsr = BadgeContext(
+  visionSupported: true,
+  asrConfigured: false,
+  modelConfigured: true,
+);
+const BadgeContext noModel = BadgeContext(
+  visionSupported: true,
+  asrConfigured: true,
+  modelConfigured: false,
+);
+const BadgeContext noVision = BadgeContext(
+  visionSupported: false,
+  asrConfigured: true,
+  modelConfigured: true,
+);
 
 void main() {
   test('待转写与解析中互斥，来自生命周期状态', () {
@@ -23,15 +40,17 @@ void main() {
     expect(cardBadges(makeCard(id: 'd', status: CardStatus.archived)), isEmpty);
   });
 
-  test('未配 ASR 时「待转写」的文案改为提示配置', () {
-    expect(badgeLabel(CardBadge.pendingTranscript, ctx), '待转写');
+  test('配好 ASR 与主模型才写「转写中」，缺一样都回到「待转写」', () {
+    // 队列要转写，ASR 和主模型缺一不可（buildAdvanceDeps 缺主模型就整个拒绝）：
+    // 配置不全时写「转写中」会让人一直等一个不会发生的动作。
+    expect(badgeLabel(CardBadge.pendingTranscript, ctx), '转写中');
     expect(badgeLabel(CardBadge.pendingTranscript, noAsr), '待转写·未配 ASR');
+    expect(badgeLabel(CardBadge.pendingTranscript, noModel), '待转写·未配主模型');
   });
 
-  test('pending 的文案是「待解析」而不是「解析中」', () {
-    // 与状态表对齐（pending = 待解析）。
-    // 没配模型时卡片会一直停在这一步，写成「解析中」会让人以为正在跑、白等。
-    expect(badgeLabel(CardBadge.processing, ctx), '待解析');
+  test('pending 的文案随主模型配置在「解析中 / 待解析」之间切换', () {
+    expect(badgeLabel(CardBadge.processing, ctx), '解析中');
+    expect(badgeLabel(CardBadge.processing, noModel), '待解析');
   });
 
   test('待整理角标独立于其他状态', () {
@@ -81,6 +100,17 @@ void main() {
     expect(
       cardBadges(makeCard(id: 'b', status: CardStatus.active, retryCount: 2)),
       isNot(contains(CardBadge.retrying)),
+    );
+  });
+
+  test('失败过的卡片只留「重试中」，不同时声称正在转写或解析', () {
+    expect(
+      cardBadges(makeCard(id: 'a', status: CardStatus.pendingTranscript, retryCount: 1)),
+      [CardBadge.retrying],
+    );
+    expect(
+      cardBadges(makeCard(id: 'b', status: CardStatus.pending, retryCount: 1)),
+      [CardBadge.retrying],
     );
   });
 

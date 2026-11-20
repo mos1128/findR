@@ -385,4 +385,51 @@ void main() {
       expect(executeSearch(db, relaxed).map((c) => c.id), <String>['c1']);
     });
   });
+
+  // ─────────────────────────────────────────────────────────
+  // 已有条目（给 P1 复用相对位置）
+  // ─────────────────────────────────────────────────────────
+  group('已有条目', () {
+    test('只收原文点名、且记过位置的卡片，别称也算命中', () {
+      final db = makeDb();
+      insertCard(
+        db,
+        makeCard(id: 'c1', entity: '感冒药', pathNames: '衣帽间/白色抽屉盒/第二层', desc: '感冒药'),
+      );
+      db
+          .prepare(
+            "INSERT INTO aliases (id, kind, name, card_id) VALUES ('a1', 'entity', '布洛芬缓释胶囊', 'c1')",
+          )
+          .run();
+
+      // 原文里点名 ⇒ 带走它的位置
+      expect(listKnownItems(db, '布洛芬和感冒药放在一起'), [
+        (entity: '感冒药', path: '衣帽间/白色抽屉盒/第二层'),
+      ]);
+      // 只说别称也能命中
+      expect(
+        listKnownItems(db, '上次那盒布洛芬缓释胶囊呢').map((i) => i.entity),
+        <String>['感冒药'],
+      );
+      // 没点名 ⇒ 不塞（否则每条口述都带着整库清单）
+      expect(listKnownItems(db, '护照放哪了'), isEmpty);
+    });
+
+    test('没位置、已归档、名字太短的都不进清单', () {
+      final db = makeDb();
+      insertCard(db, makeCard(id: 'c1', entity: '感冒药', pathNames: null));
+      insertCard(
+        db,
+        makeCard(
+          id: 'c2',
+          entity: '体温计',
+          pathNames: '主卧/床头柜',
+          status: CardStatus.archived,
+        ),
+      );
+      insertCard(db, makeCard(id: 'c3', entity: '卡', pathNames: '钱包/夹层'));
+
+      expect(listKnownItems(db, '感冒药 体温计 卡'), isEmpty);
+    });
+  });
 }

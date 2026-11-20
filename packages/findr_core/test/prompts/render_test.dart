@@ -28,6 +28,22 @@ void main() {
       expect(s, contains('备用手电筒')); // fewshot
       expect(s, isNot(contains('{{locations}}'))); // 占位符必须被吃掉
       expect(s, isNot(contains('{{categories}}')));
+      expect(s, isNot(contains('{{known}}')));
+    });
+
+    test('没给已有条目时给「暂无」，给了就原样带进相对位置的规则里', () {
+      final empty = buildP1System(categories: 'x', locations: 'y');
+      expect(empty, contains('已有条目'));
+      expect(empty, contains('（暂无）'));
+
+      final s = buildP1System(
+        categories: 'x',
+        locations: 'y',
+        known: formatKnownItemsForPrompt(const [
+          (entity: '感冒药', path: '衣帽间/白色抽屉盒/第二层'),
+        ]),
+      );
+      expect(s, contains('- 感冒药 → 衣帽间/白色抽屉盒/第二层'));
     });
 
     test('textOnly 两种模式各追加不同的约束，不传则都不加', () {
@@ -166,6 +182,15 @@ void main() {
       expect(text, contains('阳台'));
       expect(text, isNot(contains('收纳盒')));
       expect(formatLocationsForPrompt(const <LocationNode>[]), '（暂无）');
+    });
+
+    test('formatKnownItemsForPrompt：一行一条，带完整路径', () {
+      expect(formatKnownItemsForPrompt(const []), '（暂无）');
+      final text = formatKnownItemsForPrompt(const [
+        (entity: '感冒药', path: '衣帽间/白色抽屉盒/第二层'),
+        (entity: '护照', path: '书房/抽屉'),
+      ]);
+      expect(text, '- 感冒药 → 衣帽间/白色抽屉盒/第二层\n- 护照 → 书房/抽屉');
     });
   });
 }

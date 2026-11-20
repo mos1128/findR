@@ -55,6 +55,7 @@ export 'pipeline/capture.dart';
 export 'pipeline/edit.dart';
 export 'pipeline/ingest.dart';
 export 'pipeline/queue.dart';
+export 'prompts/overrides.dart';
 export 'prompts/render.dart';
 export 'providers/anthropic.dart';
 export 'providers/capabilities.dart';

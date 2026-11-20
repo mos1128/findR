@@ -14,6 +14,7 @@ import '../db/repository.dart';
 import '../parse/model_json.dart';
 import '../parse/outputs.dart';
 import '../parse/schema.dart';
+import '../prompts/overrides.dart';
 import '../prompts/render.dart';
 import '../providers/types.dart';
 import '../types.dart';
@@ -81,6 +82,7 @@ Future<SearchResult> searchCards(SearchDeps deps, String query) async {
       final system = buildP2System(
         categories: formatCategoriesForPrompt(listCategories(deps.db)),
         locations: formatLocationsForPrompt(listLocations(deps.db)),
+        body: readPromptBody(deps.db, PromptId.p2),
       );
       final res = await llm.chat(
         ChatRequest(
@@ -223,7 +225,11 @@ Future<SearchResult> _adviseSearch(
   final scenario = trimmedScenario.isNotEmpty ? trimmedScenario : query;
 
   final res = await adviseFromInventory(
-    AdviceDeps(llm: llm, cfg: cfg),
+    AdviceDeps(
+      llm: llm,
+      cfg: cfg,
+      promptBody: readPromptBody(deps.db, PromptId.p4),
+    ),
     query,
     scenario,
     inventory,

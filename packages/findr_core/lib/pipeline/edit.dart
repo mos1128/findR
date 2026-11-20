@@ -1,6 +1,6 @@
 /// 已入库卡片的再加工。
 ///
-/// 四件事：补文字（没 ASR 时的兜底）、重新整理（解析失败的卡）、
+/// 五件事：补文字（没 ASR 时的兜底）、回答追问、重新整理（解析失败的卡）、
 /// 补分析图片（事后反悔）、以及编辑字段后重新生成 desc。
 ///
 /// **它们都建立在 [runUnderstanding] 之上**，都不用先把卡片降级成草稿 ——
@@ -11,6 +11,7 @@ import '../db/repository.dart';
 import '../parse/model_json.dart';
 import '../parse/outputs.dart';
 import '../parse/schema.dart';
+import '../prompts/overrides.dart';
 import '../prompts/render.dart';
 import '../providers/types.dart';
 import '../types.dart';
@@ -61,6 +62,33 @@ Future<AdvanceResult> submitTranscript(
 }) async {
   setTranscript(deps.db, cardId, text, deps.clock());
   return advanceCard(deps, cardId, vision: vision);
+}
+
+/// 回答问题：答案并进原文，然后**立刻重跑一次理解**。
+///
+/// 只把答案并进原文是不够的 —— 追问几乎都是问「放在哪儿」，
+/// 而位置只从解析结果来。不重跑，用户答了「衣帽间」，位置还是空的，等于白问。
+///
+/// 代价是结构化字段会被模型重写一遍（用户手改过的位置也不例外），
+/// 这是有意的：追问还没答完的卡片，本就是「还没整理好」的卡片。
+Future<AdvanceResult> answerAsk(AdvanceDeps deps, String cardId, String answer) async {
+  final clock = deps.clock;
+  final card = getCard(deps.db, cardId);
+  if (card == null) throw StateError('卡片不存在: $cardId');
+  final text = answer.trim();
+  if (text.isEmpty) {
+    return AdvanceResult(card: card, outcome: AdvanceOutcome.skippedNotPending);
+  }
+  final base = card.transcript?.trim() ?? '';
+  // setTranscript 顺手清掉 ask（追问只问一次）
+  setTranscript(deps.db, cardId, base.isEmpty ? text : '$base\n$text', clock());
+
+  final result = await runUnderstanding(
+    deps,
+    getCard(deps.db, cardId)!,
+    vision: card.visionRequested ?? true,
+  );
+  return _toAdvanceResult(deps, cardId, result, clock());
 }
 
 /// 重新整理：针对解析失败（「待整理」）的卡片重跑一次理解。
@@ -126,6 +154,7 @@ Future<RegenerateDescResult> regenerateDesc(AdvanceDeps deps, String cardId) asy
     categories: formatCategoriesForPrompt(listCategories(deps.db)),
     locations: formatLocationsForPrompt(listLocations(deps.db)),
     textOnly: TextOnlyMode.off,
+    body: readPromptBody(deps.db, PromptId.p1),
   );
 
   try {

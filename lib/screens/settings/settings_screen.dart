@@ -2,7 +2,7 @@
 ///
 /// 正式商用发版标准架构：
 /// - 模型服务：LLM 与 ASR 状态
-/// - 智能偏好：多模态分析、搜索智能解答
+/// - 智能偏好：多模态分析、搜索智能解答、提示词
 /// - 空间与分类：位置树与分类管理
 /// - 数据与维护：备份恢复与后台队列诊断
 /// - 关于：规范版本与关于信息，高级技术参数收拢于调试弹窗
@@ -25,6 +25,7 @@ import 'archived_screen.dart';
 import 'backup_screen.dart';
 import 'categories_screen.dart';
 import 'locations_screen.dart';
+import 'prompts_screen.dart';
 import 'provider_settings_screen.dart';
 import 'update_flow.dart';
 
@@ -495,6 +496,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       unawaited(ref.read(runtimeProvider.notifier).refresh());
                     }),
                   ),
+                ),
+                FindrDivider(),
+                ListRow(
+                  title: '提示词',
+                  subtitle: promptOverridesSummary(rt.driver),
+                  onTap: () => _push(const PromptsScreen()),
+                  right: Icon(Icons.chevron_right_rounded, size: 20, color: c.textMuted),
                 ),
               ],
             ),

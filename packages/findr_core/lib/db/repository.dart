@@ -503,6 +503,37 @@ List<String> expandTermsByAliases(SqliteDriver db, List<String> terms) {
   return extra;
 }
 
+/// 原文里点名、且库里已经记过位置的条目（实体 + 位置），供 P1 复用位置。
+///
+/// 只取**原文里真的出现**的实体名或别称：P1 每条口述都要带着这份清单跑，
+/// 整库塞进去既费 token 又稀释重点；而 P1 需要它的场合只有一种 ——
+/// 「布洛芬和感冒药放在一起」这类相对位置，被相对的那个东西一定在原文里。
+///
+/// 名字短于 2 个字的不收（「卡」「盒」这种会命中一大片无关卡片）。
+List<({String entity, String path})> listKnownItems(
+  SqliteDriver db,
+  String text, {
+  int limit = 10,
+}) {
+  final needle = text.trim();
+  if (needle.isEmpty) return const <({String entity, String path})>[];
+  final rows = db
+      .prepare(
+        'SELECT c.entity AS entity, c.path_names AS path_names FROM cards c '
+        "WHERE c.status = 'active' "
+        '  AND c.entity IS NOT NULL AND length(c.entity) >= 2 '
+        "  AND c.path_names IS NOT NULL AND c.path_names <> '' "
+        '  AND (instr(?, c.entity) > 0 OR EXISTS ('
+        "        SELECT 1 FROM aliases a WHERE a.card_id = c.id AND a.kind = 'entity' "
+        '          AND length(a.name) >= 2 AND instr(?, a.name) > 0)) '
+        'ORDER BY c.created_at DESC LIMIT ?',
+      )
+      .all(<Object?>[needle, needle, limit]);
+  return rows
+      .map((r) => (entity: r['entity'].toString(), path: r['path_names'].toString()))
+      .toList();
+}
+
 /// LIKE 降级路径给固定低优先分：`bm25` 是正数（越小越相关），
 /// 用 1e9 保证「FTS 命中永远排在纯 LIKE 命中前面」，同时又不至于在数值上溢出。
 const double _likeFallbackScore = 1e9;

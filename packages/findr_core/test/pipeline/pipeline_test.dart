@@ -663,6 +663,70 @@ void main() {
     expect(card.status, CardStatus.active);
   });
 
+  test('回答追问会重跑理解，位置跟着更新', () async {
+    final db = makeDb();
+    // 已经记过的同处物品：P1 要拿它推「感冒药在哪，布洛芬就在哪」
+    insertCard(
+      db,
+      makeCard(
+        id: 'cool',
+        entity: '感冒药',
+        pathNames: '衣帽间/白色抽屉盒/第二层',
+        desc: '感冒药放在衣帽间的白色抽屉盒第二层。',
+      ),
+    );
+    insertCard(
+      db,
+      makeCard(
+        id: 'c1',
+        status: CardStatus.active,
+        entity: '布洛芬',
+        transcript: '布洛芬和感冒药放在一起',
+        ask: '布洛芬和感冒药是收在哪个柜子或抽屉里？',
+      ),
+    );
+    final llm = FakeLlmAdapter([
+      p1(<String, Object?>{
+        'entity': '布洛芬',
+        'path': <Object?>['衣帽间', '白色抽屉盒', '第二层'],
+        'path_matched': true,
+        'ask': '',
+      }),
+    ]);
+
+    final r = await answerAsk(deps(db: db, llm: llm), 'c1', '衣帽间');
+    expect(r.outcome, AdvanceOutcome.activated);
+
+    final card = getCard(db, 'c1')!;
+    expect(card.transcript, '布洛芬和感冒药放在一起\n衣帽间');
+    expect(card.ask, isNull);
+    expect(card.pathNames, '衣帽间/白色抽屉盒/第二层');
+
+    // 关键点：模型确实看到了「感冒药在哪」这条既有事实
+    expect(llm.requests.single.system, contains('感冒药 → 衣帽间/白色抽屉盒/第二层'));
+  });
+
+  test('回答追问时理解失败：答案留在原文里，不丢也不重问', () async {
+    final db = makeDb();
+    insertCard(
+      db,
+      makeCard(
+        id: 'c1',
+        status: CardStatus.active,
+        entity: '布洛芬',
+        transcript: '布洛芬和感冒药放在一起',
+        ask: '收在哪个柜子？',
+      ),
+    );
+
+    final r = await answerAsk(deps(db: db, llm: FakeLlmAdapter()), 'c1', '衣帽间');
+    expect(r.outcome, AdvanceOutcome.retry);
+
+    final card = getCard(db, 'c1')!;
+    expect(card.transcript, '布洛芬和感冒药放在一起\n衣帽间');
+    expect(card.ask, isNull);
+  });
+
   test('重新整理成功后清掉待整理标志', () async {
     final db = makeDb();
     insertCard(

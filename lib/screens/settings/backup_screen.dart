@@ -184,7 +184,7 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
           style: TextStyle(fontSize: 16, color: c.text),
         ),
         content: Text(
-          '本机现有的卡片、分类、位置、设置、媒体与 API Key 都会被清空，'
+          '本机现有的卡片、分类、位置、设置（含提示词）、媒体与 API Key 都会被清空，'
           '然后完整使用这份备份。此操作不可撤销。',
           style: TextStyle(fontSize: 13, height: 1.5, color: c.textSecondary),
         ),

@@ -175,6 +175,14 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
       _markChanged();
       _reload();
       final outcome = res is AdvanceResult ? res.outcome : null;
+      // 无论成败都按库里的结果回填：失败的那条路径也可能已经改了原文
+      // （回答追问失败时，答案已经并进原文了 —— 文本框若不跟着走，下次保存会把答案覆盖掉）。
+      if (res is AdvanceResult) {
+        if (res.card.desc != null) _desc.text = res.card.desc!;
+        if (res.card.entity != null) _entity.text = res.card.entity!;
+        if (res.card.transcript != null) _transcript.text = res.card.transcript!;
+        if (res.card.tags != null) _tags.text = res.card.tags!.join('、');
+      }
       if (outcome == AdvanceOutcome.retry) {
         final msg = '$label 失败，稍后可以再试一次。';
         setState(() => _actionResult = _ActionResult(message: msg, isError: true));
@@ -202,10 +210,6 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
       } else if (res is AdvanceResult) {
         if (res.outcome == AdvanceOutcome.activated) {
           final msg = '$label 完成';
-          if (res.card.desc != null) _desc.text = res.card.desc!;
-          if (res.card.entity != null) _entity.text = res.card.entity!;
-          if (res.card.transcript != null) _transcript.text = res.card.transcript!;
-          if (res.card.tags != null) _tags.text = res.card.tags!.join('、');
           setState(() => _actionResult = _ActionResult(message: msg, isError: false));
           _toast(msg, isError: false);
         } else {
@@ -228,27 +232,15 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     }
   }
 
-  /// 回答模型的追问：答案**并进原文**，追问随之消失。
+  /// 回答模型的追问：答案**并进原文**，然后立刻重跑一次理解（位置才会跟着更新）。
   ///
   /// 不单独存字段是有意的 —— 追问本来就是「这段原文缺一句话」，
   /// 存成两个字段之后检索、复制、导出都要各处理一遍，而用户想读的永远是一段完整的话。
   Future<void> _answerAsk() async {
-    final rt = ref.read(runtimeProvider).value;
-    if (rt == null) return;
     final answer = _askAnswer.text.trim();
     if (answer.isEmpty) return;
-    final card = getCard(rt.driver, widget.cardId);
-    if (card == null) return;
-    final base = card.transcript?.trim() ?? '';
-    setTranscript(
-      rt.driver,
-      widget.cardId,
-      base.isEmpty ? answer : '$base\n$answer',
-      DateTime.now(),
-    );
     _askAnswer.clear();
-    _markChanged();
-    _reload();
+    await _run((d) => answerAsk(d, widget.cardId, answer), '补充');
   }
 
   Future<void> _pickLocation(List<LocationNode> all) async {
@@ -362,6 +354,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
     final ctx = BadgeContext(
       visionSupported: visionSupported(rt.llm),
       asrConfigured: asrReady(rt.asr),
+      modelConfigured: llmConfigured(rt.llm),
     );
     final badges = cardBadges(card);
     final images = card.images ?? const <String>[];
@@ -474,7 +467,7 @@ class _CardDetailScreenState extends ConsumerState<CardDetailScreen> {
                                 onSubmitted: (_) => unawaited(_answerAsk()),
                                 decoration: InputDecoration(
                                   isDense: true,
-                                  hintText: '答一句，并进原文',
+                                  hintText: '例如「衣帽间」',
                                   hintStyle: TextStyle(fontSize: 12.5, color: c.textMuted),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(Radii.md),

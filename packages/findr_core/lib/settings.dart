@@ -27,6 +27,9 @@ abstract final class SettingsKeys {
   static const String capture = 'capture';
   static const String search = 'search';
   static const String appearance = 'appearance';
+
+  /// 用户改过的提示词正文（`prompts/overrides.dart`）。
+  static const String prompts = 'prompts';
 }
 
 /// 设备本地状态：**不进备份，导入时也不覆盖本机**。

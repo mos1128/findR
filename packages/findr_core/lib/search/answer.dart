@@ -22,10 +22,13 @@ const int _descChars = 240;
 const int _transcriptChars = 160;
 
 final class AnswerDeps {
-  const AnswerDeps({required this.llm, required this.cfg});
+  const AnswerDeps({required this.llm, required this.cfg, this.promptBody});
 
   final LlmProviderAdapter llm;
   final ProviderConfig cfg;
+
+  /// 用户在设置里改过的 P3 正文；null 用内置默认。
+  final String? promptBody;
 }
 
 final class AnswerResult {
@@ -92,7 +95,7 @@ Future<AnswerResult> answerFromCards(
   try {
     final res = await deps.llm.chat(
       ChatRequest(
-        system: buildP3System(),
+        system: buildP3System(body: deps.promptBody),
         parts: <Part>[TextPart(buildP3Input(query, formatSnippets(cards)))],
         temperature: 0.1,
       ),

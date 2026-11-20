@@ -5,6 +5,7 @@
 library;
 
 import '../types.dart';
+import 'overrides.dart';
 import 'templates.dart';
 
 /// 用 enum 表达 `textOnly`（`off` / `unsupported`），只为编译期少一次拼写事故。
@@ -23,15 +24,22 @@ enum TextOnlyMode {
 String render(String template, Map<String, String> vars) =>
     template.replaceAllMapped(RegExp(r'\{\{(\w+)\}\}'), (m) => vars[m.group(1)!] ?? '');
 
+/// [body] 是用户在设置里改过的正文，null 用内置默认。
 String buildP1System({
   required String categories,
   required String locations,
+  String? known,
   TextOnlyMode? textOnly,
+  String? body,
 }) {
-  var s = render(p1System, {'categories': categories, 'locations': locations});
+  var s = render(body ?? promptDefaultBody(PromptId.p1), {
+    'categories': categories,
+    'locations': locations,
+    'known': known ?? formatKnownItemsForPrompt(const []),
+  });
   s += '\n\n输出 schema（字段名与类型不得改动）：\n$p1Schema';
   final example = textOnly == null ? p1Fewshot : p1FewshotTextOnly;
-  s += '\n\n$descRules\n\n$askRules\n\n示例：\n$example';
+  s += '\n\n示例：\n$example';
   if (textOnly == TextOnlyMode.off) {
     s += '\n\n$p1TextOnlyOff';
   } else if (textOnly == TextOnlyMode.unsupported) {
@@ -72,19 +80,27 @@ String buildRegenerateDescUser(MemoryCard card) {
   return '$base\n\n用户已确认以下字段，请视为既定事实，不要改动，只重新生成 desc：\n$locked';
 }
 
-String buildP2System({required String categories, required String locations}) {
-  final head = render(p2System, {'categories': categories, 'locations': locations});
+String buildP2System({
+  required String categories,
+  required String locations,
+  String? body,
+}) {
+  final head = render(body ?? promptDefaultBody(PromptId.p2), {
+    'categories': categories,
+    'locations': locations,
+  });
   return '$head\n\n输出 schema：\n$p2OutputSchema'
-      '\n\n规则：\n$p2Rules'
       '\n\n示例：\n$p2Fewshot';
 }
 
-String buildP3System() => '$p3System\n\n输出 schema：\n$p3Schema';
+String buildP3System({String? body}) =>
+    '${body ?? promptDefaultBody(PromptId.p3)}\n\n输出 schema：\n$p3Schema';
 
 String buildP3Input(String query, String snippets) =>
     render(p3InputTemplate, {'query': query, 'snippets': snippets});
 
-String buildP4System() => '$p4System\n\n输出 schema：\n$p4Schema';
+String buildP4System({String? body}) =>
+    '${body ?? promptDefaultBody(PromptId.p4)}\n\n输出 schema：\n$p4Schema';
 
 String buildP4Input(String query, String scenario, int total, String inventory) =>
     render(p4InputTemplate, {
@@ -131,4 +147,13 @@ String formatLocationsForPrompt(List<LocationNode> locations) {
   }
 
   return locations.where((l) => depth(l) <= 2).map(fullPath).join('\n');
+}
+
+/// 一行一条：`- 感冒药 → 衣帽间/白色抽屉盒/第二层`。
+///
+/// 这里给完整路径（不像 [formatLocationsForPrompt] 只给一二级）：
+/// 相对位置要的正是「和它同处」，层级少一级就落不到同一个抽屉里。
+String formatKnownItemsForPrompt(List<({String entity, String path})> items) {
+  if (items.isEmpty) return '（暂无）';
+  return items.map((i) => '- ${i.entity} → ${i.path}').join('\n');
 }

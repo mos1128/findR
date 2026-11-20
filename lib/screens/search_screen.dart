@@ -825,6 +825,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     return BadgeContext(
       visionSupported: visionSupported(rt?.llm),
       asrConfigured: asrReady(rt?.asr),
+      modelConfigured: llmConfigured(rt?.llm),
     );
   }
 }

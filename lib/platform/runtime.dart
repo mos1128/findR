@@ -230,7 +230,11 @@ Future<AnswerResult> runAnswer(
     throw StateError((built as DepsUnavailable).reason);
   }
   return answerFromCards(
-    AnswerDeps(llm: built.deps.llm, cfg: built.deps.cfg),
+    AnswerDeps(
+      llm: built.deps.llm,
+      cfg: built.deps.cfg,
+      promptBody: readPromptBody(rt.driver, PromptId.p3),
+    ),
     query,
     cards,
   );

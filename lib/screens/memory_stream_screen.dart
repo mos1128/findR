@@ -591,6 +591,7 @@ class _MemoryStreamScreenState extends ConsumerState<MemoryStreamScreen>
     return BadgeContext(
       visionSupported: visionSupported(rt?.llm),
       asrConfigured: asrReady(rt?.asr),
+      modelConfigured: llmConfigured(rt?.llm),
     );
   }
 }
