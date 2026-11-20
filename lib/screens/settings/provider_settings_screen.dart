@@ -103,6 +103,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
   bool _downloading = false;
   int _received = 0;
   int? _total;
+  String? _source;
   String? _downloadError;
   DownloadCancelToken? _cancel;
 
@@ -506,7 +507,8 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
           ),
           const SizedBox(height: Spacing.two),
           Text(
-            '${(pct * 100).round()}%  ${_fmtBytes(_received)} / ${_fmtBytes(total)}',
+            '${(pct * 100).round()}%  ${_fmtBytes(_received)} / ${_fmtBytes(total)}'
+            '${_source == null ? '' : '  ·  $_source'}',
             style: TextStyle(fontSize: 11.5, color: c.textSecondary),
           ),
         ],
@@ -539,6 +541,7 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
       _downloading = true;
       _received = 0;
       _total = asrModelTotalBytes;
+      _source = null;
       _downloadError = null;
       _cancel = cancel;
     });
@@ -547,6 +550,10 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
     try {
       final outcome = await downloadAsrModel(
         cancel: cancel,
+        onSource: (host) {
+          if (!mounted || host == _source) return;
+          setState(() => _source = host);
+        },
         onProgress: (received, total) {
           final pct = total == null || total == 0 ? 0 : received * 100 ~/ total;
           if (!mounted || pct == lastPct) return;

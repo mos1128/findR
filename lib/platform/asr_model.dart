@@ -73,9 +73,11 @@ bool asrModelInstalled() => asrModelPaths() != null;
 ///
 /// 镜像在前、官方在后：两家都通，镜像少一次首跳，出响应头更快；官方留作兜底。
 /// **404 不换源** —— 那是「这个文件就没有」，换源也一样，只会让人多等一轮。
+/// [onSource] 每换一个源报一次主机名 —— 界面拿它显示「正在从哪儿下」。
 Future<DownloadOutcome> downloadAsrModel({
   UpdateDownloadProgress? onProgress,
   DownloadCancelToken? cancel,
+  void Function(String host)? onSource,
 }) async {
   if (asrModelInstalled()) {
     return DownloadDone(File('$_modelDir/model.int8.onnx'), asrModelTotalBytes);
@@ -93,6 +95,7 @@ Future<DownloadOutcome> downloadAsrModel({
       'https://hf-mirror.com',
       'https://huggingface.co',
     ]) {
+      onSource?.call(Uri.parse(host).host);
       outcome = await downloadToFile(
         url: '$host/$_repo/resolve/$_revision/${f.name}',
         target: target,

@@ -431,7 +431,9 @@ Future<DownloadOutcome> downloadToFile({
     }
     if (streamError != null) {
       return DownloadFailed(
-        streamError is TimeoutException ? '下载中断（网络长时间没有动静）' : '$streamError',
+        streamError is TimeoutException
+            ? '下载中断：${updateStallTimeout.inSeconds} 秒内未收到数据'
+            : '$streamError',
       );
     }
 
