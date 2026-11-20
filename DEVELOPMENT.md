@@ -32,7 +32,7 @@ cd packages/findr_core && dart test          # 只测 core（快）
 bash release.sh                              # 发版
 ```
 
-**基线不许破**：core 314 条 + app 163 条，静态分析干净。
+**基线不许破**：core 339 条 + app 179 条，静态分析干净。
 
 ## 关键约束
 
@@ -109,7 +109,7 @@ bash release.sh
 # → 等 CI 出包（十几分钟）→ 本机建 Gitee 发行版 → 传附件 → 按字节数校验 → 清旧版
 ```
 
-**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 314 条 + app 163 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
+**CI 自动**（`.github/workflows/flutter.yml`）：跑测试（core 339 条 + app 179 条，约 2.5 分钟）→ 构建 APK → 发 GitHub 发布 → 镜像代码到 Gitee。**Gitee 的发行版 CI 不碰。**
 
 **本机自动**（`release.sh` 的最后一步，`scripts/gitee-attach.sh`）：等 GitHub 出包 → 下载 → 在 Gitee 建发行版（名字与正文整份抄 GitHub 那条）→ 传附件 → HEAD 比字节数 → 删旧版（保留最新 10 个 + 清掉没有附件的空壳）。
 
