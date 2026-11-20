@@ -300,9 +300,6 @@ const double maxContentWidth = 800;
 /// 刻意**只挂自己这套令牌**，不去覆写一堆 Material 组件的主题：
 /// 覆写越多，将来升 Flutter 时被改名的 API 就越多（`CardTheme` → `CardThemeData` 那类）。
 /// 需要定制的组件都在 `ui/kit.dart` 里自己画。
-///
-/// 唯一的例外是 SnackBar：它自带队列与脚手架定位，自绘不划算，
-/// 所以这里按令牌配一次 `snackBarTheme` —— 全 App 的浮层提示由此统一。
 ThemeData buildFindrTheme(Brightness brightness) {
   final colors = brightness == Brightness.dark ? FindrColors.dark : FindrColors.light;
   final scheme = ColorScheme.fromSeed(
@@ -314,7 +311,7 @@ ThemeData buildFindrTheme(Brightness brightness) {
     primary: colors.record,
     onPrimary: colors.recordText,
     error: colors.danger,
-    // SnackBar 的默认底色取的就是这一对 —— 换掉，省得每个调用点各写一次。
+    // 反色一对：浮层提示的底与字（见 `showFindrToast`）
     inverseSurface: colors.toast,
     onInverseSurface: colors.toastText,
   );
@@ -328,12 +325,5 @@ ThemeData buildFindrTheme(Brightness brightness) {
     canvasColor: colors.surface,
     splashFactory: InkSparkle.splashFactory,
     extensions: <ThemeExtension<dynamic>>[colors],
-    snackBarTheme: SnackBarThemeData(
-      behavior: SnackBarBehavior.floating,
-      // 反色底已经分得开了；再加阴影只会在**纯黑**的投影色上多出一圈硬边
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.md)),
-      insetPadding: const EdgeInsets.fromLTRB(Spacing.five, 0, Spacing.five, Spacing.five),
-    ),
   );
 }

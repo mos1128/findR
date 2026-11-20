@@ -529,6 +529,7 @@ class FindrField extends StatelessWidget {
     this.placeholder,
     this.obscure = false,
     this.multiline = false,
+    this.expands = false,
     this.keyboardType,
     this.onChanged,
     this.minLines,
@@ -548,6 +549,10 @@ class FindrField extends StatelessWidget {
   final String? placeholder;
   final bool obscure;
   final bool multiline;
+
+  /// 撑满父级给的高度（多行专用）：长文正文自己滚，外层页面就不用滚了。
+  /// 此时 [minLines] / [maxLines] 失效，调用方必须给它一个有界的高度。
+  final bool expands;
   final TextInputType? keyboardType;
   final ValueChanged<String>? onChanged;
   final int? minLines;
@@ -579,51 +584,7 @@ class FindrField extends StatelessWidget {
           ],
         ),
         const SizedBox(height: Spacing.two),
-        TextField(
-          controller: controller,
-          focusNode: focusNode,
-          obscureText: obscure,
-          enabled: enabled,
-          // 密钥不该进输入法的联想 / 个性化学习管线：`obscureText` 只遮挡显示，挡不住它们。
-          enableSuggestions: !obscure,
-          autocorrect: !obscure,
-          enableIMEPersonalizedLearning: !obscure,
-          keyboardType: multiline
-              ? TextInputType.multiline
-              : (obscure ? TextInputType.visiblePassword : keyboardType),
-          minLines: multiline ? (minLines ?? 3) : null,
-          maxLines: multiline ? (maxLines ?? 8) : 1,
-          onChanged: onChanged,
-          style: TextStyle(fontSize: 14.5, color: c.text),
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: placeholder,
-            hintStyle: TextStyle(fontSize: 14, color: c.textMuted),
-            suffixIcon: suffixIcon,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: Spacing.four,
-              vertical: Spacing.three,
-            ),
-            filled: true,
-            fillColor: c.surfaceAlt,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.md),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.md),
-              borderSide: BorderSide.none,
-            ),
-            disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.md),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.md),
-              borderSide: BorderSide.none,
-            ),
-          ),
-        ),
+        if (expands) Expanded(child: _field(c)) else _field(c),
         if (hint != null) ...<Widget>[
           const SizedBox(height: Spacing.one),
           Text(hint!, style: TextStyle(fontSize: 11.5, color: c.textMuted)),
@@ -638,6 +599,55 @@ class FindrField extends StatelessWidget {
       ],
     );
   }
+
+  Widget _field(FindrColors c) => TextField(
+    controller: controller,
+    focusNode: focusNode,
+    obscureText: obscure,
+    enabled: enabled,
+    // 密钥不该进输入法的联想 / 个性化学习管线：`obscureText` 只遮挡显示，挡不住它们。
+    enableSuggestions: !obscure,
+    autocorrect: !obscure,
+    enableIMEPersonalizedLearning: !obscure,
+    keyboardType: multiline
+        ? TextInputType.multiline
+        : (obscure ? TextInputType.visiblePassword : keyboardType),
+    // `expands` 要求 min/maxLines 都为 null
+    minLines: multiline && !expands ? (minLines ?? 3) : null,
+    maxLines: expands ? null : (multiline ? (maxLines ?? 8) : 1),
+    expands: expands,
+    textAlignVertical: expands ? TextAlignVertical.top : null,
+    onChanged: onChanged,
+    style: TextStyle(fontSize: 14.5, color: c.text),
+    decoration: InputDecoration(
+      isDense: true,
+      hintText: placeholder,
+      hintStyle: TextStyle(fontSize: 14, color: c.textMuted),
+      suffixIcon: suffixIcon,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: Spacing.four,
+        vertical: Spacing.three,
+      ),
+      filled: true,
+      fillColor: c.surfaceAlt,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Radii.md),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Radii.md),
+        borderSide: BorderSide.none,
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Radii.md),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(Radii.md),
+        borderSide: BorderSide.none,
+      ),
+    ),
+  );
 }
 
 /// 设置页里的一行。
@@ -794,46 +804,166 @@ class FindrTopBar extends StatelessWidget implements PreferredSizeWidget {
 /// 屏幕宽度（给布局判断用，顺便让测试能覆盖「窄屏」这一档）。
 double screenWidth(BuildContext context) => MediaQuery.sizeOf(context).width;
 
-/// 浮层提示。**全 App 只用这一个入口** —— 样式在 `buildFindrTheme` 里，改一次到处都是。
+/// 浮层提示。**全 App 只用这一个入口**。
+///
+/// 从屏幕顶部滑下来的一条通知：输入框和键盘都长在下方，它压不到正在打字的地方，
+/// 也就不会挡住「记一笔」。不吃点击 —— 一条通知不该抢手上的动作。
 ///
 /// 去掉上一条再弹：连点两下不该排队看两遍同一句话。
 void showFindrToast(BuildContext context, String message, {bool error = false}) {
-  final c = FindrColors.of(context);
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        // 出错要留够读完的时间，成功扫一眼就够
-        duration: Duration(milliseconds: error ? 4000 : 2200),
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          // 居中：它是一条通知，不是一段左对齐的正文
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            Icon(
-              error ? Icons.error_outline_rounded : Icons.check_rounded,
-              size: 16,
-              // 图标只靠形状区分，不上色：反色底上红色只剩 3:1，看不清不如不涂
-              color: c.toastText,
-            ),
-            const SizedBox(width: Spacing.two),
-            Flexible(
-              // 字号/字重写在这里而不是主题里：`SnackBarThemeData.contentTextStyle`
-              // 会整段顶掉继承来的字体，中文就得靠引擎默认字体兜底了。
-              child: Text(
-                message,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  height: 1.4,
-                  color: c.toastText,
+  final overlay = Overlay.maybeOf(context, rootOverlay: true);
+  if (overlay == null) return;
+  _toastEntry?.remove();
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => _Toast(
+      message: message,
+      error: error,
+      onDone: () {
+        if (_toastEntry != entry) return;
+        _toastEntry = null;
+        entry.remove();
+      },
+    ),
+  );
+  _toastEntry = entry;
+  overlay.insert(entry);
+}
+
+OverlayEntry? _toastEntry;
+
+class _Toast extends StatefulWidget {
+  const _Toast({
+    required this.message,
+    required this.error,
+    required this.onDone,
+  });
+
+  final String message;
+  final bool error;
+  final VoidCallback onDone;
+
+  @override
+  State<_Toast> createState() => _ToastState();
+}
+
+class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
+  // 不用 Timer：整条生命就是一条动画，退出时随组件一起销毁，不留悬空回调。
+  static const int _inMs = 180;
+  static const int _outMs = 200;
+
+  // 出错要留够读完的时间，成功扫一眼就够
+  int get _totalMs => widget.error ? 4000 : 2200;
+
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: Duration(milliseconds: _totalMs),
+  )..addStatusListener((s) {
+    if (s == AnimationStatus.completed) widget.onDone();
+  });
+
+  @override
+  void initState() {
+    super.initState();
+    _c.forward();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = FindrColors.of(context);
+    final total = _totalMs.toDouble();
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) {
+        final t = _c.value * total;
+        final double opacity;
+        final double dy;
+        if (t < _inMs) {
+          final p = Curves.easeOutCubic.transform(t / _inMs);
+          opacity = p;
+          dy = -12 * (1 - p);
+        } else if (t > total - _outMs) {
+          final p = Curves.easeInCubic.transform((t - total + _outMs) / _outMs);
+          opacity = 1 - p;
+          dy = -12 * p;
+        } else {
+          opacity = 1;
+          dy = 0;
+        }
+        return Positioned(
+          top: MediaQuery.paddingOf(context).top + Spacing.two,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: Opacity(
+              opacity: opacity.clamp(0.0, 1.0),
+              child: Transform.translate(
+                offset: Offset(0, dy),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: Spacing.five),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 520),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Spacing.four,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: c.toast,
+                          borderRadius: BorderRadius.circular(Radii.xl),
+                          boxShadow: <BoxShadow>[
+                            BoxShadow(
+                              color: const Color(0xFF000000).withValues(
+                                alpha: 0.16,
+                              ),
+                              blurRadius: 24,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            Icon(
+                              widget.error
+                                  ? Icons.error_outline_rounded
+                                  : Icons.check_rounded,
+                              size: 16,
+                              // 图标只靠形状区分，不上色：反色底上红色只剩 3:1，看不清不如不涂
+                              color: c.toastText,
+                            ),
+                            const SizedBox(width: Spacing.two),
+                            Flexible(
+                              child: Text(
+                                widget.message,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.4,
+                                  color: c.toastText,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
+  }
 }
 
 /// 异常转成人话。

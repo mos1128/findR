@@ -217,71 +217,90 @@ class _PromptEditorScreenState extends ConsumerState<_PromptEditorScreen> {
 
     return Scaffold(
       appBar: FindrTopBar(title: widget.id.title),
-      body: ScreenBody.column(
-        padding: const EdgeInsets.fromLTRB(
-          Spacing.four,
-          Spacing.three,
-          Spacing.four,
-          Spacing.six,
-        ),
-        children: <Widget>[
-          if (stale)
-            Notice(
-              tone: NoticeTone.warn,
-              text: '新版本的默认提示词有改动，改用新版会丢掉你的修改。',
-              action: Wrap(
-                spacing: Spacing.two,
-                runSpacing: Spacing.one,
+      // 不套 ScreenBody：正文本身要吃掉全部剩余高度、自己在里面滚，
+      // 页面再滚一层只会出现「文字比屏幕长、拖不动」和「按钮在屏幕外」。
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: maxContentWidth),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Spacing.four,
+                Spacing.three,
+                Spacing.four,
+                Spacing.four,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  FindrButton(
-                    title: '改用新版默认',
-                    variant: FindrButtonVariant.secondary,
-                    compact: true,
-                    expand: false,
-                    onPressed: () => _restore(
-                      title: '改用新版默认？',
-                      body: '你改过的这一份会被覆盖，且无法找回。',
-                      confirm: '改用新版',
+                  if (stale) ...<Widget>[
+                    Notice(
+                      tone: NoticeTone.warn,
+                      text: '新版本的默认提示词有改动，改用新版会丢掉你的修改。',
+                      action: Wrap(
+                        spacing: Spacing.two,
+                        runSpacing: Spacing.one,
+                        children: <Widget>[
+                          FindrButton(
+                            title: '改用新版默认',
+                            variant: FindrButtonVariant.secondary,
+                            compact: true,
+                            expand: false,
+                            onPressed: () => _restore(
+                              title: '改用新版默认？',
+                              body: '你改过的这一份会被覆盖，且无法找回。',
+                              confirm: '改用新版',
+                            ),
+                          ),
+                          FindrButton(
+                            title: '保留我的',
+                            variant: FindrButtonVariant.ghost,
+                            compact: true,
+                            expand: false,
+                            onPressed: () => _keepMine(custom!),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: Spacing.three),
+                  ],
+                  Expanded(
+                    child: FindrField(
+                      label: '正文',
+                      controller: _ctrl,
+                      multiline: true,
+                      expands: true,
+                      note: note,
                     ),
                   ),
-                  FindrButton(
-                    title: '保留我的',
-                    variant: FindrButtonVariant.ghost,
-                    compact: true,
-                    expand: false,
-                    onPressed: () => _keepMine(custom!),
+                  const SizedBox(height: Spacing.three),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: FindrButton(title: '保存', onPressed: _save),
+                      ),
+                      if (custom != null) ...<Widget>[
+                        const SizedBox(width: Spacing.three),
+                        Expanded(
+                          child: FindrButton(
+                            title: '恢复默认',
+                            variant: FindrButtonVariant.secondary,
+                            onPressed: () => _restore(
+                              title: '恢复默认？',
+                              body: '内置提示词会替换你改过的内容，且无法找回。',
+                              confirm: '恢复默认',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ],
               ),
             ),
-          FindrField(
-            label: '正文',
-            controller: _ctrl,
-            multiline: true,
-            minLines: 10,
-            maxLines: 30,
-            note: note,
           ),
-          Row(
-            children: <Widget>[
-              Expanded(child: FindrButton(title: '保存', onPressed: _save)),
-              if (custom != null) ...<Widget>[
-                const SizedBox(width: Spacing.three),
-                Expanded(
-                  child: FindrButton(
-                    title: '恢复默认',
-                    variant: FindrButtonVariant.secondary,
-                    onPressed: () => _restore(
-                      title: '恢复默认？',
-                      body: '内置提示词会替换你改过的内容，且无法找回。',
-                      confirm: '恢复默认',
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
