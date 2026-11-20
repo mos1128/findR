@@ -118,10 +118,14 @@ jobs:
           echo "--- platforms ---"; ls "$sdk/platforms" || true
           echo "--- build-tools ---"; ls "$sdk/build-tools" || true
 
+      # ⚠️ 刻意不开 `cache: true`：缓存作用域跟着 ref 走，而这个作业**只在 tag 上跑**，
+      #    每个 tag 是一个独立作用域 —— 缓存写进去之后没有任何别的运行能读到它（只有同一
+      #    tag 重跑能读）。实测 6 个 tag 各存了一份 1641MB 的 Flutter SDK + 199MB 的 pub 包，
+      #    把仓库 10GB 的缓存配额撑爆、反复触发 LRU 逐出（2026-11-20 清空过一次）。
+      #    关掉只多一次 SDK 下载（约 1 分钟），换配额干净。
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.5'
-          cache: true
 
       - name: 核对工具链版本
         run: |
