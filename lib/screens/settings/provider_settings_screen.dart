@@ -710,20 +710,20 @@ class _ProviderSettingsScreenState extends ConsumerState<ProviderSettingsScreen>
                       child: Row(
                         children: <Widget>[
                           FindrChip(
-                            label: 'Anthropic',
+                            label: ProviderType.anthropic.wire,
                             active: _providerType == ProviderType.anthropic,
                             onPressed: () => setState(() => _providerType = ProviderType.anthropic),
                           ),
                           const SizedBox(width: Spacing.two),
                           FindrChip(
-                            label: 'OpenAI chat',
+                            label: ProviderType.openaiCompat.wire,
                             active: _providerType == ProviderType.openaiCompat,
                             onPressed: () =>
                                 setState(() => _providerType = ProviderType.openaiCompat),
                           ),
                           const SizedBox(width: Spacing.two),
                           FindrChip(
-                            label: 'OpenAI response',
+                            label: ProviderType.openaiResponses.wire,
                             active: _providerType == ProviderType.openaiResponses,
                             onPressed: () =>
                                 setState(() => _providerType = ProviderType.openaiResponses),

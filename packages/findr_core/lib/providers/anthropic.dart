@@ -97,7 +97,7 @@ final class AnthropicAdapter implements LlmProviderAdapter {
 
       if (res.statusCode < 200 || res.statusCode >= 300) {
         final text = await readAllTextSwallowing(res.stream);
-        throw httpStatusError('anthropic', res.statusCode, text);
+        throw httpStatusError(ProviderType.anthropic.wire, res.statusCode, text);
       }
 
       final ctype = res.headers['content-type'] ?? '';

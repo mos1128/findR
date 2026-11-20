@@ -404,7 +404,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final llmName = rt.llm == null ? '未配置' : '${rt.llm!.model}（${rt.llm!.providerType.wire}）';
+    final llmName = rt.llm == null
+        ? '未配置'
+        : '${rt.llm!.model}（${rt.llm!.providerType.wire}）';
     // 本机那条路没有模型名，只有「下没下」这一个状态值得说 —— 它决定转写能不能跑
     final asr = rt.asr;
     final asrName = asr == null

@@ -31,7 +31,7 @@ final class OpenAIResponsesAdapter implements LlmProviderAdapter {
 
   @override
   Future<ChatResponse> chat(ChatRequest req, ProviderConfig cfg) async {
-    final url = resolveEndpoint(cfg.baseUrl, '/responses', 'openai-responses');
+    final url = resolveEndpoint(cfg.baseUrl, '/responses', ProviderType.openaiResponses.wire);
 
     final content = <Map<String, Object?>>[];
     for (final part in req.parts) {
@@ -75,7 +75,7 @@ final class OpenAIResponsesAdapter implements LlmProviderAdapter {
       final res = await _client.send(request);
       if (res.statusCode < 200 || res.statusCode >= 300) {
         final text = await readAllTextSwallowing(res.stream);
-        throw httpStatusError('openai-responses', res.statusCode, text);
+        throw httpStatusError(ProviderType.openaiResponses.wire, res.statusCode, text);
       }
 
       final ctype = res.headers['content-type'] ?? '';

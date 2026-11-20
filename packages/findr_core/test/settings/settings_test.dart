@@ -60,13 +60,13 @@ void main() {
 
       // 落库的是字面 wire 值，不是枚举下标 —— 换实现也不能变
       final raw = getSetting<Map<String, Object?>>(db, SettingsKeys.llm)!;
-      expect(raw['providerType'], 'anthropic');
+      expect(raw['providerType'], 'Anthropic');
     });
 
     test('认证头不再是可配项：老安装残留的 authStyle 被忽略，不报错', () {
       // authStyle 已删；老数据里它还在 JSON 里，读的时候必须无视
       setSetting(db, SettingsKeys.llm, {
-        'providerType': 'openai-compat',
+        'providerType': 'OpenAI Chat',
         'baseUrl': 'http://host',
         'model': 'gpt-4o-mini',
         'authStyle': 'x-api-key',
@@ -76,7 +76,7 @@ void main() {
       expect(read.providerType, ProviderType.openaiCompat);
     });
 
-    test('值不合规的 providerType 退回 openai-compat（有意为之，见代码注释）', () {
+    test('值不合规的 providerType 退回 OpenAI Chat（有意为之，见代码注释）', () {
       setSetting(db, SettingsKeys.llm, {'providerType': 'bogus', 'model': 'm'});
       expect(readLlmSettings(db)!.providerType, ProviderType.openaiCompat);
     });
@@ -114,7 +114,7 @@ void main() {
 
     test('能力缓存形状不对时整条丢掉（等于没探过），不影响其余设置', () {
       setSetting(db, SettingsKeys.llm, {
-        'providerType': 'openai-compat',
+        'providerType': 'OpenAI Chat',
         'model': 'm',
         'capabilities': {'vision': 'yes'}, // 该是 bool，且缺 probedAt / probedModel
       });
@@ -156,14 +156,14 @@ void main() {
   });
 
   group('转写设置', () {
-    test('写读往返，且落库 JSON 仍带 providerType（形状是契约）', () {
+    test('写读往返，落库 JSON 不带 providerType（ASR 只有一种协议，别多存一个能写错的字段）', () {
       writeAsrSettings(db, const AsrSettings(baseUrl: 'http://host', model: 'whisper-1'));
       final read = readAsrSettings(db)!;
       expect(read.model, 'whisper-1');
       expect(read.baseUrl, 'http://host');
 
       final raw = getSetting<Map<String, Object?>>(db, SettingsKeys.asr)!;
-      expect(raw['providerType'], 'openai-compat');
+      expect(raw.containsKey('providerType'), isFalse);
     });
 
     test('没写过时是 null', () {
@@ -317,7 +317,7 @@ void main() {
       expect(
         jsonDecode(jsonEncode(value.toJson())),
         {
-          'providerType': 'openai-compat',
+          'providerType': 'OpenAI Chat',
           'baseUrl': 'http://192.168.1.9:7788',
           'model': 'qwen-vl-max',
           'userAgent': 'ua/1',
@@ -334,10 +334,9 @@ void main() {
     test('可选的空字段不写进 JSON（别把 null 落成 "null" 字符串）', () {
       expect(
         const LlmSettings(providerType: ProviderType.openaiCompat, model: 'm').toJson(),
-        {'providerType': 'openai-compat', 'model': 'm'},
+        {'providerType': 'OpenAI Chat', 'model': 'm'},
       );
       expect(const AsrSettings(model: 'whisper-1').toJson(), {
-        'providerType': 'openai-compat',
         'engine': 'cloud',
         'model': 'whisper-1',
       });
@@ -346,7 +345,6 @@ void main() {
     test('本机转写：不写 baseUrl 也仍然算配好', () {
       const value = AsrSettings(engine: AsrEngine.local, model: '');
       expect(value.toJson(), {
-        'providerType': 'openai-compat',
         'engine': 'local',
         'model': '',
       });
@@ -362,7 +360,6 @@ void main() {
       expect(local.engine, AsrEngine.local);
 
       final legacy = AsrSettings.fromJson(<String, Object?>{
-        'providerType': 'openai-compat',
         'baseUrl': 'http://host',
         'model': 'whisper-1',
       })!;

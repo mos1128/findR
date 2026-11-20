@@ -84,14 +84,10 @@ Future<void> main(List<String> argv) async {
     now: at,
   );
 
+  // 只放一条与设备无关的偏好设置：settings 整表会进包，有内容即可证明这条路径通了。
+  // 别在这里塞主模型地址 / Key 之类的样例 —— 那是用某台设备上的代理地址，换台机器就没有意义，
+  // 也没法验证。
   setSetting(db, 'search', <String, Object?>{'autoAnswer': true});
-  setSetting(db, 'llm', <String, Object?>{
-    'providerType': 'openai-compat',
-    'baseUrl': 'http://192.168.1.9:7788',
-    'model': 'qwen-vl-max',
-    // settings 整表导出，这个字段也会跟着进包；真实 API Key 不走 settings
-    'apiKey': 'sk-PROBE-SETTING-0000',
-  });
 
   final result = await exportBackup(BackupDeps(db: db, media: media, appVersion: 'probe'), now: at);
   File(outPath).writeAsBytesSync(result.bytes);

@@ -183,20 +183,21 @@ final class TranscribeResult {
 }
 
 enum ProviderType {
-  openaiCompat('openai-compat'),
-  openaiResponses('openai-responses'),
-  anthropic('anthropic'),
-  gemini('gemini'),
-  fake('fake');
+  openaiCompat('OpenAI Chat'),
+  openaiResponses('OpenAI Response'),
+  anthropic('Anthropic'),
+  gemini('Gemini'),
+  fake('Fake');
 
   const ProviderType(this.wire);
 
-  /// 落设置、进配置的字面值 —— **这就是格式，改不得**。
+  /// 落设置、进备份包的字面值，**同时也是界面上显示的名字**。
+  ///
+  /// 一份字面量管两件事，所以不再另做「协议 → 显示名」的映射：
+  /// 之前两套并存，结果就是设置页选「OpenAI Chat」、列表里写着 `openai-compat`。
   final String wire;
 
   static ProviderType fromWire(String value) {
-    if (value == 'openai-chat') return ProviderType.openaiCompat;
-    if (value == 'openai-response') return ProviderType.openaiResponses;
     for (final type in values) {
       if (type.wire == value) return type;
     }
@@ -208,8 +209,6 @@ enum ProviderType {
   /// 给「读设置」用：`providerType` 得在运行期验一遍，
   /// Dart 读的是库里的 JSON 字符串，所以必须有个运行时兜底。
   static ProviderType fromWireOr(Object? value, ProviderType fallback) {
-    if (value == 'openai-chat') return ProviderType.openaiCompat;
-    if (value == 'openai-response') return ProviderType.openaiResponses;
     for (final type in values) {
       if (type.wire == value) return type;
     }
@@ -220,7 +219,7 @@ enum ProviderType {
 /// 主模型 / 转写的调用配置。
 ///
 /// 认证头由适配器自动决定，**不是可配项**（早先的 `authStyle` 已删）：
-/// openai-compat 恒发 `Authorization: Bearer`；anthropic 默认也发 Bearer，
+/// OpenAI Chat 恒发 `Authorization: Bearer`；Anthropic 默认也发 Bearer，
 /// 仅在 401/403 时改用 legacy 的 `x-api-key` 重试一次。见 `anthropic.dart` 的类注释。
 final class ProviderConfig {
   const ProviderConfig({

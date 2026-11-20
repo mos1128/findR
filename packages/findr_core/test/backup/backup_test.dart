@@ -323,7 +323,7 @@ void main() {
     test('settings 整表导出：不设白名单，所有行都进包', () async {
       final src = sourceSide();
       setSetting(src.deps.db, 'llm', <String, Object?>{
-        'providerType': 'anthropic',
+        'providerType': 'Anthropic',
         'model': 'claude-opus-5',
       });
       setSetting(src.deps.db, 'tracking_id', <String, Object?>{'installId': 'CANARY-TRACKING'});

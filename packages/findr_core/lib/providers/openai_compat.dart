@@ -28,7 +28,7 @@ const int _defaultChatTimeoutMs = 120000;
 /// ASR 超时：只上传一小段 m4a，快得多。
 const int _defaultAsrTimeoutMs = 60000;
 
-/// 认证头由适配器自动决定，**不再是可配项**：openai-compat 恒发 `Authorization: Bearer`。
+/// 认证头由适配器自动决定，**不再是可配项**：OpenAI Chat 恒发 `Authorization: Bearer`。
 Map<String, String> _authHeaders(ProviderConfig cfg) {
   final headers = <String, String>{'authorization': 'Bearer ${cfg.apiKey ?? ''}'};
   final ua = cfg.userAgent;
@@ -54,7 +54,7 @@ final class OpenAICompatAdapter implements LlmProviderAdapter {
 
   @override
   Future<ChatResponse> chat(ChatRequest req, ProviderConfig cfg) async {
-    final url = resolveEndpoint(cfg.baseUrl, '/chat/completions', 'openai-compat');
+    final url = resolveEndpoint(cfg.baseUrl, '/chat/completions', ProviderType.openaiCompat.wire);
 
     // 图片转成 `data:<mime>;base64,<裸 base64>` —— 这是 OpenAI 视觉协议规定的外形
     final content = <Map<String, Object?>>[];
@@ -91,7 +91,7 @@ final class OpenAICompatAdapter implements LlmProviderAdapter {
       final res = await _client.send(request);
       if (res.statusCode < 200 || res.statusCode >= 300) {
         final text = await readAllTextSwallowing(res.stream);
-        throw httpStatusError('openai-compat', res.statusCode, text);
+        throw httpStatusError(ProviderType.openaiCompat.wire, res.statusCode, text);
       }
 
       // 网关常强制流式返回：content-type 说了是 SSE 就得按 SSE 读，
@@ -167,7 +167,7 @@ final class OpenAICompatAsrAdapter implements AsrProviderAdapter {
 
   @override
   Future<TranscribeResult> transcribe(TranscribeRequest req, ProviderConfig cfg) {
-    final url = resolveEndpoint(cfg.baseUrl, '/audio/transcriptions', 'openai-compat');
+    final url = resolveEndpoint(cfg.baseUrl, '/audio/transcriptions', ProviderType.openaiCompat.wire);
     final timeoutMs = req.timeoutMs ?? _timeoutMs;
     final filename = _filenameFor(req);
 

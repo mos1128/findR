@@ -120,7 +120,7 @@ final class LlmSettings {
     this.capabilities,
   });
 
-  /// 取值只有 `'anthropic'` / `'openai-compat'` 两种情况。
+  /// 取值只有 `'Anthropic'` / `'OpenAI Chat'` 两种情况（`ProviderType.wire` 就是这两个词）。
   /// Dart 侧直接复用 [ProviderType]，由 `makeLlmAdapter` 在运行时挡掉 gemini/fake
   /// —— 类型层面的收窄在 Dart 里要再建一个枚举，不值那个复杂度。
   final ProviderType providerType;
@@ -142,7 +142,7 @@ final class LlmSettings {
     final map = asMap(raw);
     if (map == null) return null;
     return LlmSettings(
-      // 值不合规时退回 openai-compat：它是「用户自填 baseUrl 的兼容端点」这条主路径的协议，
+      // 值不合规时退回 OpenAI Chat：它是「用户自填 baseUrl 的兼容端点」这条主路径的协议，
       // 也是设置页的默认项。**别改成「未知值就报错」** —— 那会让读坏值的用户直接崩；
       // 退化成可用配置更安全，最多是协议选错（用户在设置页看得见）。
       providerType: ProviderType.fromWireOr(map['providerType'], ProviderType.openaiCompat),
@@ -178,7 +178,7 @@ enum AsrEngine {
 
 /// 语音转写的配置。
 ///
-/// 云端那条路的协议**只有** openai-compat 一个（Anthropic 协议没有音频输入）；
+/// 云端那条路的协议**只有** OpenAI Chat 一个（Anthropic 协议没有音频输入）；
 /// [engine] 决定这组设置是「发给云端」还是「本机跑」。
 /// **两套参数同时留着**：本机切回云端时不必让人把地址和模型名再填一遍。
 final class AsrSettings {
@@ -193,7 +193,6 @@ final class AsrSettings {
       engine == AsrEngine.local || (model.isNotEmpty && baseUrl != null && baseUrl!.isNotEmpty);
 
   Map<String, Object?> toJson() => {
-    'providerType': ProviderType.openaiCompat.wire,
     'engine': engine.wire,
     if (baseUrl != null) 'baseUrl': baseUrl,
     'model': model,

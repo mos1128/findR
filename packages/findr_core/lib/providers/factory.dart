@@ -60,9 +60,8 @@ LlmProviderAdapter makeLlmAdapter(LlmSettings llm, [AdapterOptions opts = const 
 
 /// 按设置建 ASR 适配器。
 ///
-/// ⚠️ **ASR 设置里不该带 `providerType`**：它只有一个合法值，多存一个字段只会多一处不一致。
-/// 所以 [AsrSettings] 不存这个字段，但 `toJson()` 仍写出 `providerType: 'openai-compat'`
-/// —— **落库的 JSON 形状是既定契约**，老数据与老备份包都要能对上。
+/// ASR 只有 OpenAI Chat 一个协议，所以 `AsrSettings` 里没有 `providerType` —— 一个合法值
+/// 存进 JSON 只会多一处能写错的地方。
 AsrProviderAdapter makeAsrAdapter(
   AsrSettings asr,
   MediaIo media, [
